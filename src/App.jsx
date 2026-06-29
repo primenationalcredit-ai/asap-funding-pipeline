@@ -15,6 +15,7 @@ const STAGES = [
   { key: "called", label: "Called", tone: "sky" },
   { key: "link_sent", label: "Link Sent", tone: "amber" },
   { key: "report_pulled", label: "Report Pulled", tone: "violet" },
+  { key: "submitted", label: "Submitted", tone: "indigo" },
   { key: "in_followup", label: "In Follow-up", tone: "orange" },
   { key: "funded", label: "Funded", tone: "emerald" },
   { key: "dead", label: "Dead", tone: "rose" },
@@ -24,6 +25,7 @@ const TONE = {
   sky: "bg-sky-100 text-sky-800 ring-sky-200",
   amber: "bg-amber-100 text-amber-800 ring-amber-200",
   violet: "bg-violet-100 text-violet-800 ring-violet-200",
+  indigo: "bg-indigo-100 text-indigo-800 ring-indigo-200",
   orange: "bg-orange-100 text-orange-800 ring-orange-200",
   emerald: "bg-emerald-100 text-emerald-800 ring-emerald-200",
   rose: "bg-rose-100 text-rose-800 ring-rose-200",
@@ -36,6 +38,8 @@ const DAY = 86400000;
 const DEFAULT_CONFIG = {
   reportLink: "https://www.myscoreiq.com/industry-score-preferred.aspx?offercode=432143MH",
   signature: "Joe at ASAP Funding USA",
+  funderName: "Torro",
+  funderEmail: "slocsubmissions@torro.com",
 };
 
 const DEFAULT_TEMPLATES = [
@@ -79,6 +83,7 @@ const DEFAULT_CADENCES = {
     { day: 14, templateId: "fu_email" },
   ],
   report_pulled: [{ day: 0, templateId: "pulled_sms" }],
+  submitted: [],
   in_followup: [
     { day: 2, templateId: "fu_sms" },
     { day: 6, templateId: "fu_email" },
@@ -104,6 +109,8 @@ function rowToLead(r) {
     opportunityName: r.opportunity_name || "",
     pipelineStage: r.pipeline_stage || "",
     desiredAmount: r.desired_amount || "",
+    fundingPurpose: r.funding_purpose || "",
+    fundingTimeline: r.funding_timeline || "",
     creditScore: r.estimated_credit_score || "",
     monthlyRevenue: r.monthly_revenue || "",
     timeInBusiness: r.time_in_business || "",
@@ -129,6 +136,7 @@ const FIELD_MAP = {
   status: "status", touches: "touches",
   opportunityName: "opportunity_name", pipelineStage: "pipeline_stage",
   desiredAmount: "desired_amount", creditScore: "estimated_credit_score",
+  fundingPurpose: "funding_purpose", fundingTimeline: "funding_timeline",
   monthlyRevenue: "monthly_revenue", timeInBusiness: "time_in_business",
   businessName: "business_name", businessType: "business_type", einStatus: "ein_status",
   bestTime: "best_time", nextStep: "next_step",
@@ -447,7 +455,7 @@ function Dashboard() {
       {tab === "pipeline" && (
         <Pipeline leads={filtered} allCount={leads.length} dueList={dueList} stats={stats} config={config}
           query={query} setQuery={setQuery} filter={filter} setFilter={setFilter}
-          addLead={addLead} onOpen={setProfileId} logTouch={logTouch} cadences={cadences} templates={templates} />
+          addLead={addLead} onOpen={setProfileId} logTouch={logTouch} updateLead={updateLead} cadences={cadences} templates={templates} />
       )}
       {tab === "messaging" && <Messaging templates={templates} persistTemplates={persistTemplates} cadences={cadences} persistCadences={persistCadences} />}
       {tab === "scripts" && <Scripts />}
@@ -466,7 +474,7 @@ function Dashboard() {
 /* ================================================================== */
 /*  Pipeline                                                          */
 /* ================================================================== */
-function Pipeline({ leads, allCount, dueList, stats, config, query, setQuery, filter, setFilter, addLead, onOpen, logTouch, cadences, templates }) {
+function Pipeline({ leads, allCount, dueList, stats, config, query, setQuery, filter, setFilter, addLead, onOpen, logTouch, updateLead, cadences, templates }) {
   const [showAdd, setShowAdd] = useState(false);
   const sendStep = (lead, step) => {
     const tpl = step.template;
@@ -524,7 +532,7 @@ function Pipeline({ leads, allCount, dueList, stats, config, query, setQuery, fi
 
       {allCount === 0 ? <Empty onAdd={() => setShowAdd(true)} />
         : leads.length === 0 ? <div className="rounded-xl border border-dashed border-slate-200 py-10 text-center text-sm text-slate-400">No prospects match this view.</div>
-        : <div className="flex flex-col gap-2">{leads.map((l) => <LeadRow key={l.id} lead={l} onOpen={() => onOpen(l.id)} cadences={cadences} templates={templates} />)}</div>}
+        : <div className="flex flex-col gap-2">{leads.map((l) => <LeadRow key={l.id} lead={l} onOpen={() => onOpen(l.id)} cadences={cadences} templates={templates} config={config} logTouch={logTouch} updateLead={updateLead} />)}</div>}
     </div>
   );
 }
@@ -559,11 +567,14 @@ function AddForm({ onAdd, onCancel }) {
   );
 }
 
-function LeadRow({ lead, onOpen, cadences, templates }) {
+function LeadRow({ lead, onOpen, cadences, templates, config, logTouch, updateLead }) {
   const step = nextDue(lead, cadences, templates);
   const rel = step ? relativeDue(step.dueAt) : null;
+  const tplSms = templates.find((t) => t.id === "first_sms");
+  const tplEmail = templates.find((t) => t.id === "first_email");
+  const stop = (e) => e.stopPropagation();
   return (
-    <button onClick={onOpen} className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-left transition hover:border-emerald-300 hover:shadow-sm">
+    <div onClick={onOpen} className="cursor-pointer rounded-xl border border-slate-200 bg-white px-4 py-3 text-left transition hover:border-emerald-300 hover:shadow-sm">
       <div className="flex items-center gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
@@ -578,9 +589,13 @@ function LeadRow({ lead, onOpen, cadences, templates }) {
           </div>
           <div className="mt-1.5"><QualChips lead={lead} /></div>
         </div>
-        <ChevronDown size={18} className="shrink-0 -rotate-90 text-slate-300" />
+        <div className="flex shrink-0 items-center gap-1" onClick={stop}>
+          <a href={telHref(lead.phone)} onClick={() => lead.phone && updateLead(lead.id, lead.status === "new" ? { status: "called" } : {})} title="Call" className={`rounded-lg p-2 ${lead.phone ? "bg-slate-100 text-slate-700 hover:bg-slate-200" : "pointer-events-none bg-slate-50 text-slate-300"}`}><Phone size={15} /></a>
+          <a href={smsHref(lead.phone, fillTokens(tplSms?.body || "{{link}}", lead, config))} onClick={() => lead.phone && logTouch(lead.id, "sms", "link")} title="Text link" className={`rounded-lg p-2 ${lead.phone ? "bg-emerald-600 text-white hover:bg-emerald-700" : "pointer-events-none bg-slate-50 text-slate-300"}`}><MessageSquare size={15} /></a>
+          <a href={mailHref(lead.email, fillTokens(tplEmail?.subject || "", lead, config), fillTokens(tplEmail?.body || "{{link}}", lead, config))} onClick={() => lead.email && logTouch(lead.id, "email", "link")} title="Email link" className={`rounded-lg p-2 ${lead.email ? "bg-white text-emerald-700 ring-1 ring-emerald-300 hover:bg-emerald-50" : "pointer-events-none bg-slate-50 text-slate-300"}`}><Mail size={15} /></a>
+        </div>
       </div>
-    </button>
+    </div>
   );
 }
 
@@ -599,7 +614,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
 
   const saveProfile = async () => {
     const patch = {};
-    ["name", "phone", "email", "notes", "desiredAmount", "monthlyRevenue", "creditScore", "timeInBusiness",
+    ["name", "phone", "email", "notes", "desiredAmount", "fundingPurpose", "fundingTimeline", "monthlyRevenue", "creditScore", "timeInBusiness",
       "businessName", "businessType", "einStatus", "bestTime", "nextStep",
       "myscoreiqUsername", "myscoreiqPassword", "ssnLast4"].forEach((k) => { if (draft[k] !== lead[k]) patch[k] = draft[k]; });
     if (Object.keys(patch).length) await updateLead(lead.id, patch);
@@ -613,9 +628,26 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
       const path = `${lead.id}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.\-_]/g, "_")}`;
       const { error } = await supabase.storage.from("reports").upload(path, file, { upsert: true });
       if (error) throw error;
-      await updateLead(lead.id, { reportPath: path, reportUploadedAt: Date.now() });
+      await updateLead(lead.id, { reportPath: path, reportUploadedAt: Date.now(), status: lead.status === "submitted" || lead.status === "funded" ? lead.status : "report_pulled" });
     } catch (e) { alert("Upload failed: " + (e.message || e)); }
     finally { setUploading(false); }
+  };
+
+  const logCall = (disposition) => {
+    logTouch(lead.id, "call", "call", { disposition });
+    if (lead.status === "new") updateLead(lead.id, { status: "called" });
+  };
+
+  const submitToFunder = async () => {
+    let link = "";
+    if (lead.reportPath) {
+      const { data } = await supabase.storage.from("reports").createSignedUrl(lead.reportPath, 604800); // 7 days
+      if (data?.signedUrl) link = data.signedUrl;
+    }
+    const body = `Client: ${lead.name}\n${lead.businessName ? "Business: " + lead.businessName + "\n" : ""}${link ? "\nReport (PDF, link valid 7 days):\n" + link + "\n" : "\n(Attach the report PDF.)\n"}`;
+    window.open(mailHref(config.funderEmail, lead.name, body), "_blank");
+    logTouch(lead.id, "email", "submit");
+    if (lead.status !== "funded" && lead.status !== "dead") updateLead(lead.id, { status: "submitted" });
   };
   const viewReport = async () => {
     if (!lead.reportPath) return;
@@ -653,6 +685,16 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
             <CopyButton text={config.reportLink || ""} label="Copy link" className="bg-slate-100 text-slate-700 hover:bg-slate-200" />
           </div>
 
+          {/* log call */}
+          <div className="rounded-xl bg-slate-50 p-3">
+            <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400"><Phone size={13} /> Log this call</div>
+            <div className="flex flex-wrap gap-1.5">
+              {[["Connected", "connected"], ["No answer", "no_answer"], ["Left voicemail", "voicemail"], ["Callback set", "callback"]].map(([label, d]) => (
+                <button key={d} onClick={() => logCall(d)} className="rounded-lg bg-white px-2.5 py-1.5 text-sm font-medium text-slate-700 ring-1 ring-inset ring-slate-200 hover:bg-slate-100">{label}</button>
+              ))}
+            </div>
+          </div>
+
           {/* call guide */}
           <div className="rounded-xl border border-emerald-200 bg-emerald-50/40">
             <button onClick={() => setGuideOpen((o) => !o)} className="flex w-full items-center justify-between px-4 py-3 text-left">
@@ -666,23 +708,21 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
                   <p className="mt-1 text-sm text-slate-700">
                     Hi {firstName(lead.name)}, this is {config.signature}. {[
                       lead.desiredAmount && `from what you sent over I see you're looking for ${lead.desiredAmount}`,
-                      lead.businessType && `for your business in ${lead.businessType}`,
-                      lead.monthlyRevenue && `doing around ${lead.monthlyRevenue} a month`,
-                      lead.timeInBusiness && `and you've been at it ${lead.timeInBusiness}`,
+                      lead.fundingPurpose && `to put toward ${lead.fundingPurpose}`,
+                      lead.businessName && `for ${lead.businessName}`,
+                      lead.fundingTimeline && `and you need it ${lead.fundingTimeline}`,
                     ].filter(Boolean).join(", ")}
-                    {(lead.desiredAmount || lead.businessType || lead.monthlyRevenue || lead.timeInBusiness) ? ". " : ""}
+                    {(lead.desiredAmount || lead.fundingPurpose || lead.businessName || lead.fundingTimeline) ? ". " : ""}
                     My job is to get you funding as fast as possible and, just as important, the best options for your situation, not just the quickest yes. Let me confirm a couple of things.
                   </p>
                 </div>
                 <div className="space-y-3">
                   {[
-                    { ask: "How much are you looking for, and what will you use it for?", say: (v) => `You're after ${v}. Is that still the goal?`, k: "desiredAmount", ph: "Amount / use" },
-                    { ask: "Roughly what does the business bring in per month?", say: (v) => `Business is doing about ${v} a month. Still accurate?`, k: "monthlyRevenue", ph: "Monthly revenue" },
-                    { ask: "How long have you been in business?", say: (v) => `In business ${v}.`, k: "timeInBusiness", ph: "Time in business" },
-                    { ask: "Do you have an entity set up, an LLC or corp with an EIN?", say: (v) => `Entity: ${v}.`, k: "einStatus", ph: "Entity / EIN" },
-                    { ask: "What is the business, and what industry?", say: (v) => `Business: ${v}.`, k: "businessType", ph: "Business type" },
-                    { ask: "Ballpark, where is your personal credit right now?", say: (v) => `You estimated credit around ${v}.`, k: "creditScore", ph: "Credit score" },
-                    { ask: "Best number and time to reach you?", say: (v) => `Best time to reach you: ${v}.`, k: "bestTime", ph: "Best time to call" },
+                    { ask: "What are you looking to get funding for?", say: (v) => `You want it for ${v}. Still the plan?`, k: "fundingPurpose", ph: "Purpose / use of funds" },
+                    { ask: "What is the business name?", say: (v) => `Business: ${v}.`, k: "businessName", ph: "Business name" },
+                    { ask: "Ballpark, where is your personal credit right now?", say: (v) => `You estimated credit around ${v}.`, k: "creditScore", ph: "Credit score range" },
+                    { ask: "How much are you looking to get?", say: (v) => `You're after ${v}. Is that still the goal?`, k: "desiredAmount", ph: "Amount" },
+                    { ask: "How soon do you need it?", say: (v) => `Timeline: ${v}.`, k: "fundingTimeline", ph: "How soon" },
                   ].map(({ ask, say, k, ph }) => {
                     const have = !!(draft[k] && String(draft[k]).trim());
                     return (
@@ -801,6 +841,29 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
               {lead.reportUploadedAt && <span className="text-xs text-slate-400">Uploaded {fmtDate(lead.reportUploadedAt)}</span>}
             </div>
           </Section>
+
+          {/* submit to funder */}
+          <Section icon={<Send size={15} />} title={`Submit to ${config.funderName || "funder"}`}>
+            <button onClick={submitToFunder} className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-700"><Send size={15} /> Email report to {config.funderName || "funder"}</button>
+            <p className="mt-2 text-xs text-slate-500">Opens an email to {config.funderEmail} with the subject set to the client's name. If you uploaded the report, a 7 day download link is included; otherwise attach the PDF yourself.</p>
+            <div className="mt-2 rounded-md bg-amber-50 px-2.5 py-1.5 text-xs text-amber-700 ring-1 ring-inset ring-amber-200">
+              Over $10k/month: also send the application and recent bank statements. Under $10k/month: the report is all they need.
+            </div>
+          </Section>
+
+          {/* activity */}
+          {(lead.touches || []).length > 0 && (
+            <Section icon={<Clock size={15} />} title="Activity">
+              <div className="flex flex-col gap-1">
+                {[...lead.touches].sort((a, b) => b.at - a.at).slice(0, 12).map((t, i) => (
+                  <div key={i} className="flex items-center gap-2 text-xs text-slate-500">
+                    <span className="w-14 shrink-0 font-mono text-slate-400">{fmtDate(t.at)}</span>
+                    <span className="capitalize">{t.kind === "call" ? `Call: ${(t.disposition || "logged").replace("_", " ")}` : t.kind === "submit" ? "Submitted to funder" : t.kind === "link" ? `Link sent (${t.channel})` : t.kind === "cadence" ? `Follow-up (${t.channel})` : `${t.kind} (${t.channel})`}</span>
+                  </div>
+                ))}
+              </div>
+            </Section>
+          )}
 
           {/* footer actions */}
           <div className="flex items-center justify-between border-t border-slate-100 pt-4">
@@ -1000,6 +1063,8 @@ function Settings({ config, persistConfig }) {
         <div className="flex flex-col gap-3">
           <Labeled label="MyScoreIQ link"><input value={draft.reportLink} onChange={set("reportLink")} className={`${inputCls} font-mono`} /></Labeled>
           <Labeled label="Signature / who it is from"><input value={draft.signature} onChange={set("signature")} className={inputCls} /></Labeled>
+          <Labeled label="Funder name"><input value={draft.funderName || ""} onChange={set("funderName")} className={inputCls} /></Labeled>
+          <Labeled label="Funder submission email"><input value={draft.funderEmail || ""} onChange={set("funderEmail")} className={`${inputCls} font-mono`} /></Labeled>
         </div>
         <div className="mt-4 flex items-center gap-3">
           <button onClick={save} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"><Send size={15} /> Save</button>

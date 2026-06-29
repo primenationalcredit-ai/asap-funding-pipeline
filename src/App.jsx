@@ -37,6 +37,7 @@ const DAY = 86400000;
 /* ================================================================== */
 const DEFAULT_CONFIG = {
   reportLink: "https://www.myscoreiq.com/industry-score-preferred.aspx?offercode=432143MH",
+  appLink: "https://tinyurl.com/asapfundingapp",
   signature: "Joe at ASAP Funding USA",
   funderName: "Torro",
   funderEmail: "slocsubmissions@torro.com",
@@ -103,6 +104,18 @@ I have kept your funding review open but I have not seen your report come throug
 {{link}}
 
 Either way, I am here when you are ready.
+{{signature}}` },
+  { id: "app_sms", name: "Send application, over $10k (text)", channel: "sms", subject: "",
+    body: `Hi {{first}}, {{opener}}to move forward on funding we need a quick application with your last few bank statements. You can do it all in one place, about 10 minutes: {{applink}}` },
+  { id: "app_email", name: "Send application, over $10k (email)", channel: "email", subject: "Your funding application, {{first}}",
+    body: `Hi {{first}},
+
+{{opener}}To get you funded we need a short application along with your last 4 months of business bank statements. You can complete and sign everything in one place here, it takes about 10 minutes:
+
+{{applink}}
+
+Have your bank statements, a voided check, and your driver's license handy. Reply or text me if anything comes up.
+
 {{signature}}` },
 ];
 
@@ -212,8 +225,32 @@ function fillTokens(text, lead, config) {
     .replaceAll("{{first}}", firstName(lead.name))
     .replaceAll("{{name}}", lead.name || "")
     .replaceAll("{{link}}", config.reportLink || "[set your MyScoreIQ link in Settings]")
+    .replaceAll("{{applink}}", config.appLink || APP_LINK_DEFAULT)
     .replaceAll("{{signature}}", config.signature || "");
 }
+function parseMoney(s) {
+  if (!s) return null;
+  const str = String(s).toLowerCase().replace(/[$,\s]/g, "");
+  const m = str.match(/([\d.]+)\s*(k|m)?/);
+  if (!m) return null;
+  let n = parseFloat(m[1]);
+  if (isNaN(n)) return null;
+  if (m[2] === "k") n *= 1000;
+  if (m[2] === "m") n *= 1000000;
+  return n;
+}
+const APP_LINK_DEFAULT = "https://tinyurl.com/asapfundingapp";
+const APP_SMS_DEFAULT = `Hi {{first}}, {{opener}}to move forward on funding we need a quick application with your last few bank statements. You can do it all in one place, about 10 minutes: {{applink}}`;
+const APP_EMAIL_SUBJECT_DEFAULT = `Your funding application, {{first}}`;
+const APP_EMAIL_DEFAULT = `Hi {{first}},
+
+{{opener}}To get you funded we need a short application along with your last 4 months of business bank statements. You can complete and sign everything in one place here, it takes about 10 minutes:
+
+{{applink}}
+
+Have your bank statements, a voided check, and your driver's license handy. Reply or text me if anything comes up.
+
+{{signature}}`;
 function telDigits(phone) {
   const d = (phone || "").replace(/\D/g, "");
   if (d.length === 10) return "+1" + d;
@@ -1001,6 +1038,21 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
             </div>
           </Section>
 
+          {/* application (over $10k) */}
+          <Section icon={<FileText size={15} />} title="Application (over $10k/mo)">
+            {parseMoney(lead.monthlyRevenue) >= 10000 && (
+              <div className="mb-2 rounded-md bg-indigo-50 px-2.5 py-1.5 text-xs font-medium text-indigo-700 ring-1 ring-inset ring-indigo-200">
+                This client is over $10k/month. Send the full application so they can sign and upload their bank statements.
+              </div>
+            )}
+            <div className="flex flex-wrap gap-2">
+              <button disabled={!lead.phone} onClick={() => openCompose({ lead, channel: "sms", to: lead.phone, subject: "", body: fillTokens((templates.find(t=>t.id==="app_sms")?.body) || APP_SMS_DEFAULT, lead, config), kind: "link" })} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium ${lead.phone ? "bg-emerald-600 text-white hover:bg-emerald-700" : "bg-slate-100 text-slate-300"}`}><MessageSquare size={15} /> Text application</button>
+              <button disabled={!lead.email} onClick={() => openCompose({ lead, channel: "email", to: lead.email, subject: fillTokens((templates.find(t=>t.id==="app_email")?.subject) || APP_EMAIL_SUBJECT_DEFAULT, lead, config), body: fillTokens((templates.find(t=>t.id==="app_email")?.body) || APP_EMAIL_DEFAULT, lead, config), kind: "link" })} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium ${lead.email ? "bg-white text-emerald-700 ring-1 ring-emerald-300 hover:bg-emerald-50" : "bg-slate-100 text-slate-300 ring-1 ring-slate-200"}`}><Mail size={15} /> Email application</button>
+              <CopyButton text={config.appLink || APP_LINK_DEFAULT} label="Copy app link" className="bg-slate-100 text-slate-700 hover:bg-slate-200" />
+            </div>
+            <p className="mt-2 text-xs text-slate-400">The application collects their signed app plus bank statements, voided check, license, and report, all uploaded by the client.</p>
+          </Section>
+
           {/* submit to funder */}
           <Section icon={<Send size={15} />} title={`Submit to ${config.funderName || "funder"}`}>
             <button onClick={submitToFunder} className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-700"><Send size={15} /> Email report to {config.funderName || "funder"}</button>
@@ -1238,7 +1290,8 @@ function Settings({ config, persistConfig }) {
       <div className="rounded-xl border border-slate-200 bg-white p-4">
         <h3 className="mb-3 flex items-center gap-1.5 text-sm font-bold text-slate-800"><SettingsIcon size={15} className="text-emerald-600" /> Core setup</h3>
         <div className="flex flex-col gap-3">
-          <Labeled label="MyScoreIQ link"><input value={draft.reportLink} onChange={set("reportLink")} className={`${inputCls} font-mono`} /></Labeled>
+          <Labeled label="MyScoreIQ link (under $10k path)"><input value={draft.reportLink} onChange={set("reportLink")} className={`${inputCls} font-mono`} /></Labeled>
+          <Labeled label="Application link (over $10k path)"><input value={draft.appLink || ""} onChange={set("appLink")} placeholder="https://tinyurl.com/asapfundingapp" className={`${inputCls} font-mono`} /></Labeled>
           <Labeled label="Signature / who it is from"><input value={draft.signature} onChange={set("signature")} className={inputCls} /></Labeled>
           <Labeled label="Funder name"><input value={draft.funderName || ""} onChange={set("funderName")} className={inputCls} /></Labeled>
           <Labeled label="Funder submission email"><input value={draft.funderEmail || ""} onChange={set("funderEmail")} className={`${inputCls} font-mono`} /></Labeled>

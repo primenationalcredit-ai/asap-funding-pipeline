@@ -663,32 +663,51 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
               <div className="space-y-4 border-t border-emerald-100 px-4 py-3">
                 <div>
                   <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Opener</div>
-                  <p className="mt-1 text-sm text-slate-700">Hi {firstName(lead.name)}, this is {config.signature}. I help business owners get into a position to be approved for funding, usually within 60 to 90 days. Before I tell you what you qualify for, let me ask a few quick questions.</p>
+                  <p className="mt-1 text-sm text-slate-700">
+                    Hi {firstName(lead.name)}, this is {config.signature}. {[
+                      lead.desiredAmount && `from what you sent over I see you're looking for ${lead.desiredAmount}`,
+                      lead.businessType && `for your business in ${lead.businessType}`,
+                      lead.monthlyRevenue && `doing around ${lead.monthlyRevenue} a month`,
+                      lead.timeInBusiness && `and you've been at it ${lead.timeInBusiness}`,
+                    ].filter(Boolean).join(", ")}
+                    {(lead.desiredAmount || lead.businessType || lead.monthlyRevenue || lead.timeInBusiness) ? ". " : ""}
+                    My job is to get you funding as fast as possible and, just as important, the best options for your situation, not just the quickest yes. Let me confirm a couple of things.
+                  </p>
                 </div>
                 <div className="space-y-3">
                   {[
-                    ["What are you looking to use the funding for, and how much?", "desiredAmount", "Amount / use"],
-                    ["Roughly what does the business bring in per month?", "monthlyRevenue", "Monthly revenue"],
-                    ["How long have you been in business?", "timeInBusiness", "Time in business"],
-                    ["Do you have an entity set up, an LLC or corp with an EIN?", "einStatus", "Entity / EIN"],
-                    ["What is the business, and what industry?", "businessType", "Business type"],
-                    ["Ballpark, where is your personal credit right now?", "creditScore", "Credit score"],
-                    ["Best number and time to reach you?", "bestTime", "Best time to call"],
-                  ].map(([q, k, ph]) => (
-                    <div key={k}>
-                      <div className="text-sm font-medium text-slate-700">{q}</div>
-                      <input value={draft[k]} onChange={set(k)} placeholder={ph} className={`${inputCls} mt-1`} />
-                    </div>
-                  ))}
+                    { ask: "How much are you looking for, and what will you use it for?", say: (v) => `You're after ${v}. Is that still the goal?`, k: "desiredAmount", ph: "Amount / use" },
+                    { ask: "Roughly what does the business bring in per month?", say: (v) => `Business is doing about ${v} a month. Still accurate?`, k: "monthlyRevenue", ph: "Monthly revenue" },
+                    { ask: "How long have you been in business?", say: (v) => `In business ${v}.`, k: "timeInBusiness", ph: "Time in business" },
+                    { ask: "Do you have an entity set up, an LLC or corp with an EIN?", say: (v) => `Entity: ${v}.`, k: "einStatus", ph: "Entity / EIN" },
+                    { ask: "What is the business, and what industry?", say: (v) => `Business: ${v}.`, k: "businessType", ph: "Business type" },
+                    { ask: "Ballpark, where is your personal credit right now?", say: (v) => `You estimated credit around ${v}.`, k: "creditScore", ph: "Credit score" },
+                    { ask: "Best number and time to reach you?", say: (v) => `Best time to reach you: ${v}.`, k: "bestTime", ph: "Best time to call" },
+                  ].map(({ ask, say, k, ph }) => {
+                    const have = !!(draft[k] && String(draft[k]).trim());
+                    return (
+                      <div key={k}>
+                        <div className={`flex items-start gap-1.5 text-sm font-medium ${have ? "text-emerald-700" : "text-slate-700"}`}>
+                          {have && <Check size={15} className="mt-0.5 shrink-0" />}
+                          <span>{have ? say(draft[k]) : ask}</span>
+                        </div>
+                        <input value={draft[k]} onChange={set(k)} placeholder={ph} className={`${inputCls} mt-1 ${have ? "border-emerald-200 bg-emerald-50/40" : ""}`} />
+                      </div>
+                    );
+                  })}
+                </div>
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">The soft pull (lead into the link)</div>
+                  <p className="mt-1 text-sm text-slate-700">To see exactly what we can do for you, the next step is a quick soft pull through My Score IQ. That shows us where your FICO scores sit across all three bureaus. It takes about 5 minutes, it does not hurt your score, and it lets me match you to the funders you actually qualify for instead of guessing. I will text and email you the secure link right now while we are on the phone. Use the Text link or Email link buttons above.</p>
                 </div>
                 <div>
                   <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Why us over a bank</div>
                   <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-slate-700">
-                    <li>Banks decline most small businesses, especially under two years in or with thinner credit. We work with a network of funders, so one profile gets matched to the ones you actually fit.</li>
+                    <li>Banks decline most small businesses and can take weeks to months. We move as fast as your file allows and often fund quickly.</li>
+                    <li>We are not stuck inside one bank's box. We shop your profile across a network of funders to land the best offer, not just the first yes.</li>
                     <li>One review with us, not ten separate bank applications that each add a hard inquiry to your report.</li>
-                    <li>We look at the whole picture, your revenue and where the business is headed, not just a single credit score cutoff.</li>
-                    <li>Speed. Bank underwriting can run weeks to months. Our funders often move in days.</li>
-                    <li>If you are not approval ready yet, we map the exact steps and a timeline to get you there, usually 60 to 90 days, instead of a flat no.</li>
+                    <li>We look at your revenue and the whole picture, not just a single credit score cutoff.</li>
+                    <li>The goal is the best amount and terms for your situation, then getting it funded as fast as possible.</li>
                   </ul>
                 </div>
                 <p className="text-xs text-slate-400">Answers save with the Save profile button at the bottom.</p>
@@ -925,7 +944,7 @@ function CadenceEditor({ templates, cadences, persistCadences }) {
 const SCRIPTS = [
   { title: "Cold call open", body: `Hi, is this {NAME}? Great. This is {YOUR NAME} with ASAP Funding USA. I will keep this quick.
 
-We help business owners get into a position to be approved for funding, usually within 60 to 90 days, and a lot of the time sooner. Before I can tell you what you would qualify for, I need to see your full profile.
+We help business owners get funding as fast as possible, while still landing the best options for your situation, not just the quickest yes. Before I can tell you what you would qualify for, I need to see your full profile.
 
 The fastest way to do that is a soft pull through a secure monitoring link. It takes about 5 minutes and does not ding your score. I can text or email it to you right now while we are on the phone. Which is better, text or email?` },
   { title: "Warm / inbound", body: `Hi {NAME}, this is {YOUR NAME} with ASAP Funding USA, returning your inquiry about funding. Thanks for reaching out.
@@ -947,7 +966,7 @@ I am not asking for a password or anything sensitive over the phone. You enter y
 What works better, should I check back with you this afternoon or first thing tomorrow? I will lock that in so this does not slip.` },
   { title: "After they pull it", body: `Perfect, I can see it came through, thank you. Give me a little time to go through everything and match you to the right funding options.
 
-I will call you back today with where you stand and the path to get approval ready. If anything looks like it needs cleanup first, I will lay out the plan and the timeline, usually 60 to 90 days.` },
+I will call you back today with where you stand and your best funding options. If anything needs tightening up first to land a stronger offer, I will lay out exactly what, and how fast we can move.` },
 ];
 function Scripts() {
   return (

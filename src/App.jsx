@@ -129,6 +129,7 @@ function rowToLead(r) {
     linkSentAt: r.link_sent_at ? new Date(r.link_sent_at).getTime() : null,
     lastTouchAt: r.last_touch_at ? new Date(r.last_touch_at).getTime() : null,
     touches: Array.isArray(r.touches) ? r.touches : [],
+    raw: r.raw || null,
   };
 }
 const FIELD_MAP = {
@@ -607,6 +608,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
   const [savedAt, setSavedAt] = useState(0);
   const [showPw, setShowPw] = useState(false);
   const [guideOpen, setGuideOpen] = useState(true);
+  const [rawOpen, setRawOpen] = useState(false);
   const [reportUrl, setReportUrl] = useState(null);
   const [uploading, setUploading] = useState(false);
   useEffect(() => { setDraft(lead); }, [lead.id]); // reload when switching leads
@@ -706,13 +708,13 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
                 <div>
                   <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Opener</div>
                   <p className="mt-1 text-sm text-slate-700">
-                    Hi {firstName(lead.name)}, this is {config.signature}. {[
-                      lead.desiredAmount && `from what you sent over I see you're looking for ${lead.desiredAmount}`,
-                      lead.fundingPurpose && `to put toward ${lead.fundingPurpose}`,
-                      lead.businessName && `for ${lead.businessName}`,
-                      lead.fundingTimeline && `and you need it ${lead.fundingTimeline}`,
+                    Hi {firstName(draft.name)}, this is {config.signature}. {[
+                      draft.desiredAmount && `from what you sent over I see you're looking for ${draft.desiredAmount}`,
+                      draft.fundingPurpose && `to put toward ${draft.fundingPurpose}`,
+                      draft.businessName && `for ${draft.businessName}`,
+                      draft.fundingTimeline && `and you need it ${draft.fundingTimeline}`,
                     ].filter(Boolean).join(", ")}
-                    {(lead.desiredAmount || lead.fundingPurpose || lead.businessName || lead.fundingTimeline) ? ". " : ""}
+                    {(draft.desiredAmount || draft.fundingPurpose || draft.businessName || draft.fundingTimeline) ? ". " : ""}
                     My job is to get you funding as fast as possible and, just as important, the best options for your situation, not just the quickest yes. Let me confirm a couple of things.
                   </p>
                 </div>
@@ -862,6 +864,14 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
                   </div>
                 ))}
               </div>
+            </Section>
+          )}
+
+          {/* imported data from GHL */}
+          {lead.raw && (
+            <Section icon={<FileText size={15} />} title="Imported data (from GHL)">
+              <button onClick={() => setRawOpen((o) => !o)} className="text-sm font-medium text-emerald-700 hover:underline">{rawOpen ? "Hide" : "Show"} exactly what GHL sent</button>
+              {rawOpen && <pre className="mt-2 max-h-64 overflow-auto rounded-lg bg-slate-900 p-3 text-xs leading-relaxed text-slate-100">{JSON.stringify(lead.raw.customData || lead.raw, null, 2)}</pre>}
             </Section>
           )}
 

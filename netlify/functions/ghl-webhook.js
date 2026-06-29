@@ -49,6 +49,7 @@ function normalize(payload) {
     tags: pickFrom([top, cd], ["tags"]),
     // opportunity / qualification fields (from customData mapping)
     opportunity_name: pickFrom([cd, top], ["opportunity_name", "opportunityName"]),
+    business_name: pickFrom([cd, top], ["business_name", "businessName", "company", "company_name"]) || pickFrom([cd, top], ["opportunity_name", "opportunityName"]),
     pipeline_stage: pickFrom([cd, top], ["pipeline_stage", "pipelineStage", "stage"]),
     desired_amount: pickFrom([cd, top], ["desired_amount", "desiredAmount"]),
     estimated_credit_score: pickFrom([cd, top], ["estimated_credit_score", "estimatedCreditScore", "credit_score"]),
@@ -58,7 +59,7 @@ function normalize(payload) {
 }
 
 const DATA_FIELDS = [
-  "name", "phone", "email", "source", "tags", "opportunity_name", "pipeline_stage",
+  "name", "phone", "email", "source", "tags", "opportunity_name", "business_name", "pipeline_stage",
   "desired_amount", "estimated_credit_score", "monthly_revenue", "time_in_business",
 ];
 

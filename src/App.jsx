@@ -16,8 +16,9 @@ const STAGES = [
   { key: "link_sent", label: "Link Sent", tone: "amber" },
   { key: "report_pulled", label: "Report Pulled", tone: "violet" },
   { key: "submitted", label: "Submitted", tone: "indigo" },
-  { key: "in_followup", label: "In Follow-up", tone: "orange" },
+  { key: "pre_approved", label: "Pre-Approved", tone: "teal" },
   { key: "funded", label: "Funded", tone: "emerald" },
+  { key: "referred_cr", label: "Referred to Credit Repair", tone: "fuchsia" },
   { key: "dead", label: "Dead", tone: "rose" },
 ];
 const TONE = {
@@ -26,8 +27,10 @@ const TONE = {
   amber: "bg-amber-100 text-amber-800 ring-amber-200",
   violet: "bg-violet-100 text-violet-800 ring-violet-200",
   indigo: "bg-indigo-100 text-indigo-800 ring-indigo-200",
+  teal: "bg-teal-100 text-teal-800 ring-teal-200",
   orange: "bg-orange-100 text-orange-800 ring-orange-200",
   emerald: "bg-emerald-100 text-emerald-800 ring-emerald-200",
+  fuchsia: "bg-fuchsia-100 text-fuchsia-800 ring-fuchsia-200",
   rose: "bg-rose-100 text-rose-800 ring-rose-200",
 };
 const DAY = 86400000;
@@ -137,7 +140,8 @@ const DEFAULT_CADENCES = {
   ],
   report_pulled: [{ day: 0, templateId: "pulled_sms" }],
   submitted: [],
-  in_followup: [],
+  pre_approved: [],
+  referred_cr: [],
   funded: [],
   dead: [],
 };
@@ -275,9 +279,11 @@ function nextStepFor(lead) {
     case "new": return { text: "Call them. Confirm the 5 questions in the guide, then send the MyScoreIQ link.", tone: "sky" };
     case "called": return { text: "Send the MyScoreIQ link by text or email so they can pull their report.", tone: "amber" };
     case "link_sent": return { text: "Waiting on their report. Follow-ups are running. Chase them or send the next one when due.", tone: "amber" };
-    case "report_pulled": return { text: "Report is in. Review it, then email it to the funder.", tone: "violet" };
-    case "submitted": return { text: "Submitted to the funder. Waiting on approval or decline.", tone: "indigo" };
+    case "report_pulled": return { text: "Report is in. Review it, then email it to Torro for a pre-approval.", tone: "violet" };
+    case "submitted": return { text: "Submitted to Torro. Waiting on their pre-approval.", tone: "indigo" };
+    case "pre_approved": return { text: "Pre-approval is in. Go over it with the client. If they want more funding, send the application.", tone: "teal" };
     case "funded": return { text: "Funded. Nice work.", tone: "emerald" };
+    case "referred_cr": return { text: "Referred to credit repair to get approval ready. Follow up once their credit improves, then restart funding.", tone: "fuchsia" };
     case "dead": return { text: "Closed out. Revive if they come back.", tone: "rose" };
     default: return { text: "", tone: "slate" };
   }
@@ -539,7 +545,7 @@ function Dashboard({ userEmail }) {
   const filtered = useMemo(() => {
     const q = query.toLowerCase();
     return leads.filter((l) => {
-      if (filter === "active" && (l.status === "funded" || l.status === "dead")) return false;
+      if (filter === "active" && (l.status === "funded" || l.status === "dead" || l.status === "referred_cr")) return false;
       if (filter === "needs_link" && l.status !== "new" && l.status !== "called") return false;
       if (filter === "waiting" && l.status !== "link_sent" && l.status !== "in_followup") return false;
       if (!q) return true;
@@ -1038,11 +1044,11 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
             </div>
           </Section>
 
-          {/* application (over $10k) */}
-          <Section icon={<FileText size={15} />} title="Application (over $10k/mo)">
-            {parseMoney(lead.monthlyRevenue) >= 10000 && (
-              <div className="mb-2 rounded-md bg-indigo-50 px-2.5 py-1.5 text-xs font-medium text-indigo-700 ring-1 ring-inset ring-indigo-200">
-                This client is over $10k/month. Send the full application so they can sign and upload their bank statements.
+          {/* application (after pre-approval, if they want more) */}
+          <Section icon={<FileText size={15} />} title="Application (for more funding)">
+            {lead.status === "pre_approved" && (
+              <div className="mb-2 rounded-md bg-teal-50 px-2.5 py-1.5 text-xs font-medium text-teal-700 ring-1 ring-inset ring-teal-200">
+                Pre-approved. If the client wants more than Torro offered, send the full application so they can sign and upload bank statements.
               </div>
             )}
             <div className="flex flex-wrap gap-2">
@@ -1050,15 +1056,15 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
               <button disabled={!lead.email} onClick={() => openCompose({ lead, channel: "email", to: lead.email, subject: fillTokens((templates.find(t=>t.id==="app_email")?.subject) || APP_EMAIL_SUBJECT_DEFAULT, lead, config), body: fillTokens((templates.find(t=>t.id==="app_email")?.body) || APP_EMAIL_DEFAULT, lead, config), kind: "link" })} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium ${lead.email ? "bg-white text-emerald-700 ring-1 ring-emerald-300 hover:bg-emerald-50" : "bg-slate-100 text-slate-300 ring-1 ring-slate-200"}`}><Mail size={15} /> Email application</button>
               <CopyButton text={config.appLink || APP_LINK_DEFAULT} label="Copy app link" className="bg-slate-100 text-slate-700 hover:bg-slate-200" />
             </div>
-            <p className="mt-2 text-xs text-slate-400">The application collects their signed app plus bank statements, voided check, license, and report, all uploaded by the client.</p>
+            <p className="mt-2 text-xs text-slate-400">Send this only after the pre-approval, if the client wants more funding. The client signs and uploads their bank statements, voided check, license, and report in the form.</p>
           </Section>
 
           {/* submit to funder */}
           <Section icon={<Send size={15} />} title={`Submit to ${config.funderName || "funder"}`}>
             <button onClick={submitToFunder} className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-700"><Send size={15} /> Email report to {config.funderName || "funder"}</button>
             <p className="mt-2 text-xs text-slate-500">Opens an email to {config.funderEmail} with the subject set to the client's name. If you uploaded the report, a 7 day download link is included; otherwise attach the PDF yourself.</p>
-            <div className="mt-2 rounded-md bg-amber-50 px-2.5 py-1.5 text-xs text-amber-700 ring-1 ring-inset ring-amber-200">
-              Over $10k/month: also send the application and recent bank statements. Under $10k/month: the report is all they need.
+            <div className="mt-2 rounded-md bg-slate-50 px-2.5 py-1.5 text-xs text-slate-600 ring-1 ring-inset ring-slate-200">
+              Just send Torro the report to start. They send back a pre-approval. The full application only goes out later if the client wants more funding.
             </div>
           </Section>
 

@@ -52,18 +52,18 @@ const DEFAULT_CONFIG = {
 const DEFAULT_TEMPLATES = [
   // --- Voicemail campaign (drive a callback) ---
   { id: "vm_sms", name: "VM: tried to call (text)", channel: "sms", subject: "",
-    body: `Hey {{first}}, it's {{signature}} with ASAP Funding. Just tried calling you. We got your info and I can likely get you pre-approved today. Give me a call back or shoot me a text when you get a sec.` },
+    body: `Hey {{first}}, it's {{signature}}. Just tried calling you. We got your info and I can likely get you pre-approved today. Give me a call back or shoot me a text when you get a sec.` },
   { id: "vm_email", name: "VM: tried to call (email)", channel: "email", subject: "Tried to reach you, {{first}}",
     body: `Hey {{first}},
 
-{{signature}} with ASAP Funding here. I just tried giving you a call. We received your information and I can likely get you pre-approved today.
+{{signature}} here. I just tried giving you a call. We received your information and I can likely get you pre-approved today.
 
 Give me a call back or just reply to this and we will get moving. It only takes a few minutes to see what you qualify for.
 
 Talk soon,
 {{signature}}` },
   { id: "vm_sms2", name: "VM: still trying (text)", channel: "sms", subject: "",
-    body: `Hi {{first}}, {{signature}} again with ASAP Funding. Still trying to reach you about getting you pre-approved. What is a good time to connect? Text me back and I will make it quick.` },
+    body: `Hi {{first}}, {{signature}} again. Still trying to reach you about getting you pre-approved. What is a good time to connect? Text me back and I will make it quick.` },
   { id: "vm_email2", name: "VM: still trying (email)", channel: "email", subject: "Quick one, {{first}}",
     body: `Hi {{first}},
 

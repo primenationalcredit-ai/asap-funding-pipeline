@@ -382,7 +382,7 @@ function cadenceSteps(lead, cadences, templates) {
     const tpl = templates.find((t) => t.id === s.templateId);
     const dueAt = entered + s.day * DAY;
     const done = (lead.touches || []).some(
-      (t) => t.kind === "cadence" && t.stage === lead.status && t.step === i && t.at >= entered
+      (t) => t.kind === "cadence" && t.stage === lead.status && t.step === i && t.at >= entered - 5000
     );
     return { i, day: s.day, template: tpl, channel: tpl?.channel, dueAt, done };
   });
@@ -562,11 +562,23 @@ function Dashboard({ userEmail }) {
   const persistCadences = useCallback(async (next) => { setCadences(next); await saveConfigKey("cadences", next); }, [saveConfigKey]);
 
   const updateLead = useCallback(async (id, patch) => {
-    // changing stage resets the cadence clock for the new stage
-    if ("status" in patch) patch = { ...patch, stageEnteredAt: Date.now(), lastTouchAt: Date.now() };
-    setLeads((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l)));
-    const { error } = await supabase.from("leads").update(leadPatchToRow(patch)).eq("id", id);
-    if (error) setErr(error.message);
+    let finalPatch = patch;
+    setLeads((prev) => prev.map((l) => {
+      if (l.id !== id) return l;
+      const p = { ...patch };
+      // Only reset the cadence clock when the stage genuinely changes.
+      if ("status" in patch && patch.status !== l.status) {
+        p.stageEnteredAt = Date.now();
+        p.lastTouchAt = Date.now();
+      }
+      finalPatch = p;
+      return { ...l, ...p };
+    }));
+    const row = leadPatchToRow(finalPatch);
+    if (Object.keys(row).length) {
+      const { error } = await supabase.from("leads").update(row).eq("id", id);
+      if (error) setErr(error.message);
+    }
   }, []);
 
   const logTouch = useCallback(async (id, channel, kind, extra = {}) => {
@@ -583,7 +595,10 @@ function Dashboard({ userEmail }) {
       computed = patch;
       return { ...l, ...patch };
     }));
-    if (computed) await supabase.from("leads").update(leadPatchToRow(computed)).eq("id", id);
+    if (computed) {
+      const { error } = await supabase.from("leads").update(leadPatchToRow(computed)).eq("id", id);
+      if (error) setErr(error.message);
+    }
   }, []);
 
   const addLead = useCallback(async (data) => {

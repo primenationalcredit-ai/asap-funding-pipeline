@@ -1,13 +1,25 @@
-[build]
-  command = "npm run build"
-  publish = "dist"
-  functions = "netlify/functions"
-
+# Netlify config - replaces your current minimal netlify.toml
+# Keeps Functions auto-detection and adds a daily schedule for autobill-run.
 [functions]
   node_bundler = "esbuild"
 
-# Friendly path for the GHL webhook
-[[redirects]]
-  from = "/api/ghl-webhook"
-  to = "/.netlify/functions/ghl-webhook"
-  status = 200
+# Schedule the daily autobill run.
+# Cron expression: "0 14 * * *" = 14:00 UTC = 9:00 AM US Central (during DST)
+# Off-DST (Nov-Mar) this becomes 8:00 AM Central. If exact 9 AM year-round
+# matters, run at 15:00 UTC and accept 10 AM during DST instead.
+#
+# This block makes Netlify Scheduled Functions invoke autobill-run.js on the
+# given schedule. The function detects scheduled invocations via the
+# x-nf-event=schedule header (already handled in autobill-run.js).
+[[scheduled.functions]]
+  function = "autobill-run"
+  cron = "0 */8 * * *"
+
+# Schedule the daily past-due follow-up scan.
+# "0 13 * * *" = 13:00 UTC = 7:00 AM US Central (during DST), 8:00 AM off-DST.
+# Scans scheduled_charges for past-due payments and creates the day 1 / day 3
+# Account Manager follow-up activities in Pipedrive. Dedupes so it never
+# creates a duplicate for the same charge/offset.
+[[scheduled.functions]]
+  function = "past-due-followups"
+  cron = "0 13 * * *"

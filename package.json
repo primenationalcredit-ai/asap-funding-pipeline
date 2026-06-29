@@ -1,21 +1,11 @@
 {
-  "name": "asap-funding-pipeline",
-  "private": true,
-  "version": "1.0.0",
+  "name": "organic-os",
+  "version": "0.1.0",
   "type": "module",
-  "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
-  },
+  "private": true,
+  "description": "ASAP Organic Revenue OS — data warehouse sync jobs + strategy brain",
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
-    "lucide-react": "^0.383.0",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
-  },
-  "devDependencies": {
-    "@vitejs/plugin-react": "^4.3.1",
-    "vite": "^5.4.0"
+    "googleapis": "^144.0.0"
   }
 }

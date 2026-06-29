@@ -18,8 +18,11 @@ const STAGES = [
   { key: "not_interested", label: "Not Interested", tone: "orange" },
   { key: "report_pulled", label: "Report Pulled", tone: "teal" },
   { key: "submitted", label: "Submitted", tone: "indigo" },
-  { key: "pre_approved", label: "Pre-Approved", tone: "cyan" },
+  { key: "pre_approved", label: "Approved / Offer", tone: "cyan" },
+  { key: "contracts_out", label: "Contracts Out", tone: "lime" },
   { key: "funded", label: "Funded", tone: "emerald" },
+  { key: "commission_paid", label: "Commission Paid", tone: "yellow" },
+  { key: "declined", label: "Declined", tone: "pink" },
   { key: "credit_repair", label: "Credit Repair", tone: "fuchsia" },
   { key: "dead", label: "Dead", tone: "rose" },
 ];
@@ -31,9 +34,12 @@ const TONE = {
   indigo: "bg-indigo-100 text-indigo-800 ring-indigo-200",
   teal: "bg-teal-100 text-teal-800 ring-teal-200",
   cyan: "bg-cyan-100 text-cyan-800 ring-cyan-200",
+  lime: "bg-lime-100 text-lime-800 ring-lime-200",
   orange: "bg-orange-100 text-orange-800 ring-orange-200",
   emerald: "bg-emerald-100 text-emerald-800 ring-emerald-200",
+  yellow: "bg-yellow-100 text-yellow-800 ring-yellow-200",
   fuchsia: "bg-fuchsia-100 text-fuchsia-800 ring-fuchsia-200",
+  pink: "bg-pink-100 text-pink-800 ring-pink-200",
   rose: "bg-rose-100 text-rose-800 ring-rose-200",
 };
 const DAY = 86400000;
@@ -212,8 +218,11 @@ const DEFAULT_CADENCES = {
   report_pulled: [{ day: 0, templateId: "pulled_sms" }],
   submitted: [],
   pre_approved: [],
-  credit_repair: [],
+  contracts_out: [],
   funded: [],
+  commission_paid: [],
+  declined: [],
+  credit_repair: [],
   dead: [],
 };
 
@@ -247,6 +256,11 @@ function rowToLead(r) {
     myscoreiqPassword: r.myscoreiq_password || "",
     ssnLast4: r.ssn_last4 || "",
     reportPath: r.report_path || "",
+    fundedAmount: r.funded_amount != null ? r.funded_amount : "",
+    commissionAmount: r.commission_amount != null ? r.commission_amount : "",
+    declineReason: r.decline_reason || "",
+    fundedAt: r.funded_at ? new Date(r.funded_at).getTime() : null,
+    commissionPaidAt: r.commission_paid_at ? new Date(r.commission_paid_at).getTime() : null,
     reportUploadedAt: r.report_uploaded_at ? new Date(r.report_uploaded_at).getTime() : null,
     createdAt: r.created_at ? new Date(r.created_at).getTime() : Date.now(),
     stageEnteredAt: r.stage_entered_at ? new Date(r.stage_entered_at).getTime() : (r.created_at ? new Date(r.created_at).getTime() : Date.now()),
@@ -267,6 +281,7 @@ const FIELD_MAP = {
   bestTime: "best_time", nextStep: "next_step",
   myscoreiqUsername: "myscoreiq_username", myscoreiqPassword: "myscoreiq_password", ssnLast4: "ssn_last4",
   reportPath: "report_path",
+  fundedAmount: "funded_amount", commissionAmount: "commission_amount", declineReason: "decline_reason",
 };
 function leadPatchToRow(patch) {
   const row = {};
@@ -276,6 +291,8 @@ function leadPatchToRow(patch) {
     else if (k === "lastTouchAt") row.last_touch_at = v ? new Date(v).toISOString() : null;
     else if (k === "stageEnteredAt") row.stage_entered_at = v ? new Date(v).toISOString() : null;
     else if (k === "reportUploadedAt") row.report_uploaded_at = v ? new Date(v).toISOString() : null;
+    else if (k === "fundedAt") row.funded_at = v ? new Date(v).toISOString() : null;
+    else if (k === "commissionPaidAt") row.commission_paid_at = v ? new Date(v).toISOString() : null;
   }
   return row;
 }
@@ -354,8 +371,11 @@ function nextStepFor(lead) {
     case "not_interested": return { text: "Parked. Light check-ins go out in case their timing changes.", tone: "orange" };
     case "report_pulled": return { text: "Report is in. Review it, then email it to Torro for a pre-approval.", tone: "teal" };
     case "submitted": return { text: "Submitted to Torro. Waiting on their pre-approval.", tone: "indigo" };
-    case "pre_approved": return { text: "Pre-approval is in. Review it with the client. If they want more, send the application.", tone: "cyan" };
-    case "funded": return { text: "Funded. Nice work.", tone: "emerald" };
+    case "pre_approved": return { text: "Torro approved them. Review the offer with the client. When they accept, send contracts.", tone: "cyan" };
+    case "contracts_out": return { text: "Contracts are out for signature. Once signed and funded, mark it funded.", tone: "lime" };
+    case "funded": return { text: "Funded. Enter the funded amount and your commission, then mark commission paid when Torro pays you.", tone: "emerald" };
+    case "commission_paid": return { text: "Paid in full. This one's done.", tone: "yellow" };
+    case "declined": return { text: "Torro declined. Note the reason, then send them to Credit Repair to get approval-ready, or revisit later.", tone: "pink" };
     case "credit_repair": return { text: "Sent to credit repair to get approval ready. Follow up once their credit improves.", tone: "fuchsia" };
     case "dead": return { text: "Closed out. Revive if they come back.", tone: "rose" };
     default: return { text: "", tone: "slate" };
@@ -633,7 +653,7 @@ function Dashboard({ userEmail }) {
   const filtered = useMemo(() => {
     const q = query.toLowerCase();
     return leads.filter((l) => {
-      if (filter === "active" && ["funded", "dead", "credit_repair", "not_interested"].includes(l.status)) return false;
+      if (filter === "active" && ["funded", "commission_paid", "dead", "credit_repair", "not_interested"].includes(l.status)) return false;
       if (filter !== "active" && filter !== "all" && l.status !== filter) return false;
       if (!q) return true;
       return (l.name + l.phone + l.email + l.notes + l.source + l.businessName + l.opportunityName + l.desiredAmount + l.monthlyRevenue + l.creditScore + l.timeInBusiness + l.tags).toLowerCase().includes(q);
@@ -666,7 +686,7 @@ function Dashboard({ userEmail }) {
           </div>
           <div className="flex items-center gap-2">
           <nav className="flex gap-1 rounded-lg bg-emerald-950/40 p-1 text-sm">
-            {[["pipeline", "Pipeline"], ["messaging", "Messaging"], ["scripts", "Scripts"], ["settings", "Settings"]].map(([k, label]) => (
+            {[["pipeline", "Pipeline"], ["commissions", "Commissions"], ["messaging", "Messaging"], ["scripts", "Scripts"], ["settings", "Settings"]].map(([k, label]) => (
               <button key={k} onClick={() => setTab(k)} className={`rounded-md px-3 py-1.5 font-medium transition ${tab === k ? "bg-white text-emerald-900" : "text-emerald-100 hover:bg-emerald-800"}`}>{label}</button>
             ))}
           </nav>
@@ -683,6 +703,7 @@ function Dashboard({ userEmail }) {
           addLead={addLead} onOpen={setProfileId} logTouch={logTouch} updateLead={updateLead} cadences={cadences} templates={templates} openCompose={setCompose} />
       )}
       {tab === "messaging" && <Messaging templates={templates} persistTemplates={persistTemplates} cadences={cadences} persistCadences={persistCadences} />}
+      {tab === "commissions" && <Commissions leads={leads} onOpen={setProfileId} />}
       {tab === "scripts" && <Scripts />}
       {tab === "settings" && <Settings config={config} persistConfig={persistConfig} />}
 
@@ -886,7 +907,7 @@ function ComposeModal({ compose, onClose, onSent }) {
 /* ================================================================== */
 function Profile({ lead, config, templates, cadences, onClose, updateLead, removeLead, logTouch, openCompose, userEmail }) {
   const EDITABLE = ["name", "phone", "email", "notes", "desiredAmount", "fundingPurpose", "fundingTimeline", "monthlyRevenue", "creditScore", "timeInBusiness",
-    "businessName", "businessType", "einStatus", "bestTime", "nextStep", "myscoreiqUsername", "myscoreiqPassword", "ssnLast4"];
+    "businessName", "businessType", "einStatus", "bestTime", "nextStep", "myscoreiqUsername", "myscoreiqPassword", "ssnLast4", "fundedAmount", "commissionAmount", "declineReason"];
   const [draft, setDraft] = useState(lead);
   const [savedAt, setSavedAt] = useState(0);
   const [showPw, setShowPw] = useState(false);
@@ -896,7 +917,8 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
   const [uploading, setUploading] = useState(false);
   const [callNote, setCallNote] = useState("");
   const [spoke, setSpoke] = useState(false);
-  useEffect(() => { setDraft(lead); setGuideOpen(lead.status === "new"); setSpoke(false); }, [lead.id]); // reload when switching leads
+  const [declineOpen, setDeclineOpen] = useState(false);
+  useEffect(() => { setDraft(lead); setGuideOpen(lead.status === "new"); setSpoke(false); setDeclineOpen(false); }, [lead.id]); // reload when switching leads
   const set = (k) => (e) => setDraft({ ...draft, [k]: e.target.value });
 
   // Autosave: persist changed fields shortly after you stop typing
@@ -1169,6 +1191,70 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
             </div>
           </Section>
 
+          {/* outcome from Torro (after submitted) */}
+          {["submitted", "pre_approved", "contracts_out", "funded", "commission_paid", "declined"].includes(lead.status) && (
+            <Section icon={<ListChecks size={15} />} title="Outcome from Torro">
+              {lead.status === "submitted" && (
+                !declineOpen ? (
+                  <div className="flex flex-wrap gap-2">
+                    <button onClick={() => updateLead(lead.id, { status: "pre_approved" })} className="rounded-lg bg-cyan-600 px-3 py-2 text-sm font-semibold text-white hover:bg-cyan-700">Approved</button>
+                    <button onClick={() => setDeclineOpen(true)} className="rounded-lg bg-pink-600 px-3 py-2 text-sm font-semibold text-white hover:bg-pink-700">Declined</button>
+                  </div>
+                ) : (
+                  <div>
+                    <div className="mb-1.5 text-xs font-medium text-slate-500">Why was it declined?</div>
+                    <select value={draft.declineReason} onChange={set("declineReason")} className={`${inputCls} mb-2`}>
+                      <option value="">Pick a reason</option>
+                      <option value="Credit too low">Credit too low</option>
+                      <option value="Not enough time in business">Not enough time in business</option>
+                      <option value="Revenue too low">Revenue too low</option>
+                      <option value="Too many existing positions">Too many existing positions</option>
+                      <option value="Industry restricted">Industry restricted</option>
+                      <option value="Other">Other (type below)</option>
+                    </select>
+                    <input value={draft.declineReason} onChange={set("declineReason")} placeholder="Reason / notes" className={`${inputCls} mb-2`} />
+                    <div className="flex flex-wrap gap-2">
+                      <button onClick={() => { updateLead(lead.id, { status: "declined", declineReason: draft.declineReason }); setDeclineOpen(false); }} className="rounded-lg bg-pink-600 px-3 py-2 text-sm font-semibold text-white hover:bg-pink-700">Save as declined</button>
+                      <button onClick={() => setDeclineOpen(false)} className="rounded-lg px-3 py-2 text-sm font-medium text-slate-500 hover:bg-slate-100">Cancel</button>
+                    </div>
+                  </div>
+                )
+              )}
+
+              {lead.status === "declined" && (
+                <div>
+                  <div className="mb-2 rounded-md bg-pink-50 px-2.5 py-1.5 text-xs font-medium text-pink-700 ring-1 ring-inset ring-pink-200">
+                    Declined{lead.declineReason ? `: ${lead.declineReason}` : ""}. Work them toward approval-ready.
+                  </div>
+                  <Labeled label="Decline reason"><input value={draft.declineReason} onChange={set("declineReason")} className={inputCls} /></Labeled>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <button onClick={() => updateLead(lead.id, { status: "credit_repair" })} className="rounded-lg bg-fuchsia-600 px-3 py-2 text-sm font-semibold text-white hover:bg-fuchsia-700">Send to Credit Repair</button>
+                    <button onClick={() => updateLead(lead.id, { status: "submitted" })} className="rounded-lg bg-white px-3 py-2 text-sm font-medium text-slate-600 ring-1 ring-inset ring-slate-200 hover:bg-slate-50">Resubmit to Torro</button>
+                  </div>
+                </div>
+              )}
+
+              {["pre_approved", "contracts_out", "funded", "commission_paid"].includes(lead.status) && (
+                <div>
+                  <div className="mb-2 flex items-center gap-1.5 rounded-md bg-cyan-50 px-2.5 py-1.5 text-xs font-medium text-cyan-700 ring-1 ring-inset ring-cyan-200">
+                    <Check size={13} /> Approved by Torro
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Labeled label="Funded amount"><input value={draft.fundedAmount} onChange={set("fundedAmount")} placeholder="$" className={inputCls} /></Labeled>
+                    <Labeled label="My commission"><input value={draft.commissionAmount} onChange={set("commissionAmount")} placeholder="$" className={inputCls} /></Labeled>
+                  </div>
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    {lead.status === "pre_approved" && <button onClick={() => updateLead(lead.id, { status: "contracts_out" })} className="rounded-lg bg-lime-600 px-3 py-2 text-sm font-semibold text-white hover:bg-lime-700">Client accepted, contracts out</button>}
+                    {lead.status === "contracts_out" && <button onClick={() => updateLead(lead.id, { status: "funded", fundedAt: Date.now() })} className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700">Mark funded</button>}
+                    {lead.status === "funded" && <button onClick={() => updateLead(lead.id, { status: "commission_paid", commissionPaidAt: Date.now() })} className="rounded-lg bg-yellow-500 px-3 py-2 text-sm font-semibold text-white hover:bg-yellow-600">Mark commission paid</button>}
+                    {lead.status === "commission_paid" && <span className="inline-flex items-center gap-1 text-sm font-semibold text-yellow-700"><Check size={15} /> Commission paid{lead.commissionPaidAt ? ` ${fmtDate(lead.commissionPaidAt)}` : ""}</span>}
+                  </div>
+                  {lead.fundedAt && <p className="mt-2 text-xs text-slate-400">Funded {fmtDate(lead.fundedAt)}.</p>}
+                </div>
+              )}
+            </Section>
+          )}
+
           {/* activity */}
           {(lead.touches || []).length > 0 && (
             <Section icon={<Clock size={15} />} title="Activity">
@@ -1410,6 +1496,72 @@ function Settings({ config, persistConfig }) {
       </div>
       <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-500">
         Build your messages and per-stage follow-up sequences under the <span className="font-semibold text-slate-700">Messaging</span> tab.
+      </div>
+    </div>
+  );
+}
+
+/* ================================================================== */
+/*  Commissions                                                       */
+/* ================================================================== */
+const money = (n) => "$" + (Number(n) || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
+function Commissions({ leads, onOpen }) {
+  const deals = leads.filter((l) => ["funded", "commission_paid"].includes(l.status))
+    .sort((a, b) => (b.fundedAt || b.lastTouchAt || 0) - (a.fundedAt || a.lastTouchAt || 0));
+  const num = (v) => Number(v) || 0;
+  const totalFunded = deals.reduce((s, l) => s + num(l.fundedAmount), 0);
+  const totalCommission = deals.reduce((s, l) => s + num(l.commissionAmount), 0);
+  const paid = deals.filter((l) => l.status === "commission_paid").reduce((s, l) => s + num(l.commissionAmount), 0);
+  const pending = deals.filter((l) => l.status === "funded").reduce((s, l) => s + num(l.commissionAmount), 0);
+  // deals approved but not yet funded, for a pipeline-value glance
+  const inFlight = leads.filter((l) => ["pre_approved", "contracts_out"].includes(l.status));
+  const inFlightCommission = inFlight.reduce((s, l) => s + num(l.commissionAmount), 0);
+
+  const Card = ({ label, value, tone }) => (
+    <div className={`rounded-xl border p-4 ${tone}`}>
+      <div className="text-xs font-semibold uppercase tracking-wide opacity-70">{label}</div>
+      <div className="mt-1 text-2xl font-bold">{value}</div>
+    </div>
+  );
+
+  return (
+    <div className="mt-4 flex flex-col gap-4">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Card label="Commission earned" value={money(totalCommission)} tone="border-emerald-200 bg-emerald-50 text-emerald-900" />
+        <Card label="Paid out" value={money(paid)} tone="border-yellow-200 bg-yellow-50 text-yellow-900" />
+        <Card label="Funded, awaiting payout" value={money(pending)} tone="border-cyan-200 bg-cyan-50 text-cyan-900" />
+        <Card label="In progress (approved)" value={money(inFlightCommission)} tone="border-slate-200 bg-slate-50 text-slate-800" />
+      </div>
+      <div className="rounded-xl border border-slate-200 bg-white p-1">
+        <div className="px-3 py-2 text-sm font-bold text-slate-800">Funded deals ({deals.length}) {totalFunded > 0 && <span className="font-normal text-slate-400">| {money(totalFunded)} funded volume</span>}</div>
+        {deals.length === 0 ? (
+          <p className="px-3 py-6 text-center text-sm text-slate-400">No funded deals yet. They show up here once you mark a client funded.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-100 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
+                  <th className="px-3 py-2">Client</th>
+                  <th className="px-3 py-2">Funded</th>
+                  <th className="px-3 py-2">Commission</th>
+                  <th className="px-3 py-2">Status</th>
+                  <th className="px-3 py-2">Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                {deals.map((l) => (
+                  <tr key={l.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50">
+                    <td className="px-3 py-2"><button onClick={() => onOpen(l.id)} className="font-semibold text-slate-700 hover:text-emerald-700">{l.name || "Unnamed"}</button>{l.businessName && <div className="text-xs text-slate-400">{l.businessName}</div>}</td>
+                    <td className="px-3 py-2 font-mono">{l.fundedAmount ? money(l.fundedAmount) : "-"}</td>
+                    <td className="px-3 py-2 font-mono font-semibold text-emerald-700">{l.commissionAmount ? money(l.commissionAmount) : "-"}</td>
+                    <td className="px-3 py-2"><StagePill status={l.status} /></td>
+                    <td className="px-3 py-2 text-xs text-slate-500">{fmtDate(l.commissionPaidAt || l.fundedAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );

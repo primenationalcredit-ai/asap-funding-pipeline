@@ -12,13 +12,15 @@ import { supabase } from "./supabaseClient.js";
 /* ================================================================== */
 const STAGES = [
   { key: "new", label: "New", tone: "slate" },
-  { key: "called", label: "Called", tone: "sky" },
-  { key: "link_sent", label: "Link Sent", tone: "amber" },
-  { key: "report_pulled", label: "Report Pulled", tone: "violet" },
+  { key: "voicemail", label: "Left Voicemail", tone: "amber" },
+  { key: "interested", label: "Interested", tone: "sky" },
+  { key: "callback", label: "Call Back", tone: "violet" },
+  { key: "not_interested", label: "Not Interested", tone: "orange" },
+  { key: "report_pulled", label: "Report Pulled", tone: "teal" },
   { key: "submitted", label: "Submitted", tone: "indigo" },
-  { key: "pre_approved", label: "Pre-Approved", tone: "teal" },
+  { key: "pre_approved", label: "Pre-Approved", tone: "cyan" },
   { key: "funded", label: "Funded", tone: "emerald" },
-  { key: "referred_cr", label: "Referred to Credit Repair", tone: "fuchsia" },
+  { key: "credit_repair", label: "Credit Repair", tone: "fuchsia" },
   { key: "dead", label: "Dead", tone: "rose" },
 ];
 const TONE = {
@@ -28,6 +30,7 @@ const TONE = {
   violet: "bg-violet-100 text-violet-800 ring-violet-200",
   indigo: "bg-indigo-100 text-indigo-800 ring-indigo-200",
   teal: "bg-teal-100 text-teal-800 ring-teal-200",
+  cyan: "bg-cyan-100 text-cyan-800 ring-cyan-200",
   orange: "bg-orange-100 text-orange-800 ring-orange-200",
   emerald: "bg-emerald-100 text-emerald-800 ring-emerald-200",
   fuchsia: "bg-fuchsia-100 text-fuchsia-800 ring-fuchsia-200",
@@ -47,73 +50,123 @@ const DEFAULT_CONFIG = {
 };
 
 const DEFAULT_TEMPLATES = [
-  { id: "first_sms", name: "Send link (text)", channel: "sms", subject: "",
-    body: `Hi {{first}}, it's {{signature}}. {{opener}}Here is the secure link to pull your report so I can review your funding options: {{link}} Takes about 5 min and does not hurt your score. Text me once it is done.` },
-  { id: "first_email", name: "Send link (email)", channel: "email", subject: "Your funding review, {{first}}",
-    body: `Hi {{first}},
+  // --- Voicemail campaign (drive a callback) ---
+  { id: "vm_sms", name: "VM: tried to call (text)", channel: "sms", subject: "",
+    body: `Hey {{first}}, it's {{signature}} with ASAP Funding. Just tried calling you. We got your info and I can likely get you pre-approved today. Give me a call back or shoot me a text when you get a sec.` },
+  { id: "vm_email", name: "VM: tried to call (email)", channel: "email", subject: "Tried to reach you, {{first}}",
+    body: `Hey {{first}},
 
-{{opener}}The next step to get you funding is quick. Pull your report through the secure link below so I can review your full profile and match you with the right options.
+{{signature}} with ASAP Funding here. I just tried giving you a call. We received your information and I can likely get you pre-approved today.
 
-{{link}}
-
-It takes about 5 minutes and it does not hurt your score. Once it is done, reply here or text me and I will get to work on your options.
+Give me a call back or just reply to this and we will get moving. It only takes a few minutes to see what you qualify for.
 
 Talk soon,
 {{signature}}` },
-  { id: "fu_sms", name: "Nudge (text)", channel: "sms", subject: "",
-    body: `Hi {{first}}, {{signature}} here. Still want to get your funding options in front of you. Pull your report when you get a sec: {{link}}` },
-  { id: "fu_email", name: "Nudge (email)", channel: "email", subject: "Following up on your funding, {{first}}",
+  { id: "vm_sms2", name: "VM: still trying (text)", channel: "sms", subject: "",
+    body: `Hi {{first}}, {{signature}} again with ASAP Funding. Still trying to reach you about getting you pre-approved. What is a good time to connect? Text me back and I will make it quick.` },
+  { id: "vm_email2", name: "VM: still trying (email)", channel: "email", subject: "Quick one, {{first}}",
     body: `Hi {{first}},
 
-Circling back. I still have your funding review open, I just need your report pulled first. Here is the secure link again:
+Following up since I have not been able to reach you. I can still get you looked at for funding and likely pre-approved fast. A quick call or text back is all it takes.
+
+Reply here or call me whenever works.
+
+{{signature}}` },
+
+  // --- Interested campaign (engaged, get the report and pre-approval) ---
+  { id: "first_sms", name: "Interested: send link (text)", channel: "sms", subject: "",
+    body: `Hi {{first}}, it's {{signature}}. Great talking. Here is the secure link to pull your report so I can get you pre-approved: {{link}} About 5 min, no hit to your score. Text me when it is done.` },
+  { id: "first_email", name: "Interested: send link (email)", channel: "email", subject: "Your pre-approval, {{first}}",
+    body: `Hi {{first}},
+
+Great talking. The next step to get you pre-approved is quick. Pull your report through the secure link below so I can review your profile and line up your best options.
 
 {{link}}
 
-About 5 minutes, no hit to your score. Reply or text once it is done and I will take it from there.
+It takes about 5 minutes and it does not hurt your score. Once it is done, reply here or text me and I will get to work.
 
+Talk soon,
 {{signature}}` },
-  { id: "pulled_sms", name: "Got it, reviewing (text)", channel: "sms", subject: "",
-    body: `Got your report, {{first}}, thank you. Reviewing your funding options now and I will be back to you today. {{signature}}` },
-  { id: "val_speed_email", name: "Value: faster than the bank (email)", channel: "email", subject: "Why owners come to us instead of the bank, {{first}}",
+  { id: "fu_sms", name: "Interested: nudge (text)", channel: "sms", subject: "",
+    body: `Hi {{first}}, {{signature}} here. Still want to get you pre-approved. Pull your report when you get a sec: {{link}}` },
+  { id: "fu_email", name: "Interested: nudge (email)", channel: "email", subject: "Following up on your pre-approval, {{first}}",
     body: `Hi {{first}},
 
-Quick note while you have the link. Banks decline most small businesses and can take weeks to months to give an answer. We work differently. We shop your profile across a network of funders, so instead of one bank's yes or no, you get matched to the options you actually fit, and we move as fast as your file allows.
+Circling back. I just need your report pulled to get you pre-approved. Here is the secure link again:
 
-When you get a sec, pull your report here so I can see what you qualify for:
+{{link}}
+
+About 5 minutes, no hit to your score. Reply or text once it is done.
+
+{{signature}}` },
+  { id: "val_speed_email", name: "Interested value: faster than the bank (email)", channel: "email", subject: "Why owners come to us instead of the bank, {{first}}",
+    body: `Hi {{first}},
+
+Quick note while you have the link. Banks decline most small businesses and can take weeks to months. We work differently. We shop your profile across a network of funders, so instead of one bank's yes or no, you get matched to the options you actually fit, and we move as fast as your file allows.
+
+Pull your report here so I can see what you qualify for:
 {{link}}
 
 About 5 minutes, no hit to your score.
 
 {{signature}}` },
-  { id: "val_options_sms", name: "Value: best terms (text)", channel: "sms", subject: "",
-    body: `{{first}}, the reason we beat the bank for most owners: we shop your file across multiple funders for the best terms, not just one desk's answer. Pull your report when you can and I will line up your options: {{link}}` },
-  { id: "val_options_email", name: "Value: we shop your file (email)", channel: "email", subject: "Getting you the best terms, not just the first yes",
+  { id: "val_options_sms", name: "Interested value: best terms (text)", channel: "sms", subject: "",
+    body: `{{first}}, the reason we beat the bank for most owners: we shop your file across multiple funders for the best terms, not just one desk's answer. Pull your report and I will line up your options: {{link}}` },
+  { id: "val_options_email", name: "Interested value: we shop your file (email)", channel: "email", subject: "Getting you the best terms, not just the first yes",
     body: `Hi {{first}},
 
-One thing that sets us apart. A bank can only offer you the bank's box. We take your profile to a network of funders and bring back the best fit on amount and terms, then we move quickly to get it funded.
+A bank can only offer you the bank's box. We take your profile to a network of funders and bring back the best fit on amount and terms, then move quickly to get it funded.
 
-To do that I just need your report. Here is the link again:
+To do that I just need your report:
 {{link}}
 
 Takes about 5 minutes.
 
 {{signature}}` },
-  { id: "val_noimpact_sms", name: "Value: soft pull reminder (text)", channel: "sms", subject: "",
-    body: `{{first}}, quick reminder, the link is a soft pull through My Score IQ, about 5 minutes, no hit to your score. It is the only thing I need to show you real numbers: {{link}}` },
-  { id: "lastcall_email", name: "Last call (email)", channel: "email", subject: "Closing your file, {{first}}?",
+  { id: "val_noimpact_sms", name: "Interested value: soft pull reminder (text)", channel: "sms", subject: "",
+    body: `{{first}}, quick reminder, the link is a soft pull through My Score IQ, about 5 minutes, no hit to your score. It is the only thing I need to get you pre-approved: {{link}}` },
+  { id: "lastcall_email", name: "Interested: last call (email)", channel: "email", subject: "Closing your file, {{first}}?",
     body: `Hi {{first}},
 
-I have kept your funding review open but I have not seen your report come through yet. If the timing is not right, no problem, just let me know and I will pause. If you still want me to find your best options, it is a quick 5 minute pull here:
+I have kept your file open but have not seen your report come through. If the timing is not right, no problem, just let me know. If you still want to get pre-approved, it is a quick 5 minute pull here:
 {{link}}
 
 Either way, I am here when you are ready.
 {{signature}}` },
-  { id: "app_sms", name: "Send application, over $10k (text)", channel: "sms", subject: "",
-    body: `Hi {{first}}, {{opener}}to move forward on funding we need a quick application with your last few bank statements. You can do it all in one place, about 10 minutes: {{applink}}` },
-  { id: "app_email", name: "Send application, over $10k (email)", channel: "email", subject: "Your funding application, {{first}}",
+
+  // --- Call back campaign (you spoke, agreed to reconnect) ---
+  { id: "cb_sms", name: "Call back: reconnect (text)", channel: "sms", subject: "",
+    body: `Hi {{first}}, {{signature}} here, circling back like we planned. When is a good time to connect so I can get you pre-approved? Text me a time that works.` },
+  { id: "cb_email", name: "Call back: reconnect (email)", channel: "email", subject: "Picking back up, {{first}}",
     body: `Hi {{first}},
 
-{{opener}}To get you funded we need a short application along with your last 4 months of business bank statements. You can complete and sign everything in one place here, it takes about 10 minutes:
+Following up like we talked about. I can get you pre-approved quickly, I just need a few minutes with you. What time works best to connect this week?
+
+Reply here or text me and we will lock it in.
+
+{{signature}}` },
+
+  // --- Not interested (light, long-term) ---
+  { id: "ni_email", name: "Not interested: keep in touch (email)", channel: "email", subject: "Here when you need us, {{first}}",
+    body: `Hi {{first}},
+
+No pressure at all. If your situation changes and you want funding, we move fast and shop for the best terms across a network of funders, not just one bank's answer.
+
+I will keep your info on file. Reach out anytime and we will pick right back up.
+
+{{signature}}` },
+
+  // --- After report pulled ---
+  { id: "pulled_sms", name: "Got it, reviewing (text)", channel: "sms", subject: "",
+    body: `Got your report, {{first}}, thank you. Reviewing now to get you pre-approved and I will be back to you today. {{signature}}` },
+
+  // --- Application (after pre-approval, for more) ---
+  { id: "app_sms", name: "Application: more funding (text)", channel: "sms", subject: "",
+    body: `Hi {{first}}, to go for more funding we need a quick application with your last few bank statements. You can do it all in one place, about 10 minutes: {{applink}}` },
+  { id: "app_email", name: "Application: more funding (email)", channel: "email", subject: "Your funding application, {{first}}",
+    body: `Hi {{first}},
+
+To go for more funding we need a short application along with your last 4 months of business bank statements. You can complete and sign everything in one place here, about 10 minutes:
 
 {{applink}}
 
@@ -125,23 +178,41 @@ Have your bank statements, a voided check, and your driver's license handy. Repl
 // Per stage: ordered steps. day = days after entering that stage.
 const DEFAULT_CADENCES = {
   new: [],
-  called: [],
-  link_sent: [
+  voicemail: [
+    { day: 0, templateId: "vm_sms" },
+    { day: 0, templateId: "vm_email" },
+    { day: 2, templateId: "vm_sms2" },
+    { day: 5, templateId: "vm_email2" },
+    { day: 9, templateId: "vm_sms2" },
+    { day: 16, templateId: "vm_email2" },
+    { day: 30, templateId: "vm_sms2" },
+  ],
+  interested: [
     { day: 0, templateId: "first_sms" },
     { day: 0, templateId: "first_email" },
     { day: 1, templateId: "fu_sms" },
-    { day: 2, templateId: "val_speed_email" },
-    { day: 4, templateId: "val_noimpact_sms" },
-    { day: 7, templateId: "val_options_email" },
-    { day: 11, templateId: "fu_sms" },
-    { day: 16, templateId: "val_options_sms" },
-    { day: 23, templateId: "fu_email" },
+    { day: 3, templateId: "val_speed_email" },
+    { day: 6, templateId: "val_noimpact_sms" },
+    { day: 10, templateId: "val_options_email" },
+    { day: 16, templateId: "fu_sms" },
+    { day: 23, templateId: "val_options_sms" },
     { day: 30, templateId: "lastcall_email" },
+  ],
+  callback: [
+    { day: 0, templateId: "cb_sms" },
+    { day: 2, templateId: "cb_email" },
+    { day: 5, templateId: "cb_sms" },
+    { day: 12, templateId: "cb_email" },
+    { day: 25, templateId: "cb_sms" },
+  ],
+  not_interested: [
+    { day: 10, templateId: "ni_email" },
+    { day: 30, templateId: "ni_email" },
   ],
   report_pulled: [{ day: 0, templateId: "pulled_sms" }],
   submitted: [],
   pre_approved: [],
-  referred_cr: [],
+  credit_repair: [],
   funded: [],
   dead: [],
 };
@@ -276,14 +347,16 @@ function fmtDateTime(ts) {
 }
 function nextStepFor(lead) {
   switch (lead.status) {
-    case "new": return { text: "Call them. Confirm the 5 questions in the guide, then send the MyScoreIQ link.", tone: "sky" };
-    case "called": return { text: "Send the MyScoreIQ link by text or email so they can pull their report.", tone: "amber" };
-    case "link_sent": return { text: "Waiting on their report. Follow-ups are running. Chase them or send the next one when due.", tone: "amber" };
-    case "report_pulled": return { text: "Report is in. Review it, then email it to Torro for a pre-approval.", tone: "violet" };
+    case "new": return { text: "Call them. Log what happens below and the right campaign starts on its own.", tone: "slate" };
+    case "voicemail": return { text: "Couldn't reach them. Callback texts and emails are going out. Try them again, or send the next when due.", tone: "amber" };
+    case "interested": return { text: "They're in. Send the MyScoreIQ link so they can pull their report and get pre-approved.", tone: "sky" };
+    case "callback": return { text: "Reconnect when you agreed. Reminder messages are running until you reach them.", tone: "violet" };
+    case "not_interested": return { text: "Parked. Light check-ins go out in case their timing changes.", tone: "orange" };
+    case "report_pulled": return { text: "Report is in. Review it, then email it to Torro for a pre-approval.", tone: "teal" };
     case "submitted": return { text: "Submitted to Torro. Waiting on their pre-approval.", tone: "indigo" };
-    case "pre_approved": return { text: "Pre-approval is in. Go over it with the client. If they want more funding, send the application.", tone: "teal" };
+    case "pre_approved": return { text: "Pre-approval is in. Review it with the client. If they want more, send the application.", tone: "cyan" };
     case "funded": return { text: "Funded. Nice work.", tone: "emerald" };
-    case "referred_cr": return { text: "Referred to credit repair to get approval ready. Follow up once their credit improves, then restart funding.", tone: "fuchsia" };
+    case "credit_repair": return { text: "Sent to credit repair to get approval ready. Follow up once their credit improves.", tone: "fuchsia" };
     case "dead": return { text: "Closed out. Revive if they come back.", tone: "rose" };
     default: return { text: "", tone: "slate" };
   }
@@ -545,9 +618,8 @@ function Dashboard({ userEmail }) {
   const filtered = useMemo(() => {
     const q = query.toLowerCase();
     return leads.filter((l) => {
-      if (filter === "active" && (l.status === "funded" || l.status === "dead" || l.status === "referred_cr")) return false;
-      if (filter === "needs_link" && l.status !== "new" && l.status !== "called") return false;
-      if (filter === "waiting" && l.status !== "link_sent" && l.status !== "in_followup") return false;
+      if (filter === "active" && ["funded", "dead", "credit_repair", "not_interested"].includes(l.status)) return false;
+      if (filter !== "active" && filter !== "all" && l.status !== filter) return false;
       if (!q) return true;
       return (l.name + l.phone + l.email + l.notes + l.source + l.businessName + l.opportunityName + l.desiredAmount + l.monthlyRevenue + l.creditScore + l.timeInBusiness + l.tags).toLowerCase().includes(q);
     }).sort((a, b) => (b.lastTouchAt || b.createdAt) - (a.lastTouchAt || a.createdAt));
@@ -655,7 +727,13 @@ function Pipeline({ leads, allCount, dueList, stats, config, query, setQuery, fi
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search name, phone, business" className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100" />
         </div>
         <select value={filter} onChange={(e) => setFilter(e.target.value)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-400">
-          <option value="active">Active</option><option value="needs_link">Needs link</option><option value="waiting">Waiting on report</option><option value="all">All</option>
+          <option value="active">Active</option>
+          <option value="new">New</option>
+          <option value="voicemail">Left Voicemail</option>
+          <option value="interested">Interested</option>
+          <option value="callback">Call Back</option>
+          <option value="report_pulled">Report Pulled</option>
+          <option value="all">All</option>
         </select>
         <button onClick={() => setShowAdd((s) => !s)} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-emerald-700"><Plus size={16} /> Add prospect</button>
       </div>
@@ -797,12 +875,13 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
   const [draft, setDraft] = useState(lead);
   const [savedAt, setSavedAt] = useState(0);
   const [showPw, setShowPw] = useState(false);
-  const [guideOpen, setGuideOpen] = useState(lead.status === "new" || lead.status === "called");
+  const [guideOpen, setGuideOpen] = useState(lead.status === "new");
   const [rawOpen, setRawOpen] = useState(false);
   const [reportUrl, setReportUrl] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [callNote, setCallNote] = useState("");
-  useEffect(() => { setDraft(lead); setGuideOpen(lead.status === "new" || lead.status === "called"); }, [lead.id]); // reload when switching leads
+  const [spoke, setSpoke] = useState(false);
+  useEffect(() => { setDraft(lead); setGuideOpen(lead.status === "new"); setSpoke(false); }, [lead.id]); // reload when switching leads
   const set = (k) => (e) => setDraft({ ...draft, [k]: e.target.value });
 
   // Autosave: persist changed fields shortly after you stop typing
@@ -826,14 +905,10 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
     finally { setUploading(false); }
   };
 
-  const logCall = (disposition) => {
-    logTouch(lead.id, "call", "call", { disposition, note: callNote.trim(), by: userEmail });
-    setCallNote("");
-    if ((disposition === "voicemail" || disposition === "no_answer") && (lead.status === "new" || lead.status === "called")) {
-      updateLead(lead.id, { status: "link_sent" }); // starts the 30-day text + email sequence
-    } else if (lead.status === "new") {
-      updateLead(lead.id, { status: "called" });
-    }
+  const logOutcome = (stage, label) => {
+    logTouch(lead.id, "call", "call", { disposition: label, note: callNote.trim(), by: userEmail });
+    setCallNote(""); setSpoke(false);
+    updateLead(lead.id, { status: stage });
   };
 
   const submitToFunder = async () => {
@@ -885,16 +960,27 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
             <CopyButton text={config.reportLink || ""} label="Copy link" className="bg-slate-100 text-slate-700 hover:bg-slate-200" />
           </div>
 
-          {/* log call */}
-          <div className="rounded-xl bg-slate-50 p-3">
-            <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400"><Phone size={13} /> Log this call</div>
-            <textarea value={callNote} onChange={(e) => setCallNote(e.target.value)} rows={2} placeholder="Notes from the call (what you discussed, what you left in the voicemail, etc.)" className={`${inputCls} mb-2`} />
-            <div className="flex flex-wrap gap-1.5">
-              {[["Connected", "connected"], ["No answer", "no_answer"], ["Left voicemail", "voicemail"], ["Callback set", "callback"]].map(([label, d]) => (
-                <button key={d} onClick={() => logCall(d)} className="rounded-lg bg-white px-2.5 py-1.5 text-sm font-medium text-slate-700 ring-1 ring-inset ring-slate-200 hover:bg-slate-100">{label}</button>
-              ))}
-            </div>
-            <p className="mt-1.5 text-xs text-slate-400">Logs the outcome, your note, who called, and the time.</p>
+          {/* what happened on this call */}
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <div className="mb-2 flex items-center gap-1.5 text-sm font-bold text-slate-800"><Phone size={15} className="text-emerald-600" /> What happened on this call?</div>
+            <textarea value={callNote} onChange={(e) => setCallNote(e.target.value)} rows={2} placeholder="Notes from the call (optional)" className={`${inputCls} mb-2`} />
+            {!spoke ? (
+              <div className="flex flex-wrap gap-2">
+                <button onClick={() => logOutcome("voicemail", "Left voicemail")} className="rounded-lg bg-amber-100 px-3 py-2 text-sm font-semibold text-amber-800 ring-1 ring-inset ring-amber-200 hover:bg-amber-200">No answer / left voicemail</button>
+                <button onClick={() => setSpoke(true)} className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700">Spoke to them</button>
+              </div>
+            ) : (
+              <div>
+                <div className="mb-1.5 text-xs font-medium text-slate-500">How did it go?</div>
+                <div className="flex flex-wrap gap-2">
+                  <button onClick={() => logOutcome("interested", "Spoke, interested")} className="rounded-lg bg-sky-600 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-700">Interested</button>
+                  <button onClick={() => logOutcome("callback", "Spoke, call back")} className="rounded-lg bg-violet-600 px-3 py-2 text-sm font-semibold text-white hover:bg-violet-700">Call back later</button>
+                  <button onClick={() => logOutcome("not_interested", "Spoke, not interested")} className="rounded-lg bg-orange-500 px-3 py-2 text-sm font-semibold text-white hover:bg-orange-600">Not interested</button>
+                  <button onClick={() => setSpoke(false)} className="rounded-lg px-3 py-2 text-sm font-medium text-slate-500 hover:bg-slate-100">Back</button>
+                </div>
+              </div>
+            )}
+            <p className="mt-2 text-xs text-slate-400">Picking an outcome sets the stage and starts that campaign. Logs your note, who called, and the time.</p>
           </div>
 
           {/* call guide */}
@@ -980,8 +1066,8 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
                       <span className="min-w-0 flex-1 truncate">{st.template?.name || "deleted template"}</span>
                       {st.done ? <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600"><Check size={13} /> Sent</span>
                         : <span className={`text-xs font-medium ${rel.overdue ? "text-rose-600" : "text-slate-400"}`}>{rel.label}</span>}
-                      {!st.done && st.template && (
-                        <button onClick={() => openCompose({ lead, channel: st.channel, to: st.channel === "sms" ? lead.phone : lead.email, subject: fillTokens(st.template.subject, lead, config), body: fillTokens(st.template.body, lead, config), kind: "cadence", extra: { stage: lead.status, step: st.i } })} className="rounded-md bg-emerald-600 px-2 py-1 text-xs font-semibold text-white hover:bg-emerald-700">Send</button>
+                      {st.template && (
+                        <button onClick={() => openCompose({ lead, channel: st.channel, to: st.channel === "sms" ? lead.phone : lead.email, subject: fillTokens(st.template.subject, lead, config), body: fillTokens(st.template.body, lead, config), kind: "cadence", extra: { stage: lead.status, step: st.i } })} className={`rounded-md px-2 py-1 text-xs font-semibold ${st.done ? "bg-white text-slate-600 ring-1 ring-inset ring-slate-200 hover:bg-slate-50" : "bg-emerald-600 text-white hover:bg-emerald-700"}`}>{st.done ? "Resend" : "Send"}</button>
                       )}
                     </div>
                   );

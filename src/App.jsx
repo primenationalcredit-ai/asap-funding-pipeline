@@ -44,11 +44,11 @@ const DEFAULT_CONFIG = {
 
 const DEFAULT_TEMPLATES = [
   { id: "first_sms", name: "Send link (text)", channel: "sms", subject: "",
-    body: `Hi {{first}}, it's {{signature}}. Here is the secure link to pull your report so I can review your funding options: {{link}} Takes about 5 min and does not hurt your score. Text me once it is done.` },
+    body: `Hi {{first}}, it's {{signature}}. {{opener}}Here is the secure link to pull your report so I can review your funding options: {{link}} Takes about 5 min and does not hurt your score. Text me once it is done.` },
   { id: "first_email", name: "Send link (email)", channel: "email", subject: "Your funding review, {{first}}",
     body: `Hi {{first}},
 
-Great connecting. The next step is quick. Pull your report through the secure link below so I can review your full profile and match you with the right funding options.
+{{opener}}The next step to get you funding is quick. Pull your report through the secure link below so I can review your full profile and match you with the right options.
 
 {{link}}
 
@@ -196,8 +196,19 @@ function leadPatchToRow(patch) {
 /*  Helpers                                                           */
 /* ================================================================== */
 const firstName = (n) => (n || "").trim().split(/\s+/)[0] || "there";
+function callOpener(lead) {
+  const calls = (lead?.touches || []).filter((t) => t.kind === "call");
+  const last = calls.length ? calls[calls.length - 1] : null;
+  if (!last) return "";
+  if (last.disposition === "voicemail") return "I just left you a voicemail. ";
+  if (last.disposition === "connected") return "Great talking just now. ";
+  if (last.disposition === "no_answer") return "I tried reaching you and missed you. ";
+  if (last.disposition === "callback") return "Following up as promised. ";
+  return "";
+}
 function fillTokens(text, lead, config) {
   return (text || "")
+    .replaceAll("{{opener}}", callOpener(lead))
     .replaceAll("{{first}}", firstName(lead.name))
     .replaceAll("{{name}}", lead.name || "")
     .replaceAll("{{link}}", config.reportLink || "[set your MyScoreIQ link in Settings]")
@@ -217,6 +228,22 @@ const telHref = (phone) => `tel:${telDigits(phone)}`;
 function fmtDate(ts) {
   if (!ts) return "";
   return new Date(ts).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+function fmtDateTime(ts) {
+  if (!ts) return "";
+  return new Date(ts).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+function nextStepFor(lead) {
+  switch (lead.status) {
+    case "new": return { text: "Call them. Confirm the 5 questions in the guide, then send the MyScoreIQ link.", tone: "sky" };
+    case "called": return { text: "Send the MyScoreIQ link by text or email so they can pull their report.", tone: "amber" };
+    case "link_sent": return { text: "Waiting on their report. Follow-ups are running. Chase them or send the next one when due.", tone: "amber" };
+    case "report_pulled": return { text: "Report is in. Review it, then email it to the funder.", tone: "violet" };
+    case "submitted": return { text: "Submitted to the funder. Waiting on approval or decline.", tone: "indigo" };
+    case "funded": return { text: "Funded. Nice work.", tone: "emerald" };
+    case "dead": return { text: "Closed out. Revive if they come back.", tone: "rose" };
+    default: return { text: "", tone: "slate" };
+  }
 }
 function relativeDue(ts) {
   if (ts == null) return null;
@@ -328,7 +355,7 @@ export default function App() {
   }, []);
   if (session === undefined) return <div className="flex min-h-96 items-center justify-center font-sans text-slate-400">Loading...</div>;
   if (!session) return <Login />;
-  return <Dashboard />;
+  return <Dashboard userEmail={session.user?.email || ""} />;
 }
 
 function Login() {
@@ -369,7 +396,7 @@ function Login() {
 /* ================================================================== */
 /*  Dashboard                                                         */
 /* ================================================================== */
-function Dashboard() {
+function Dashboard({ userEmail }) {
   const [tab, setTab] = useState("pipeline");
   const [leads, setLeads] = useState([]);
   const [config, setConfig] = useState(DEFAULT_CONFIG);
@@ -530,7 +557,7 @@ function Dashboard() {
       {tab === "settings" && <Settings config={config} persistConfig={persistConfig} />}
 
       {profileLead && (
-        <Profile lead={profileLead} config={config} templates={templates} cadences={cadences}
+        <Profile lead={profileLead} config={config} templates={templates} cadences={cadences} userEmail={userEmail}
           onClose={() => setProfileId(null)} updateLead={updateLead} removeLead={removeLead} logTouch={logTouch} openCompose={setCompose} />
       )}
 
@@ -721,25 +748,28 @@ function ComposeModal({ compose, onClose, onSent }) {
 /* ================================================================== */
 /*  Profile (client detail)                                           */
 /* ================================================================== */
-function Profile({ lead, config, templates, cadences, onClose, updateLead, removeLead, logTouch, openCompose }) {
+function Profile({ lead, config, templates, cadences, onClose, updateLead, removeLead, logTouch, openCompose, userEmail }) {
+  const EDITABLE = ["name", "phone", "email", "notes", "desiredAmount", "fundingPurpose", "fundingTimeline", "monthlyRevenue", "creditScore", "timeInBusiness",
+    "businessName", "businessType", "einStatus", "bestTime", "nextStep", "myscoreiqUsername", "myscoreiqPassword", "ssnLast4"];
   const [draft, setDraft] = useState(lead);
   const [savedAt, setSavedAt] = useState(0);
   const [showPw, setShowPw] = useState(false);
-  const [guideOpen, setGuideOpen] = useState(true);
+  const [guideOpen, setGuideOpen] = useState(lead.status === "new" || lead.status === "called");
   const [rawOpen, setRawOpen] = useState(false);
   const [reportUrl, setReportUrl] = useState(null);
   const [uploading, setUploading] = useState(false);
-  useEffect(() => { setDraft(lead); }, [lead.id]); // reload when switching leads
+  const [callNote, setCallNote] = useState("");
+  useEffect(() => { setDraft(lead); setGuideOpen(lead.status === "new" || lead.status === "called"); }, [lead.id]); // reload when switching leads
   const set = (k) => (e) => setDraft({ ...draft, [k]: e.target.value });
 
-  const saveProfile = async () => {
+  // Autosave: persist changed fields shortly after you stop typing
+  useEffect(() => {
     const patch = {};
-    ["name", "phone", "email", "notes", "desiredAmount", "fundingPurpose", "fundingTimeline", "monthlyRevenue", "creditScore", "timeInBusiness",
-      "businessName", "businessType", "einStatus", "bestTime", "nextStep",
-      "myscoreiqUsername", "myscoreiqPassword", "ssnLast4"].forEach((k) => { if (draft[k] !== lead[k]) patch[k] = draft[k]; });
-    if (Object.keys(patch).length) await updateLead(lead.id, patch);
-    setSavedAt(Date.now()); setTimeout(() => setSavedAt(0), 1600);
-  };
+    EDITABLE.forEach((k) => { if (draft[k] !== lead[k]) patch[k] = draft[k]; });
+    if (Object.keys(patch).length === 0) return;
+    const t = setTimeout(() => { updateLead(lead.id, patch); setSavedAt(Date.now()); setTimeout(() => setSavedAt(0), 1500); }, 700);
+    return () => clearTimeout(t);
+  }, [draft]); // eslint-disable-line
 
   const uploadReport = async (file) => {
     if (!file) return;
@@ -754,7 +784,8 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
   };
 
   const logCall = (disposition) => {
-    logTouch(lead.id, "call", "call", { disposition });
+    logTouch(lead.id, "call", "call", { disposition, note: callNote.trim(), by: userEmail });
+    setCallNote("");
     if ((disposition === "voicemail" || disposition === "no_answer") && (lead.status === "new" || lead.status === "called")) {
       updateLead(lead.id, { status: "link_sent" }); // starts the 30-day text + email sequence
     } else if (lead.status === "new") {
@@ -789,10 +820,20 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
             <div className="flex items-center gap-2"><span className="truncate text-lg font-bold">{lead.name || "Unnamed"}</span><StagePill status={lead.status} /></div>
             <div className="mt-0.5"><QualChips lead={lead} /></div>
           </div>
-          <button onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"><X size={20} /></button>
+          <div className="flex items-center gap-2">
+            {savedAt > 0 && <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600"><Check size={13} /> Saved</span>}
+            <button onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"><X size={20} /></button>
+          </div>
         </div>
 
         <div className="space-y-5 px-5 py-4">
+          {/* what to do next */}
+          {nextStepFor(lead).text && (
+            <div className={`flex items-start gap-2 rounded-xl px-4 py-3 text-sm font-medium ring-1 ring-inset ${TONE[nextStepFor(lead).tone]}`}>
+              <span className="mt-0.5 shrink-0 text-xs font-bold uppercase tracking-wide opacity-70">Next</span>
+              <span>{nextStepFor(lead).text}</span>
+            </div>
+          )}
           {/* contact actions */}
           <div className="flex flex-wrap gap-2">
             <a href={telHref(lead.phone)} onClick={() => lead.phone && updateLead(lead.id, lead.status === "new" ? { status: "called" } : {})} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium ${lead.phone ? "bg-slate-800 text-white hover:bg-slate-900" : "pointer-events-none bg-slate-100 text-slate-300"}`}><Phone size={15} /> Call</a>
@@ -804,11 +845,13 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
           {/* log call */}
           <div className="rounded-xl bg-slate-50 p-3">
             <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400"><Phone size={13} /> Log this call</div>
+            <textarea value={callNote} onChange={(e) => setCallNote(e.target.value)} rows={2} placeholder="Notes from the call (what you discussed, what you left in the voicemail, etc.)" className={`${inputCls} mb-2`} />
             <div className="flex flex-wrap gap-1.5">
               {[["Connected", "connected"], ["No answer", "no_answer"], ["Left voicemail", "voicemail"], ["Callback set", "callback"]].map(([label, d]) => (
                 <button key={d} onClick={() => logCall(d)} className="rounded-lg bg-white px-2.5 py-1.5 text-sm font-medium text-slate-700 ring-1 ring-inset ring-slate-200 hover:bg-slate-100">{label}</button>
               ))}
             </div>
+            <p className="mt-1.5 text-xs text-slate-400">Logs the outcome, your note, who called, and the time.</p>
           </div>
 
           {/* call guide */}
@@ -866,7 +909,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
                     <li>The goal is the best amount and terms for your situation, then getting it funded as fast as possible.</li>
                   </ul>
                 </div>
-                <p className="text-xs text-slate-400">Answers save with the Save profile button at the bottom.</p>
+                <p className="text-xs text-slate-400">Answers save automatically as you type.</p>
               </div>
             )}
           </div>
@@ -970,11 +1013,15 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
           {/* activity */}
           {(lead.touches || []).length > 0 && (
             <Section icon={<Clock size={15} />} title="Activity">
-              <div className="flex flex-col gap-1">
-                {[...lead.touches].sort((a, b) => b.at - a.at).slice(0, 12).map((t, i) => (
-                  <div key={i} className="flex items-center gap-2 text-xs text-slate-500">
-                    <span className="w-14 shrink-0 font-mono text-slate-400">{fmtDate(t.at)}</span>
-                    <span className="capitalize">{t.kind === "call" ? `Call: ${(t.disposition || "logged").replace("_", " ")}` : t.kind === "submit" ? "Submitted to funder" : t.kind === "link" ? `Link sent (${t.channel})` : t.kind === "cadence" ? `Follow-up (${t.channel})` : `${t.kind} (${t.channel})`}</span>
+              <div className="flex flex-col gap-2">
+                {[...lead.touches].sort((a, b) => b.at - a.at).slice(0, 20).map((t, i) => (
+                  <div key={i} className="text-xs">
+                    <div className="flex flex-wrap items-center gap-2 text-slate-500">
+                      <span className="font-mono text-slate-400">{fmtDateTime(t.at)}</span>
+                      <span className="font-medium text-slate-700">{t.kind === "call" ? `Call: ${(t.disposition || "logged").replace(/_/g, " ")}` : t.kind === "submit" ? "Submitted to funder" : t.kind === "link" ? `Link sent (${t.channel})` : t.kind === "cadence" ? `Follow-up (${t.channel})` : `${t.kind} (${t.channel})`}</span>
+                      {t.by && <span className="text-slate-400">by {t.by}</span>}
+                    </div>
+                    {t.note && <div className="mt-0.5 rounded-md bg-slate-50 px-2 py-1 text-slate-600">{t.note}</div>}
                   </div>
                 ))}
               </div>
@@ -992,10 +1039,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
           {/* footer actions */}
           <div className="flex items-center justify-between border-t border-slate-100 pt-4">
             <button onClick={() => { if (confirm(`Remove ${lead.name || "this client"}?`)) { removeLead(lead.id); onClose(); } }} className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-rose-500 hover:bg-rose-50"><Trash2 size={13} /> Remove</button>
-            <div className="flex items-center gap-3">
-              {savedAt > 0 && <span className="inline-flex items-center gap-1 text-sm font-medium text-emerald-600"><Check size={15} /> Saved</span>}
-              <button onClick={saveProfile} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"><Save size={15} /> Save profile</button>
-            </div>
+            <span className="text-xs text-slate-400">Changes save automatically</span>
           </div>
         </div>
       </div>

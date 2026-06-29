@@ -44,51 +44,87 @@ const DEFAULT_CONFIG = {
 
 const DEFAULT_TEMPLATES = [
   { id: "first_sms", name: "Send link (text)", channel: "sms", subject: "",
-    body: `Hi {{first}}, it's {{signature}}. Here is the secure link to pull your report so I can review your funding options: {{link}} Takes about 5 min. Text me once it is done.` },
+    body: `Hi {{first}}, it's {{signature}}. Here is the secure link to pull your report so I can review your funding options: {{link}} Takes about 5 min and does not hurt your score. Text me once it is done.` },
   { id: "first_email", name: "Send link (email)", channel: "email", subject: "Your funding review, {{first}}",
     body: `Hi {{first}},
 
-Great talking with you. The next step is quick. Pull your report through the secure link below so I can review your full profile and match you with the right funding options.
+Great connecting. The next step is quick. Pull your report through the secure link below so I can review your full profile and match you with the right funding options.
 
 {{link}}
 
-It takes about 5 minutes. Once it is done, reply here or text me and I will review and get back to you today.
+It takes about 5 minutes and it does not hurt your score. Once it is done, reply here or text me and I will get to work on your options.
 
 Talk soon,
 {{signature}}` },
   { id: "fu_sms", name: "Nudge (text)", channel: "sms", subject: "",
     body: `Hi {{first}}, {{signature}} here. Still want to get your funding options in front of you. Pull your report when you get a sec: {{link}}` },
-  { id: "fu_email", name: "Nudge (email)", channel: "email", subject: "Quick nudge on your funding review, {{first}}",
+  { id: "fu_email", name: "Nudge (email)", channel: "email", subject: "Following up on your funding, {{first}}",
     body: `Hi {{first}},
 
-Circling back. I still have your funding options ready to review, I just need your report pulled first. Here is the secure link again:
+Circling back. I still have your funding review open, I just need your report pulled first. Here is the secure link again:
 
 {{link}}
 
-Takes about 5 minutes. Reply or text me once it is done and I will take it from there.
+About 5 minutes, no hit to your score. Reply or text once it is done and I will take it from there.
 
 {{signature}}` },
   { id: "pulled_sms", name: "Got it, reviewing (text)", channel: "sms", subject: "",
     body: `Got your report, {{first}}, thank you. Reviewing your funding options now and I will be back to you today. {{signature}}` },
+  { id: "val_speed_email", name: "Value: faster than the bank (email)", channel: "email", subject: "Why owners come to us instead of the bank, {{first}}",
+    body: `Hi {{first}},
+
+Quick note while you have the link. Banks decline most small businesses and can take weeks to months to give an answer. We work differently. We shop your profile across a network of funders, so instead of one bank's yes or no, you get matched to the options you actually fit, and we move as fast as your file allows.
+
+When you get a sec, pull your report here so I can see what you qualify for:
+{{link}}
+
+About 5 minutes, no hit to your score.
+
+{{signature}}` },
+  { id: "val_options_sms", name: "Value: best terms (text)", channel: "sms", subject: "",
+    body: `{{first}}, the reason we beat the bank for most owners: we shop your file across multiple funders for the best terms, not just one desk's answer. Pull your report when you can and I will line up your options: {{link}}` },
+  { id: "val_options_email", name: "Value: we shop your file (email)", channel: "email", subject: "Getting you the best terms, not just the first yes",
+    body: `Hi {{first}},
+
+One thing that sets us apart. A bank can only offer you the bank's box. We take your profile to a network of funders and bring back the best fit on amount and terms, then we move quickly to get it funded.
+
+To do that I just need your report. Here is the link again:
+{{link}}
+
+Takes about 5 minutes.
+
+{{signature}}` },
+  { id: "val_noimpact_sms", name: "Value: soft pull reminder (text)", channel: "sms", subject: "",
+    body: `{{first}}, quick reminder, the link is a soft pull through My Score IQ, about 5 minutes, no hit to your score. It is the only thing I need to show you real numbers: {{link}}` },
+  { id: "lastcall_email", name: "Last call (email)", channel: "email", subject: "Closing your file, {{first}}?",
+    body: `Hi {{first}},
+
+I have kept your funding review open but I have not seen your report come through yet. If the timing is not right, no problem, just let me know and I will pause. If you still want me to find your best options, it is a quick 5 minute pull here:
+{{link}}
+
+Either way, I am here when you are ready.
+{{signature}}` },
 ];
 
 // Per stage: ordered steps. day = days after entering that stage.
 const DEFAULT_CADENCES = {
   new: [],
-  called: [{ day: 0, templateId: "first_sms" }, { day: 0, templateId: "first_email" }],
+  called: [],
   link_sent: [
+    { day: 0, templateId: "first_sms" },
+    { day: 0, templateId: "first_email" },
     { day: 1, templateId: "fu_sms" },
-    { day: 3, templateId: "fu_email" },
-    { day: 7, templateId: "fu_sms" },
-    { day: 14, templateId: "fu_email" },
+    { day: 2, templateId: "val_speed_email" },
+    { day: 4, templateId: "val_noimpact_sms" },
+    { day: 7, templateId: "val_options_email" },
+    { day: 11, templateId: "fu_sms" },
+    { day: 16, templateId: "val_options_sms" },
+    { day: 23, templateId: "fu_email" },
+    { day: 30, templateId: "lastcall_email" },
   ],
   report_pulled: [{ day: 0, templateId: "pulled_sms" }],
   submitted: [],
-  in_followup: [
-    { day: 2, templateId: "fu_sms" },
-    { day: 6, templateId: "fu_email" },
-    { day: 12, templateId: "fu_sms" },
-  ],
+  in_followup: [],
   funded: [],
   dead: [],
 };
@@ -214,6 +250,26 @@ function nextDue(lead, cadences, templates) {
   return steps.sort((a, b) => a.dueAt - b.dueAt)[0];
 }
 
+// Send through the in-app backend (RingCentral / Outlook). Requires login.
+async function apiSend(path, payload) {
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  const res = await fetch(`/api/${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+  let j = {};
+  try { j = await res.json(); } catch { /* ignore */ }
+  if (!res.ok || j.error) throw new Error(j.error || `Send failed (${res.status})`);
+  return j;
+}
+async function sendMessage(channel, to, subject, body) {
+  if (!to) throw new Error(channel === "sms" ? "No phone number on file" : "No email on file");
+  if (channel === "sms") return apiSend("send-sms", { to, text: body });
+  return apiSend("send-email", { to, subject, text: body });
+}
+
 /* ================================================================== */
 /*  Atoms                                                             */
 /* ================================================================== */
@@ -324,6 +380,7 @@ function Dashboard() {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("active");
   const [profileId, setProfileId] = useState(null);
+  const [compose, setCompose] = useState(null);
   const [live, setLive] = useState(false);
 
   const refetchLeads = useCallback(async () => {
@@ -399,6 +456,16 @@ function Dashboard() {
     await supabase.from("leads").delete().eq("id", id);
   }, []);
 
+  const handleSent = useCallback(() => {
+    setCompose((c) => {
+      if (c) {
+        logTouch(c.lead.id, c.channel, c.kind, c.extra || {});
+        if (c.afterSent) c.afterSent();
+      }
+      return null;
+    });
+  }, [logTouch]);
+
   const dueList = useMemo(() => (
     leads.map((l) => ({ l, step: nextDue(l, cadences, templates) }))
       .filter((x) => x.step && x.step.dueAt <= Date.now() + DAY)
@@ -456,7 +523,7 @@ function Dashboard() {
       {tab === "pipeline" && (
         <Pipeline leads={filtered} allCount={leads.length} dueList={dueList} stats={stats} config={config}
           query={query} setQuery={setQuery} filter={filter} setFilter={setFilter}
-          addLead={addLead} onOpen={setProfileId} logTouch={logTouch} updateLead={updateLead} cadences={cadences} templates={templates} />
+          addLead={addLead} onOpen={setProfileId} logTouch={logTouch} updateLead={updateLead} cadences={cadences} templates={templates} openCompose={setCompose} />
       )}
       {tab === "messaging" && <Messaging templates={templates} persistTemplates={persistTemplates} cadences={cadences} persistCadences={persistCadences} />}
       {tab === "scripts" && <Scripts />}
@@ -464,8 +531,10 @@ function Dashboard() {
 
       {profileLead && (
         <Profile lead={profileLead} config={config} templates={templates} cadences={cadences}
-          onClose={() => setProfileId(null)} updateLead={updateLead} removeLead={removeLead} logTouch={logTouch} />
+          onClose={() => setProfileId(null)} updateLead={updateLead} removeLead={removeLead} logTouch={logTouch} openCompose={setCompose} />
       )}
+
+      {compose && <ComposeModal compose={compose} onClose={() => setCompose(null)} onSent={handleSent} />}
 
       <p className="mt-6 px-1 text-center text-xs text-slate-400">Texts and emails open in your own phone and mail app, so they come from your number and address.</p>
     </div>
@@ -475,16 +544,12 @@ function Dashboard() {
 /* ================================================================== */
 /*  Pipeline                                                          */
 /* ================================================================== */
-function Pipeline({ leads, allCount, dueList, stats, config, query, setQuery, filter, setFilter, addLead, onOpen, logTouch, updateLead, cadences, templates }) {
+function Pipeline({ leads, allCount, dueList, stats, config, query, setQuery, filter, setFilter, addLead, onOpen, logTouch, updateLead, cadences, templates, openCompose }) {
   const [showAdd, setShowAdd] = useState(false);
   const sendStep = (lead, step) => {
     const tpl = step.template;
     if (!tpl) return;
-    const href = tpl.channel === "sms"
-      ? smsHref(lead.phone, fillTokens(tpl.body, lead, config))
-      : mailHref(lead.email, fillTokens(tpl.subject, lead, config), fillTokens(tpl.body, lead, config));
-    window.open(href, "_blank");
-    logTouch(lead.id, tpl.channel, "cadence", { stage: lead.status, step: step.i });
+    openCompose({ lead, channel: tpl.channel, to: tpl.channel === "sms" ? lead.phone : lead.email, subject: fillTokens(tpl.subject, lead, config), body: fillTokens(tpl.body, lead, config), kind: "cadence", extra: { stage: lead.status, step: step.i } });
   };
 
   return (
@@ -533,7 +598,7 @@ function Pipeline({ leads, allCount, dueList, stats, config, query, setQuery, fi
 
       {allCount === 0 ? <Empty onAdd={() => setShowAdd(true)} />
         : leads.length === 0 ? <div className="rounded-xl border border-dashed border-slate-200 py-10 text-center text-sm text-slate-400">No prospects match this view.</div>
-        : <div className="flex flex-col gap-2">{leads.map((l) => <LeadRow key={l.id} lead={l} onOpen={() => onOpen(l.id)} cadences={cadences} templates={templates} config={config} logTouch={logTouch} updateLead={updateLead} />)}</div>}
+        : <div className="flex flex-col gap-2">{leads.map((l) => <LeadRow key={l.id} lead={l} onOpen={() => onOpen(l.id)} cadences={cadences} templates={templates} config={config} logTouch={logTouch} updateLead={updateLead} openCompose={openCompose} />)}</div>}
     </div>
   );
 }
@@ -568,7 +633,7 @@ function AddForm({ onAdd, onCancel }) {
   );
 }
 
-function LeadRow({ lead, onOpen, cadences, templates, config, logTouch, updateLead }) {
+function LeadRow({ lead, onOpen, cadences, templates, config, logTouch, updateLead, openCompose }) {
   const step = nextDue(lead, cadences, templates);
   const rel = step ? relativeDue(step.dueAt) : null;
   const tplSms = templates.find((t) => t.id === "first_sms");
@@ -592,8 +657,61 @@ function LeadRow({ lead, onOpen, cadences, templates, config, logTouch, updateLe
         </div>
         <div className="flex shrink-0 items-center gap-1" onClick={stop}>
           <a href={telHref(lead.phone)} onClick={() => lead.phone && updateLead(lead.id, lead.status === "new" ? { status: "called" } : {})} title="Call" className={`rounded-lg p-2 ${lead.phone ? "bg-slate-100 text-slate-700 hover:bg-slate-200" : "pointer-events-none bg-slate-50 text-slate-300"}`}><Phone size={15} /></a>
-          <a href={smsHref(lead.phone, fillTokens(tplSms?.body || "{{link}}", lead, config))} onClick={() => lead.phone && logTouch(lead.id, "sms", "link")} title="Text link" className={`rounded-lg p-2 ${lead.phone ? "bg-emerald-600 text-white hover:bg-emerald-700" : "pointer-events-none bg-slate-50 text-slate-300"}`}><MessageSquare size={15} /></a>
-          <a href={mailHref(lead.email, fillTokens(tplEmail?.subject || "", lead, config), fillTokens(tplEmail?.body || "{{link}}", lead, config))} onClick={() => lead.email && logTouch(lead.id, "email", "link")} title="Email link" className={`rounded-lg p-2 ${lead.email ? "bg-white text-emerald-700 ring-1 ring-emerald-300 hover:bg-emerald-50" : "pointer-events-none bg-slate-50 text-slate-300"}`}><Mail size={15} /></a>
+          <button disabled={!lead.phone} onClick={() => openCompose({ lead, channel: "sms", to: lead.phone, subject: "", body: fillTokens(tplSms?.body || "{{link}}", lead, config), kind: "link" })} title="Text link" className={`rounded-lg p-2 ${lead.phone ? "bg-emerald-600 text-white hover:bg-emerald-700" : "bg-slate-50 text-slate-300"}`}><MessageSquare size={15} /></button>
+          <button disabled={!lead.email} onClick={() => openCompose({ lead, channel: "email", to: lead.email, subject: fillTokens(tplEmail?.subject || "", lead, config), body: fillTokens(tplEmail?.body || "{{link}}", lead, config), kind: "link" })} title="Email link" className={`rounded-lg p-2 ${lead.email ? "bg-white text-emerald-700 ring-1 ring-emerald-300 hover:bg-emerald-50" : "bg-slate-50 text-slate-300"}`}><Mail size={15} /></button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ================================================================== */
+/*  Compose modal (copy-paste now, one-click send once configured)    */
+/* ================================================================== */
+function ComposeModal({ compose, onClose, onSent }) {
+  const { lead, channel, to, subject: subj0, body: body0 } = compose;
+  const [subject, setSubject] = useState(subj0 || "");
+  const [body, setBody] = useState(body0 || "");
+  const [busy, setBusy] = useState(false);
+  const sendViaApp = async () => {
+    setBusy(true);
+    try { await sendMessage(channel, to, subject, body); onSent(); }
+    catch (e) { alert("Could not send via app: " + e.message + "\n\nYou can still copy the message and send it manually."); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/40 p-3 sm:p-6" onClick={onClose}>
+      <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5">
+          <div className="flex items-center gap-2 font-bold">
+            {channel === "sms" ? <MessageSquare size={16} className="text-emerald-600" /> : <Mail size={16} className="text-emerald-600" />}
+            {channel === "sms" ? "Text" : "Email"} {lead.name || ""}
+          </div>
+          <button onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"><X size={20} /></button>
+        </div>
+        <div className="space-y-3 px-5 py-4">
+          <div className="text-xs text-slate-500">To: <span className="font-mono text-slate-700">{to || "(missing)"}</span></div>
+          {channel === "email" && (
+            <div>
+              <div className="mb-1 flex items-center justify-between">
+                <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">Subject</label>
+                <CopyButton text={subject} className="bg-slate-100 text-slate-700 hover:bg-slate-200" />
+              </div>
+              <input value={subject} onChange={(e) => setSubject(e.target.value)} className={inputCls} />
+            </div>
+          )}
+          <div>
+            <div className="mb-1 flex items-center justify-between">
+              <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">Message</label>
+              <CopyButton text={body} label="Copy message" className="bg-slate-100 text-slate-700 hover:bg-slate-200" />
+            </div>
+            <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={channel === "email" ? 9 : 4} className={inputCls} />
+          </div>
+          <p className="text-xs text-slate-400">Copy this into {channel === "sms" ? "RingCentral" : "Outlook"} and send it, then mark it sent so the stage and follow-ups update. Once your keys are set, use Send via app to do it in one click.</p>
+          <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-100 pt-3">
+            <button onClick={sendViaApp} disabled={busy} className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-2 text-sm font-medium text-emerald-700 ring-1 ring-emerald-300 hover:bg-emerald-50 disabled:opacity-40"><Send size={15} /> {busy ? "Sending..." : "Send via app"}</button>
+            <button onClick={onSent} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"><Check size={15} /> Mark as sent</button>
+          </div>
         </div>
       </div>
     </div>
@@ -603,7 +721,7 @@ function LeadRow({ lead, onOpen, cadences, templates, config, logTouch, updateLe
 /* ================================================================== */
 /*  Profile (client detail)                                           */
 /* ================================================================== */
-function Profile({ lead, config, templates, cadences, onClose, updateLead, removeLead, logTouch }) {
+function Profile({ lead, config, templates, cadences, onClose, updateLead, removeLead, logTouch, openCompose }) {
   const [draft, setDraft] = useState(lead);
   const [savedAt, setSavedAt] = useState(0);
   const [showPw, setShowPw] = useState(false);
@@ -637,7 +755,11 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
 
   const logCall = (disposition) => {
     logTouch(lead.id, "call", "call", { disposition });
-    if (lead.status === "new") updateLead(lead.id, { status: "called" });
+    if ((disposition === "voicemail" || disposition === "no_answer") && (lead.status === "new" || lead.status === "called")) {
+      updateLead(lead.id, { status: "link_sent" }); // starts the 30-day text + email sequence
+    } else if (lead.status === "new") {
+      updateLead(lead.id, { status: "called" });
+    }
   };
 
   const submitToFunder = async () => {
@@ -647,9 +769,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
       if (data?.signedUrl) link = data.signedUrl;
     }
     const body = `Client: ${lead.name}\n${lead.businessName ? "Business: " + lead.businessName + "\n" : ""}${link ? "\nReport (PDF, link valid 7 days):\n" + link + "\n" : "\n(Attach the report PDF.)\n"}`;
-    window.open(mailHref(config.funderEmail, lead.name, body), "_blank");
-    logTouch(lead.id, "email", "submit");
-    if (lead.status !== "funded" && lead.status !== "dead") updateLead(lead.id, { status: "submitted" });
+    openCompose({ lead, channel: "email", to: config.funderEmail, subject: lead.name, body, kind: "submit", afterSent: () => { if (lead.status !== "funded" && lead.status !== "dead") updateLead(lead.id, { status: "submitted" }); } });
   };
   const viewReport = async () => {
     if (!lead.reportPath) return;
@@ -658,12 +778,6 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
     setReportUrl(data.signedUrl); window.open(data.signedUrl, "_blank");
   };
 
-  const sendTemplate = (tpl) => {
-    const href = tpl.channel === "sms"
-      ? smsHref(lead.phone, fillTokens(tpl.body, lead, config))
-      : mailHref(lead.email, fillTokens(tpl.subject, lead, config), fillTokens(tpl.body, lead, config));
-    window.open(href, "_blank");
-  };
   const steps = cadenceSteps(lead, cadences, templates);
 
   return (
@@ -682,8 +796,8 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
           {/* contact actions */}
           <div className="flex flex-wrap gap-2">
             <a href={telHref(lead.phone)} onClick={() => lead.phone && updateLead(lead.id, lead.status === "new" ? { status: "called" } : {})} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium ${lead.phone ? "bg-slate-800 text-white hover:bg-slate-900" : "pointer-events-none bg-slate-100 text-slate-300"}`}><Phone size={15} /> Call</a>
-            <a href={smsHref(lead.phone, fillTokens(templates.find(t=>t.id==="first_sms")?.body || "{{link}}", lead, config))} onClick={() => lead.phone && logTouch(lead.id, "sms", "link")} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium ${lead.phone ? "bg-emerald-600 text-white hover:bg-emerald-700" : "pointer-events-none bg-slate-100 text-slate-300"}`}><MessageSquare size={15} /> Text link</a>
-            <a href={mailHref(lead.email, fillTokens(templates.find(t=>t.id==="first_email")?.subject||"", lead, config), fillTokens(templates.find(t=>t.id==="first_email")?.body||"{{link}}", lead, config))} onClick={() => lead.email && logTouch(lead.id, "email", "link")} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium ${lead.email ? "bg-white text-emerald-700 ring-1 ring-emerald-300 hover:bg-emerald-50" : "pointer-events-none bg-slate-100 text-slate-300 ring-1 ring-slate-200"}`}><Mail size={15} /> Email link</a>
+            <button disabled={!lead.phone} onClick={() => openCompose({ lead, channel: "sms", to: lead.phone, subject: "", body: fillTokens(templates.find(t=>t.id==="first_sms")?.body || "{{link}}", lead, config), kind: "link" })} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium ${lead.phone ? "bg-emerald-600 text-white hover:bg-emerald-700" : "bg-slate-100 text-slate-300"}`}><MessageSquare size={15} /> Text link</button>
+            <button disabled={!lead.email} onClick={() => openCompose({ lead, channel: "email", to: lead.email, subject: fillTokens(templates.find(t=>t.id==="first_email")?.subject||"", lead, config), body: fillTokens(templates.find(t=>t.id==="first_email")?.body||"{{link}}", lead, config), kind: "link" })} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium ${lead.email ? "bg-white text-emerald-700 ring-1 ring-emerald-300 hover:bg-emerald-50" : "bg-slate-100 text-slate-300 ring-1 ring-slate-200"}`}><Mail size={15} /> Email link</button>
             <CopyButton text={config.reportLink || ""} label="Copy link" className="bg-slate-100 text-slate-700 hover:bg-slate-200" />
           </div>
 
@@ -781,7 +895,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
                       {st.done ? <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600"><Check size={13} /> Sent</span>
                         : <span className={`text-xs font-medium ${rel.overdue ? "text-rose-600" : "text-slate-400"}`}>{rel.label}</span>}
                       {!st.done && st.template && (
-                        <button onClick={() => { sendTemplate(st.template); logTouch(lead.id, st.channel, "cadence", { stage: lead.status, step: st.i }); }} className="rounded-md bg-emerald-600 px-2 py-1 text-xs font-semibold text-white hover:bg-emerald-700">Send</button>
+                        <button onClick={() => openCompose({ lead, channel: st.channel, to: st.channel === "sms" ? lead.phone : lead.email, subject: fillTokens(st.template.subject, lead, config), body: fillTokens(st.template.body, lead, config), kind: "cadence", extra: { stage: lead.status, step: st.i } })} className="rounded-md bg-emerald-600 px-2 py-1 text-xs font-semibold text-white hover:bg-emerald-700">Send</button>
                       )}
                     </div>
                   );
@@ -821,14 +935,14 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
               <AlertCircle size={13} /> Sensitive. Stored as entered. Add a login to this app before saving real credentials.
             </div>
             <div className="grid gap-3 sm:grid-cols-3">
-              <Labeled label="Username"><input value={draft.myscoreiqUsername} onChange={set("myscoreiqUsername")} className={`${inputCls} font-mono`} /></Labeled>
+              <Labeled label="Username"><input value={draft.myscoreiqUsername} onChange={set("myscoreiqUsername")} name="msq_user" autoComplete="off" data-lpignore="true" data-1p-ignore className={`${inputCls} font-mono`} /></Labeled>
               <Labeled label="Password">
                 <div className="relative">
-                  <input type={showPw ? "text" : "password"} value={draft.myscoreiqPassword} onChange={set("myscoreiqPassword")} className={`${inputCls} pr-9 font-mono`} />
+                  <input type={showPw ? "text" : "password"} value={draft.myscoreiqPassword} onChange={set("myscoreiqPassword")} name="msq_pass" autoComplete="new-password" data-lpignore="true" data-1p-ignore className={`${inputCls} pr-9 font-mono`} />
                   <button type="button" onClick={() => setShowPw((s) => !s)} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">{showPw ? <EyeOff size={16} /> : <Eye size={16} />}</button>
                 </div>
               </Labeled>
-              <Labeled label="Last 4 of SSN"><input value={draft.ssnLast4} onChange={set("ssnLast4")} maxLength={4} inputMode="numeric" className={`${inputCls} font-mono`} /></Labeled>
+              <Labeled label="Last 4 of SSN"><input value={draft.ssnLast4} onChange={set("ssnLast4")} maxLength={4} inputMode="numeric" name="msq_s4" autoComplete="off" data-lpignore="true" data-1p-ignore className={`${inputCls} font-mono`} /></Labeled>
             </div>
           </Section>
 
@@ -902,12 +1016,21 @@ function Section({ icon, title, children }) {
 /* ================================================================== */
 function Messaging({ templates, persistTemplates, cadences, persistCadences }) {
   const [sub, setSub] = useState("templates");
+  const loadDefaults = () => {
+    if (confirm("Load the recommended templates and 30-day follow-up sequence? This replaces your current templates and stage follow-ups.")) {
+      persistTemplates(DEFAULT_TEMPLATES);
+      persistCadences(DEFAULT_CADENCES);
+    }
+  };
   return (
     <div className="mt-4">
-      <div className="mb-3 flex gap-1 rounded-lg bg-slate-100 p-1 text-sm">
-        {[["templates", "Templates"], ["cadences", "Stage follow-ups"]].map(([k, l]) => (
-          <button key={k} onClick={() => setSub(k)} className={`rounded-md px-3 py-1.5 font-medium ${sub === k ? "bg-white text-slate-800 shadow-sm" : "text-slate-500"}`}>{l}</button>
-        ))}
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex gap-1 rounded-lg bg-slate-100 p-1 text-sm">
+          {[["templates", "Templates"], ["cadences", "Stage follow-ups"]].map(([k, l]) => (
+            <button key={k} onClick={() => setSub(k)} className={`rounded-md px-3 py-1.5 font-medium ${sub === k ? "bg-white text-slate-800 shadow-sm" : "text-slate-500"}`}>{l}</button>
+          ))}
+        </div>
+        <button onClick={loadDefaults} className="rounded-lg bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-200">Load recommended 30-day sequence</button>
       </div>
       {sub === "templates" ? <TemplatesEditor templates={templates} persistTemplates={persistTemplates} />
         : <CadenceEditor templates={templates} cadences={cadences} persistCadences={persistCadences} />}

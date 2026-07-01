@@ -3,7 +3,7 @@ import {
   Phone, MessageSquare, Mail, Copy, Check, Plus, Search, Settings as SettingsIcon,
   Clock, Trash2, User, FileText, Send, AlertCircle, ChevronDown, Zap, Wifi,
   X, Eye, EyeOff, KeyRound, Upload, ExternalLink, Building2, CalendarClock,
-  ListChecks, Pencil, Save, LogOut, Lock,
+  ListChecks, Pencil, Save, LogOut, Lock, LayoutGrid, DollarSign, Menu,
 } from "lucide-react";
 import { supabase } from "./supabaseClient.js";
 
@@ -37,6 +37,7 @@ const TONE = {
   lime: "bg-lime-100 text-lime-800 ring-lime-200",
   orange: "bg-orange-100 text-orange-800 ring-orange-200",
   emerald: "bg-emerald-100 text-emerald-800 ring-emerald-200",
+  blue: "bg-blue-100 text-blue-800 ring-blue-200",
   yellow: "bg-yellow-100 text-yellow-800 ring-yellow-200",
   fuchsia: "bg-fuchsia-100 text-fuchsia-800 ring-fuchsia-200",
   pink: "bg-pink-100 text-pink-800 ring-pink-200",
@@ -373,7 +374,7 @@ function nextStepFor(lead) {
     case "submitted": return { text: "Submitted to Torro. Waiting on their pre-approval.", tone: "indigo" };
     case "pre_approved": return { text: "Torro approved them. Review the offer with the client. When they accept, send contracts.", tone: "cyan" };
     case "contracts_out": return { text: "Contracts are out for signature. Once signed and funded, mark it funded.", tone: "lime" };
-    case "funded": return { text: "Funded. Enter the funded amount and your commission, then mark commission paid when Torro pays you.", tone: "emerald" };
+    case "funded": return { text: "Funded. Enter the funded amount and your commission, then mark commission paid when Torro pays you.", tone: "blue" };
     case "commission_paid": return { text: "Paid in full. This one's done.", tone: "yellow" };
     case "declined": return { text: "Torro declined. Note the reason, then send them to Credit Repair to get approval-ready, or revisit later.", tone: "pink" };
     case "credit_repair": return { text: "Sent to credit repair to get approval ready. Follow up once their credit improves.", tone: "fuchsia" };
@@ -459,8 +460,8 @@ function QualChips({ lead, size = "sm" }) {
   return (
     <div className="flex flex-wrap gap-1.5">
       {items.map(([k, v]) => (
-        <span key={k} className={`inline-flex items-center gap-1 rounded-md bg-emerald-50 text-xs font-medium text-emerald-800 ring-1 ring-inset ring-emerald-100 ${pad}`}>
-          <span className="text-emerald-500">{k}</span><span className="font-semibold">{v}</span>
+        <span key={k} className={`inline-flex items-center gap-1 rounded-md bg-blue-50 text-xs font-medium text-blue-800 ring-1 ring-inset ring-blue-100 ${pad}`}>
+          <span className="text-blue-500">{k}</span><span className="font-semibold">{v}</span>
         </span>
       ))}
     </div>
@@ -474,7 +475,7 @@ function Labeled({ label, children }) {
     </div>
   );
 }
-const inputCls = "w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100";
+const inputCls = "w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100";
 
 /* ================================================================== */
 /*  Main                                                              */
@@ -509,7 +510,7 @@ function Login() {
     <div className="mx-auto mt-16 max-w-sm font-sans">
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="mb-5 flex items-center gap-2.5">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-600 text-white"><Lock size={18} /></div>
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-600 text-white"><Lock size={18} /></div>
           <div>
             <div className="text-base font-bold tracking-tight text-slate-800">ASAP Funding Pipeline</div>
             <div className="text-xs text-slate-400">Sign in to continue</div>
@@ -519,7 +520,7 @@ function Login() {
           <Labeled label="Email"><input value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit()} type="email" autoComplete="username" className={inputCls} /></Labeled>
           <Labeled label="Password"><input value={pw} onChange={(e) => setPw(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit()} type="password" autoComplete="current-password" className={inputCls} /></Labeled>
           {err && <div className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700 ring-1 ring-inset ring-rose-200">{err}</div>}
-          <button onClick={submit} disabled={busy || !email || !pw} className="mt-1 inline-flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-40">
+          <button onClick={submit} disabled={busy || !email || !pw} className="mt-1 inline-flex items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-40">
             {busy ? "Signing in..." : "Sign in"}
           </button>
         </div>
@@ -545,6 +546,7 @@ function Dashboard({ userEmail }) {
   const [profileId, setProfileId] = useState(null);
   const [compose, setCompose] = useState(null);
   const [live, setLive] = useState(false);
+  const [showAdd, setShowAdd] = useState(false);
 
   const refetchLeads = useCallback(async () => {
     const { data, error } = await supabase.from("leads").select("*").order("created_at", { ascending: false });
@@ -670,42 +672,71 @@ function Dashboard({ userEmail }) {
 
   if (!loaded) return <div className="flex min-h-96 items-center justify-center font-sans text-slate-400">Loading your pipeline...</div>;
 
+  const NAV = [["pipeline", "Pipeline", LayoutGrid], ["commissions", "Commissions", DollarSign], ["messaging", "Messaging", MessageSquare], ["scripts", "Scripts", FileText], ["settings", "Settings", SettingsIcon]];
+  const tabTitle = { pipeline: "Pipeline", commissions: "Commissions", messaging: "Messaging", scripts: "Call scripts", settings: "Settings" }[tab];
+
   return (
-    <div className="mx-auto max-w-5xl font-sans text-slate-800">
-      <div className="rounded-2xl bg-emerald-900 px-5 py-4 text-white shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-400 text-emerald-950"><Zap size={20} strokeWidth={2.5} /></div>
-            <div>
-              <div className="flex items-center gap-2 text-base font-bold leading-tight tracking-tight">
-                ASAP Funding Pipeline
-                {live && <span title="Live: new GHL leads appear automatically"><Wifi size={14} className="text-emerald-300" /></span>}
-              </div>
-              <div className="text-xs text-emerald-200">Call. Send the link. Follow up.</div>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-          <nav className="flex gap-1 rounded-lg bg-emerald-950/40 p-1 text-sm">
-            {[["pipeline", "Pipeline"], ["commissions", "Commissions"], ["messaging", "Messaging"], ["scripts", "Scripts"], ["settings", "Settings"]].map(([k, label]) => (
-              <button key={k} onClick={() => setTab(k)} className={`rounded-md px-3 py-1.5 font-medium transition ${tab === k ? "bg-white text-emerald-900" : "text-emerald-100 hover:bg-emerald-800"}`}>{label}</button>
-            ))}
-          </nav>
-          <button onClick={() => supabase.auth.signOut()} title="Sign out" className="rounded-md p-1.5 text-emerald-200 hover:bg-emerald-800"><LogOut size={16} /></button>
+    <div className="flex min-h-screen bg-slate-50 font-sans text-slate-800">
+      {/* sidebar */}
+      <aside className="sticky top-0 flex h-screen w-16 shrink-0 flex-col bg-blue-950 text-blue-100 md:w-60">
+        <div className="flex items-center gap-2.5 px-3 py-4 md:px-5">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-500 text-white"><Zap size={20} strokeWidth={2.5} /></div>
+          <div className="hidden md:block">
+            <div className="text-sm font-bold leading-tight tracking-tight text-white">ASAP Funding</div>
+            <div className="text-[11px] text-blue-300">Pipeline CRM</div>
           </div>
         </div>
-      </div>
 
-      {err && <div className="mt-3 flex items-center gap-2 rounded-lg bg-rose-50 px-4 py-2.5 text-sm text-rose-700 ring-1 ring-inset ring-rose-200"><AlertCircle size={16} /> {err}</div>}
+        <div className="px-2 md:px-3">
+          <button onClick={() => { setTab("pipeline"); setShowAdd(true); }} className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-3 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 md:justify-start">
+            <Plus size={18} /> <span className="hidden md:inline">Add client</span>
+          </button>
+        </div>
 
-      {tab === "pipeline" && (
-        <Pipeline leads={filtered} allLeads={leads} allCount={leads.length} dueList={dueList} stats={stats} config={config}
-          query={query} setQuery={setQuery} filter={filter} setFilter={setFilter}
-          addLead={addLead} onOpen={setProfileId} logTouch={logTouch} updateLead={updateLead} cadences={cadences} templates={templates} openCompose={setCompose} />
-      )}
-      {tab === "messaging" && <Messaging templates={templates} persistTemplates={persistTemplates} cadences={cadences} persistCadences={persistCadences} />}
-      {tab === "commissions" && <Commissions leads={leads} onOpen={setProfileId} />}
-      {tab === "scripts" && <Scripts />}
-      {tab === "settings" && <Settings config={config} persistConfig={persistConfig} />}
+        <nav className="mt-4 flex flex-1 flex-col gap-1 px-2 md:px-3">
+          {NAV.map(([k, label, Icon]) => (
+            <button key={k} onClick={() => setTab(k)} title={label}
+              className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition ${tab === k ? "bg-blue-800 text-white" : "text-blue-200 hover:bg-blue-900 hover:text-white"}`}>
+              <Icon size={18} className="shrink-0" /> <span className="hidden md:inline">{label}</span>
+            </button>
+          ))}
+        </nav>
+
+        <div className="border-t border-blue-900 px-2 py-3 md:px-3">
+          {live && <div className="mb-2 hidden items-center gap-1.5 px-2 text-[11px] text-blue-300 md:flex"><Wifi size={12} /> Live, leads sync automatically</div>}
+          <div className="flex items-center justify-between gap-2 px-1">
+            <div className="hidden min-w-0 md:block">
+              <div className="truncate text-xs text-blue-300">{userEmail}</div>
+            </div>
+            <button onClick={() => supabase.auth.signOut()} title="Sign out" className="rounded-md p-2 text-blue-300 hover:bg-blue-900 hover:text-white"><LogOut size={16} /></button>
+          </div>
+        </div>
+      </aside>
+
+      {/* main */}
+      <main className="min-w-0 flex-1">
+        <header className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-slate-200 bg-white/90 px-5 py-3 backdrop-blur">
+          <div className="flex items-center gap-2">
+            <h1 className="text-lg font-bold tracking-tight text-slate-800">{tabTitle}</h1>
+            {tab === "pipeline" && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-500">{leads.length}</span>}
+          </div>
+          <button onClick={() => { setTab("pipeline"); setShowAdd(true); }} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-500"><Plus size={16} /> <span className="hidden sm:inline">Add client</span></button>
+        </header>
+
+        <div className="px-5 pb-10">
+          {err && <div className="mt-3 flex items-center gap-2 rounded-lg bg-rose-50 px-4 py-2.5 text-sm text-rose-700 ring-1 ring-inset ring-rose-200"><AlertCircle size={16} /> {err}</div>}
+
+          {tab === "pipeline" && (
+            <Pipeline leads={filtered} allLeads={leads} allCount={leads.length} dueList={dueList} stats={stats} config={config}
+              query={query} setQuery={setQuery} filter={filter} setFilter={setFilter} showAdd={showAdd} setShowAdd={setShowAdd}
+              addLead={addLead} onOpen={setProfileId} logTouch={logTouch} updateLead={updateLead} cadences={cadences} templates={templates} openCompose={setCompose} />
+          )}
+          {tab === "messaging" && <Messaging templates={templates} persistTemplates={persistTemplates} cadences={cadences} persistCadences={persistCadences} />}
+          {tab === "commissions" && <Commissions leads={leads} onOpen={setProfileId} />}
+          {tab === "scripts" && <Scripts />}
+          {tab === "settings" && <Settings config={config} persistConfig={persistConfig} />}
+        </div>
+      </main>
 
       {profileLead && (
         <Profile lead={profileLead} config={config} templates={templates} cadences={cadences} userEmail={userEmail}
@@ -713,8 +744,6 @@ function Dashboard({ userEmail }) {
       )}
 
       {compose && <ComposeModal compose={compose} onClose={() => setCompose(null)} onSent={handleSent} />}
-
-      <p className="mt-6 px-1 text-center text-xs text-slate-400">Texts and emails open in your own phone and mail app, so they come from your number and address.</p>
     </div>
   );
 }
@@ -728,8 +757,7 @@ const BOARDS = {
   closed: { label: "Closed", stages: ["declined", "credit_repair", "dead"] },
 };
 
-function Pipeline({ leads, allLeads, allCount, dueList, stats, config, query, setQuery, filter, setFilter, addLead, onOpen, logTouch, updateLead, cadences, templates, openCompose }) {
-  const [showAdd, setShowAdd] = useState(false);
+function Pipeline({ leads, allLeads, allCount, dueList, stats, config, query, setQuery, filter, setFilter, showAdd, setShowAdd, addLead, onOpen, logTouch, updateLead, cadences, templates, openCompose }) {
   const [view, setView] = useState("board");
   const [boardTab, setBoardTab] = useState("outreach");
   const [dragId, setDragId] = useState(null);
@@ -754,13 +782,13 @@ function Pipeline({ leads, allLeads, allCount, dueList, stats, config, query, se
               const rel = relativeDue(step.dueAt);
               return (
                 <div key={l.id} className="flex flex-wrap items-center gap-2 rounded-lg bg-white px-3 py-2 ring-1 ring-orange-100">
-                  <button onClick={() => onOpen(l.id)} className="font-semibold hover:text-emerald-700">{l.name || "Unnamed"}</button>
+                  <button onClick={() => onOpen(l.id)} className="font-semibold hover:text-blue-700">{l.name || "Unnamed"}</button>
                   <StagePill status={l.status} />
                   <span className={`text-xs font-medium ${rel.overdue ? "text-rose-600" : "text-orange-600"}`}>{rel.label}</span>
                   <span className="text-xs text-slate-400">{step.template?.name}</span>
                   <div className="ml-auto">
                     <button onClick={() => sendStep(l, step)}
-                      className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-sm font-medium ${step.channel === "sms" ? "bg-emerald-600 text-white hover:bg-emerald-700" : "bg-white text-emerald-700 ring-1 ring-emerald-300 hover:bg-emerald-50"}`}>
+                      className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-sm font-medium ${step.channel === "sms" ? "bg-blue-600 text-white hover:bg-blue-700" : "bg-white text-blue-700 ring-1 ring-blue-300 hover:bg-blue-50"}`}>
                       {step.channel === "sms" ? <MessageSquare size={14} /> : <Mail size={14} />} Send
                     </button>
                   </div>
@@ -774,15 +802,15 @@ function Pipeline({ leads, allLeads, allCount, dueList, stats, config, query, se
       <div className="mb-3 flex flex-wrap items-center gap-2">
         {/* view toggle */}
         <div className="flex gap-1 rounded-lg bg-slate-100 p-1">
-          <button onClick={() => setView("board")} className={`rounded-md px-3 py-1.5 text-sm font-medium ${view === "board" ? "bg-white text-emerald-700 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>Board</button>
-          <button onClick={() => setView("list")} className={`rounded-md px-3 py-1.5 text-sm font-medium ${view === "list" ? "bg-white text-emerald-700 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>List</button>
+          <button onClick={() => setView("board")} className={`rounded-md px-3 py-1.5 text-sm font-medium ${view === "board" ? "bg-white text-blue-700 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>Board</button>
+          <button onClick={() => setView("list")} className={`rounded-md px-3 py-1.5 text-sm font-medium ${view === "list" ? "bg-white text-blue-700 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>List</button>
         </div>
         <div className="relative min-w-44 flex-1">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search name, phone, business" className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100" />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search name, phone, business" className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
         </div>
         {view === "list" && (
-          <select value={filter} onChange={(e) => setFilter(e.target.value)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-400">
+          <select value={filter} onChange={(e) => setFilter(e.target.value)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400">
             <option value="active">Active</option>
             <option value="new">New</option>
             <option value="voicemail">Left Voicemail</option>
@@ -792,7 +820,7 @@ function Pipeline({ leads, allLeads, allCount, dueList, stats, config, query, se
             <option value="all">All</option>
           </select>
         )}
-        <button onClick={() => setShowAdd((s) => !s)} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-emerald-700"><Plus size={16} /> Add prospect</button>
+        <button onClick={() => setShowAdd((s) => !s)} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-blue-700"><Plus size={16} /> Add prospect</button>
       </div>
 
       {showAdd && <AddForm onAdd={(d) => { addLead(d); setShowAdd(false); }} onCancel={() => setShowAdd(false)} />}
@@ -804,8 +832,8 @@ function Pipeline({ leads, allLeads, allCount, dueList, stats, config, query, se
             {Object.entries(BOARDS).map(([k, b]) => {
               const count = b.stages.reduce((s, key) => s + (stats[key] || 0), 0);
               return (
-                <button key={k} onClick={() => setBoardTab(k)} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold ${boardTab === k ? "bg-emerald-900 text-white" : "bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50"}`}>
-                  {b.label} <span className={`rounded-full px-1.5 text-xs ${boardTab === k ? "bg-emerald-700" : "bg-slate-100"}`}>{count}</span>
+                <button key={k} onClick={() => setBoardTab(k)} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold ${boardTab === k ? "bg-blue-900 text-white" : "bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50"}`}>
+                  {b.label} <span className={`rounded-full px-1.5 text-xs ${boardTab === k ? "bg-blue-700" : "bg-slate-100"}`}>{count}</span>
                 </button>
               );
             })}
@@ -861,7 +889,7 @@ function BoardCard({ lead, onOpen, cadences, templates, config, openCompose, upd
   const stop = (e) => e.stopPropagation();
   return (
     <div draggable onDragStart={onDragStart} onDragEnd={onDragEnd} onClick={onOpen}
-      className={`cursor-pointer rounded-lg border border-slate-200 bg-white p-2.5 shadow-sm transition hover:border-emerald-300 hover:shadow ${dragging ? "opacity-40" : ""}`}>
+      className={`cursor-pointer rounded-lg border border-slate-200 bg-white p-2.5 shadow-sm transition hover:border-blue-300 hover:shadow ${dragging ? "opacity-40" : ""}`}>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="truncate text-sm font-semibold text-slate-800">{lead.name || "Unnamed"}</div>
@@ -871,18 +899,18 @@ function BoardCard({ lead, onOpen, cadences, templates, config, openCompose, upd
       </div>
       {(lead.desiredAmount || lead.commissionAmount) && (
         <div className="mt-1 text-xs text-slate-500">
-          {lead.commissionAmount ? <span className="font-semibold text-emerald-700">{money(lead.commissionAmount)} comm</span> : lead.desiredAmount ? <span>Wants {lead.desiredAmount}</span> : null}
+          {lead.commissionAmount ? <span className="font-semibold text-blue-700">{money(lead.commissionAmount)} comm</span> : lead.desiredAmount ? <span>Wants {lead.desiredAmount}</span> : null}
         </div>
       )}
       <div className="mt-2 flex items-center gap-1" onClick={stop}>
         <a href={telHref(lead.phone)} onClick={() => lead.phone && updateLead(lead.id, lead.status === "new" ? { status: "called" } : {})} title="Call" className={`rounded-md p-1.5 ${lead.phone ? "bg-slate-100 text-slate-600 hover:bg-slate-200" : "pointer-events-none bg-slate-50 text-slate-300"}`}><Phone size={13} /></a>
-        <button disabled={!lead.phone} onClick={() => openCompose({ lead, channel: "sms", to: lead.phone, subject: "", body: fillTokens(tplSms?.body || "{{link}}", lead, config), kind: "link" })} title="Text" className={`rounded-md p-1.5 ${lead.phone ? "bg-emerald-600 text-white hover:bg-emerald-700" : "bg-slate-50 text-slate-300"}`}><MessageSquare size={13} /></button>
-        <button disabled={!lead.email} onClick={() => openCompose({ lead, channel: "email", to: lead.email, subject: fillTokens(tplEmail?.subject || "", lead, config), body: fillTokens(tplEmail?.body || "{{link}}", lead, config), kind: "link" })} title="Email" className={`rounded-md p-1.5 ${lead.email ? "bg-white text-emerald-700 ring-1 ring-emerald-300 hover:bg-emerald-50" : "bg-slate-50 text-slate-300"}`}><Mail size={13} /></button>
+        <button disabled={!lead.phone} onClick={() => openCompose({ lead, channel: "sms", to: lead.phone, subject: "", body: fillTokens(tplSms?.body || "{{link}}", lead, config), kind: "link" })} title="Text" className={`rounded-md p-1.5 ${lead.phone ? "bg-blue-600 text-white hover:bg-blue-700" : "bg-slate-50 text-slate-300"}`}><MessageSquare size={13} /></button>
+        <button disabled={!lead.email} onClick={() => openCompose({ lead, channel: "email", to: lead.email, subject: fillTokens(tplEmail?.subject || "", lead, config), body: fillTokens(tplEmail?.body || "{{link}}", lead, config), kind: "link" })} title="Email" className={`rounded-md p-1.5 ${lead.email ? "bg-white text-blue-700 ring-1 ring-blue-300 hover:bg-blue-50" : "bg-slate-50 text-slate-300"}`}><Mail size={13} /></button>
       </div>
       <div className="mt-2" onClick={stop}>
         <label className="mb-0.5 block text-[10px] font-semibold uppercase tracking-wide text-slate-400">Move to</label>
         <select value={lead.status} onChange={(e) => { e.stopPropagation(); updateLead(lead.id, { status: e.target.value }); }}
-          className="w-full rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs font-medium text-slate-700 outline-none focus:border-emerald-400">
+          className="w-full rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs font-medium text-slate-700 outline-none focus:border-blue-400">
           {STAGES.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
         </select>
       </div>
@@ -896,7 +924,7 @@ function Empty({ onAdd }) {
       <User size={28} className="mx-auto text-slate-300" />
       <div className="mt-2 text-sm font-medium text-slate-600">No prospects yet</div>
       <div className="mt-1 text-sm text-slate-400">Add one by hand, or they will arrive automatically from GoHighLevel.</div>
-      <button onClick={onAdd} className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-emerald-700"><Plus size={16} /> Add prospect</button>
+      <button onClick={onAdd} className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-blue-700"><Plus size={16} /> Add prospect</button>
     </div>
   );
 }
@@ -905,7 +933,7 @@ function AddForm({ onAdd, onCancel }) {
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const canSave = f.name.trim() && (f.phone.trim() || f.email.trim());
   return (
-    <div className="mb-3 rounded-xl border border-emerald-200 bg-emerald-50/50 p-4">
+    <div className="mb-3 rounded-xl border border-blue-200 bg-blue-50/50 p-4">
       <div className="grid gap-2 sm:grid-cols-2">
         <input autoFocus value={f.name} onChange={set("name")} placeholder="Name" className={inputCls} />
         <input value={f.phone} onChange={set("phone")} placeholder="Phone" className={inputCls} />
@@ -914,7 +942,7 @@ function AddForm({ onAdd, onCancel }) {
       </div>
       <div className="mt-2 flex justify-end gap-2">
         <button onClick={onCancel} className="rounded-lg px-3 py-1.5 text-sm font-medium text-slate-500 hover:bg-slate-100">Cancel</button>
-        <button disabled={!canSave} onClick={() => onAdd(f)} className="rounded-lg bg-emerald-600 px-3.5 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-40">Save</button>
+        <button disabled={!canSave} onClick={() => onAdd(f)} className="rounded-lg bg-blue-600 px-3.5 py-1.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-40">Save</button>
       </div>
     </div>
   );
@@ -927,7 +955,7 @@ function LeadRow({ lead, onOpen, cadences, templates, config, logTouch, updateLe
   const tplEmail = templates.find((t) => t.id === "first_email");
   const stop = (e) => e.stopPropagation();
   return (
-    <div onClick={onOpen} className="cursor-pointer rounded-xl border border-slate-200 bg-white px-4 py-3 text-left transition hover:border-emerald-300 hover:shadow-sm">
+    <div onClick={onOpen} className="cursor-pointer rounded-xl border border-slate-200 bg-white px-4 py-3 text-left transition hover:border-blue-300 hover:shadow-sm">
       <div className="flex items-center gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
@@ -944,8 +972,8 @@ function LeadRow({ lead, onOpen, cadences, templates, config, logTouch, updateLe
         </div>
         <div className="flex shrink-0 items-center gap-1" onClick={stop}>
           <a href={telHref(lead.phone)} onClick={() => lead.phone && updateLead(lead.id, lead.status === "new" ? { status: "called" } : {})} title="Call" className={`rounded-lg p-2 ${lead.phone ? "bg-slate-100 text-slate-700 hover:bg-slate-200" : "pointer-events-none bg-slate-50 text-slate-300"}`}><Phone size={15} /></a>
-          <button disabled={!lead.phone} onClick={() => openCompose({ lead, channel: "sms", to: lead.phone, subject: "", body: fillTokens(tplSms?.body || "{{link}}", lead, config), kind: "link" })} title="Text link" className={`rounded-lg p-2 ${lead.phone ? "bg-emerald-600 text-white hover:bg-emerald-700" : "bg-slate-50 text-slate-300"}`}><MessageSquare size={15} /></button>
-          <button disabled={!lead.email} onClick={() => openCompose({ lead, channel: "email", to: lead.email, subject: fillTokens(tplEmail?.subject || "", lead, config), body: fillTokens(tplEmail?.body || "{{link}}", lead, config), kind: "link" })} title="Email link" className={`rounded-lg p-2 ${lead.email ? "bg-white text-emerald-700 ring-1 ring-emerald-300 hover:bg-emerald-50" : "bg-slate-50 text-slate-300"}`}><Mail size={15} /></button>
+          <button disabled={!lead.phone} onClick={() => openCompose({ lead, channel: "sms", to: lead.phone, subject: "", body: fillTokens(tplSms?.body || "{{link}}", lead, config), kind: "link" })} title="Text link" className={`rounded-lg p-2 ${lead.phone ? "bg-blue-600 text-white hover:bg-blue-700" : "bg-slate-50 text-slate-300"}`}><MessageSquare size={15} /></button>
+          <button disabled={!lead.email} onClick={() => openCompose({ lead, channel: "email", to: lead.email, subject: fillTokens(tplEmail?.subject || "", lead, config), body: fillTokens(tplEmail?.body || "{{link}}", lead, config), kind: "link" })} title="Email link" className={`rounded-lg p-2 ${lead.email ? "bg-white text-blue-700 ring-1 ring-blue-300 hover:bg-blue-50" : "bg-slate-50 text-slate-300"}`}><Mail size={15} /></button>
         </div>
       </div>
     </div>
@@ -971,7 +999,7 @@ function ComposeModal({ compose, onClose, onSent }) {
       <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5">
           <div className="flex items-center gap-2 font-bold">
-            {channel === "sms" ? <MessageSquare size={16} className="text-emerald-600" /> : <Mail size={16} className="text-emerald-600" />}
+            {channel === "sms" ? <MessageSquare size={16} className="text-blue-600" /> : <Mail size={16} className="text-blue-600" />}
             {channel === "sms" ? "Text" : "Email"} {lead.name || ""}
           </div>
           <button onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"><X size={20} /></button>
@@ -996,8 +1024,8 @@ function ComposeModal({ compose, onClose, onSent }) {
           </div>
           <p className="text-xs text-slate-400">Copy this into {channel === "sms" ? "RingCentral" : "Outlook"} and send it, then mark it sent so the stage and follow-ups update. Once your keys are set, use Send via app to do it in one click.</p>
           <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-100 pt-3">
-            <button onClick={sendViaApp} disabled={busy} className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-2 text-sm font-medium text-emerald-700 ring-1 ring-emerald-300 hover:bg-emerald-50 disabled:opacity-40"><Send size={15} /> {busy ? "Sending..." : "Send via app"}</button>
-            <button onClick={onSent} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"><Check size={15} /> Mark as sent</button>
+            <button onClick={sendViaApp} disabled={busy} className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-2 text-sm font-medium text-blue-700 ring-1 ring-blue-300 hover:bg-blue-50 disabled:opacity-40"><Send size={15} /> {busy ? "Sending..." : "Send via app"}</button>
+            <button onClick={onSent} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"><Check size={15} /> Mark as sent</button>
           </div>
         </div>
       </div>
@@ -1079,7 +1107,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
             <div className="mt-0.5"><QualChips lead={lead} /></div>
           </div>
           <div className="flex items-center gap-2">
-            {savedAt > 0 && <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600"><Check size={13} /> Saved</span>}
+            {savedAt > 0 && <span className="inline-flex items-center gap-1 text-xs font-medium text-blue-600"><Check size={13} /> Saved</span>}
             <button onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"><X size={20} /></button>
           </div>
         </div>
@@ -1095,19 +1123,19 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
           {/* contact actions */}
           <div className="flex flex-wrap gap-2">
             <a href={telHref(lead.phone)} onClick={() => lead.phone && updateLead(lead.id, lead.status === "new" ? { status: "called" } : {})} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium ${lead.phone ? "bg-slate-800 text-white hover:bg-slate-900" : "pointer-events-none bg-slate-100 text-slate-300"}`}><Phone size={15} /> Call</a>
-            <button disabled={!lead.phone} onClick={() => openCompose({ lead, channel: "sms", to: lead.phone, subject: "", body: fillTokens(templates.find(t=>t.id==="first_sms")?.body || "{{link}}", lead, config), kind: "link" })} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium ${lead.phone ? "bg-emerald-600 text-white hover:bg-emerald-700" : "bg-slate-100 text-slate-300"}`}><MessageSquare size={15} /> Text link</button>
-            <button disabled={!lead.email} onClick={() => openCompose({ lead, channel: "email", to: lead.email, subject: fillTokens(templates.find(t=>t.id==="first_email")?.subject||"", lead, config), body: fillTokens(templates.find(t=>t.id==="first_email")?.body||"{{link}}", lead, config), kind: "link" })} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium ${lead.email ? "bg-white text-emerald-700 ring-1 ring-emerald-300 hover:bg-emerald-50" : "bg-slate-100 text-slate-300 ring-1 ring-slate-200"}`}><Mail size={15} /> Email link</button>
+            <button disabled={!lead.phone} onClick={() => openCompose({ lead, channel: "sms", to: lead.phone, subject: "", body: fillTokens(templates.find(t=>t.id==="first_sms")?.body || "{{link}}", lead, config), kind: "link" })} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium ${lead.phone ? "bg-blue-600 text-white hover:bg-blue-700" : "bg-slate-100 text-slate-300"}`}><MessageSquare size={15} /> Text link</button>
+            <button disabled={!lead.email} onClick={() => openCompose({ lead, channel: "email", to: lead.email, subject: fillTokens(templates.find(t=>t.id==="first_email")?.subject||"", lead, config), body: fillTokens(templates.find(t=>t.id==="first_email")?.body||"{{link}}", lead, config), kind: "link" })} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium ${lead.email ? "bg-white text-blue-700 ring-1 ring-blue-300 hover:bg-blue-50" : "bg-slate-100 text-slate-300 ring-1 ring-slate-200"}`}><Mail size={15} /> Email link</button>
             <CopyButton text={config.reportLink || ""} label="Copy link" className="bg-slate-100 text-slate-700 hover:bg-slate-200" />
           </div>
 
           {/* what happened on this call */}
           <div className="rounded-xl border border-slate-200 bg-white p-4">
-            <div className="mb-2 flex items-center gap-1.5 text-sm font-bold text-slate-800"><Phone size={15} className="text-emerald-600" /> What happened on this call?</div>
+            <div className="mb-2 flex items-center gap-1.5 text-sm font-bold text-slate-800"><Phone size={15} className="text-blue-600" /> What happened on this call?</div>
             <textarea value={callNote} onChange={(e) => setCallNote(e.target.value)} rows={2} placeholder="Notes from the call (optional)" className={`${inputCls} mb-2`} />
             {!spoke ? (
               <div className="flex flex-wrap gap-2">
                 <button onClick={() => logOutcome("voicemail", "Left voicemail")} className="rounded-lg bg-amber-100 px-3 py-2 text-sm font-semibold text-amber-800 ring-1 ring-inset ring-amber-200 hover:bg-amber-200">No answer / left voicemail</button>
-                <button onClick={() => setSpoke(true)} className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700">Spoke to them</button>
+                <button onClick={() => setSpoke(true)} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700">Spoke to them</button>
               </div>
             ) : (
               <div>
@@ -1124,15 +1152,15 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
           </div>
 
           {/* call guide */}
-          <div className="rounded-xl border border-emerald-200 bg-emerald-50/40">
+          <div className="rounded-xl border border-blue-200 bg-blue-50/40">
             <button onClick={() => setGuideOpen((o) => !o)} className="flex w-full items-center justify-between px-4 py-3 text-left">
-              <span className="flex items-center gap-1.5 text-sm font-bold text-emerald-900"><FileText size={15} /> Call guide</span>
-              <ChevronDown size={16} className={`text-emerald-700 transition ${guideOpen ? "rotate-180" : ""}`} />
+              <span className="flex items-center gap-1.5 text-sm font-bold text-blue-900"><FileText size={15} /> Call guide</span>
+              <ChevronDown size={16} className={`text-blue-700 transition ${guideOpen ? "rotate-180" : ""}`} />
             </button>
             {guideOpen && (
-              <div className="space-y-4 border-t border-emerald-100 px-4 py-3">
+              <div className="space-y-4 border-t border-blue-100 px-4 py-3">
                 <div>
-                  <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Opener</div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-blue-700">Opener</div>
                   <p className="mt-1 text-sm text-slate-700">
                     Hi {firstName(draft.name)}, this is {config.signature}. {[
                       draft.desiredAmount && `from what you sent over I see you're looking for ${draft.desiredAmount}`,
@@ -1155,21 +1183,21 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
                     const have = !!(draft[k] && String(draft[k]).trim());
                     return (
                       <div key={k}>
-                        <div className={`flex items-start gap-1.5 text-sm font-medium ${have ? "text-emerald-700" : "text-slate-700"}`}>
+                        <div className={`flex items-start gap-1.5 text-sm font-medium ${have ? "text-blue-700" : "text-slate-700"}`}>
                           {have && <Check size={15} className="mt-0.5 shrink-0" />}
                           <span>{have ? say(draft[k]) : ask}</span>
                         </div>
-                        <input value={draft[k]} onChange={set(k)} placeholder={ph} className={`${inputCls} mt-1 ${have ? "border-emerald-200 bg-emerald-50/40" : ""}`} />
+                        <input value={draft[k]} onChange={set(k)} placeholder={ph} className={`${inputCls} mt-1 ${have ? "border-blue-200 bg-blue-50/40" : ""}`} />
                       </div>
                     );
                   })}
                 </div>
                 <div>
-                  <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">The soft pull (lead into the link)</div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-blue-700">The soft pull (lead into the link)</div>
                   <p className="mt-1 text-sm text-slate-700">To see exactly what we can do for you, the next step is a quick soft pull through My Score IQ. That shows us where your FICO scores sit across all three bureaus. It takes about 5 minutes, it does not hurt your score, and it lets me match you to the funders you actually qualify for instead of guessing. I will text and email you the secure link right now while we are on the phone. Use the Text link or Email link buttons above.</p>
                 </div>
                 <div>
-                  <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Why us over a bank</div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-blue-700">Why us over a bank</div>
                   <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-slate-700">
                     <li>Banks decline most small businesses and can take weeks to months. We move as fast as your file allows and often fund quickly.</li>
                     <li>We are not stuck inside one bank's box. We shop your profile across a network of funders to land the best offer, not just the first yes.</li>
@@ -1202,12 +1230,12 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
                   return (
                     <div key={st.i} className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm">
                       <span className="font-mono text-xs text-slate-400">D{st.day}</span>
-                      {st.channel === "sms" ? <MessageSquare size={14} className="text-emerald-600" /> : <Mail size={14} className="text-emerald-600" />}
+                      {st.channel === "sms" ? <MessageSquare size={14} className="text-blue-600" /> : <Mail size={14} className="text-blue-600" />}
                       <span className="min-w-0 flex-1 truncate">{st.template?.name || "deleted template"}</span>
-                      {st.done ? <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600"><Check size={13} /> Sent</span>
+                      {st.done ? <span className="inline-flex items-center gap-1 text-xs font-medium text-blue-600"><Check size={13} /> Sent</span>
                         : <span className={`text-xs font-medium ${rel.overdue ? "text-rose-600" : "text-slate-400"}`}>{rel.label}</span>}
                       {st.template && (
-                        <button onClick={() => openCompose({ lead, channel: st.channel, to: st.channel === "sms" ? lead.phone : lead.email, subject: fillTokens(st.template.subject, lead, config), body: fillTokens(st.template.body, lead, config), kind: "cadence", extra: { stage: lead.status, step: st.i } })} className={`rounded-md px-2 py-1 text-xs font-semibold ${st.done ? "bg-white text-slate-600 ring-1 ring-inset ring-slate-200 hover:bg-slate-50" : "bg-emerald-600 text-white hover:bg-emerald-700"}`}>{st.done ? "Resend" : "Send"}</button>
+                        <button onClick={() => openCompose({ lead, channel: st.channel, to: st.channel === "sms" ? lead.phone : lead.email, subject: fillTokens(st.template.subject, lead, config), body: fillTokens(st.template.body, lead, config), kind: "cadence", extra: { stage: lead.status, step: st.i } })} className={`rounded-md px-2 py-1 text-xs font-semibold ${st.done ? "bg-white text-slate-600 ring-1 ring-inset ring-slate-200 hover:bg-slate-50" : "bg-blue-600 text-white hover:bg-blue-700"}`}>{st.done ? "Resend" : "Send"}</button>
                       )}
                     </div>
                   );
@@ -1265,7 +1293,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
                 <Upload size={15} /> {uploading ? "Uploading..." : lead.reportPath ? "Replace PDF" : "Upload PDF"}
                 <input type="file" accept="application/pdf" className="hidden" onChange={(e) => uploadReport(e.target.files?.[0])} />
               </label>
-              {lead.reportPath && <button onClick={viewReport} className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-2 text-sm font-medium text-emerald-700 ring-1 ring-emerald-300 hover:bg-emerald-50"><ExternalLink size={15} /> View report</button>}
+              {lead.reportPath && <button onClick={viewReport} className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-2 text-sm font-medium text-blue-700 ring-1 ring-blue-300 hover:bg-blue-50"><ExternalLink size={15} /> View report</button>}
               {lead.reportUploadedAt && <span className="text-xs text-slate-400">Uploaded {fmtDate(lead.reportUploadedAt)}</span>}
             </div>
           </Section>
@@ -1278,8 +1306,8 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
               </div>
             )}
             <div className="flex flex-wrap gap-2">
-              <button disabled={!lead.phone} onClick={() => openCompose({ lead, channel: "sms", to: lead.phone, subject: "", body: fillTokens((templates.find(t=>t.id==="app_sms")?.body) || APP_SMS_DEFAULT, lead, config), kind: "link" })} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium ${lead.phone ? "bg-emerald-600 text-white hover:bg-emerald-700" : "bg-slate-100 text-slate-300"}`}><MessageSquare size={15} /> Text application</button>
-              <button disabled={!lead.email} onClick={() => openCompose({ lead, channel: "email", to: lead.email, subject: fillTokens((templates.find(t=>t.id==="app_email")?.subject) || APP_EMAIL_SUBJECT_DEFAULT, lead, config), body: fillTokens((templates.find(t=>t.id==="app_email")?.body) || APP_EMAIL_DEFAULT, lead, config), kind: "link" })} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium ${lead.email ? "bg-white text-emerald-700 ring-1 ring-emerald-300 hover:bg-emerald-50" : "bg-slate-100 text-slate-300 ring-1 ring-slate-200"}`}><Mail size={15} /> Email application</button>
+              <button disabled={!lead.phone} onClick={() => openCompose({ lead, channel: "sms", to: lead.phone, subject: "", body: fillTokens((templates.find(t=>t.id==="app_sms")?.body) || APP_SMS_DEFAULT, lead, config), kind: "link" })} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium ${lead.phone ? "bg-blue-600 text-white hover:bg-blue-700" : "bg-slate-100 text-slate-300"}`}><MessageSquare size={15} /> Text application</button>
+              <button disabled={!lead.email} onClick={() => openCompose({ lead, channel: "email", to: lead.email, subject: fillTokens((templates.find(t=>t.id==="app_email")?.subject) || APP_EMAIL_SUBJECT_DEFAULT, lead, config), body: fillTokens((templates.find(t=>t.id==="app_email")?.body) || APP_EMAIL_DEFAULT, lead, config), kind: "link" })} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium ${lead.email ? "bg-white text-blue-700 ring-1 ring-blue-300 hover:bg-blue-50" : "bg-slate-100 text-slate-300 ring-1 ring-slate-200"}`}><Mail size={15} /> Email application</button>
               <CopyButton text={config.appLink || APP_LINK_DEFAULT} label="Copy app link" className="bg-slate-100 text-slate-700 hover:bg-slate-200" />
             </div>
             <p className="mt-2 text-xs text-slate-400">Send this only after the pre-approval, if the client wants more funding. The client signs and uploads their bank statements, voided check, license, and report in the form.</p>
@@ -1348,7 +1376,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
                   </div>
                   <div className="mt-3 flex flex-wrap items-center gap-2">
                     {lead.status === "pre_approved" && <button onClick={() => updateLead(lead.id, { status: "contracts_out" })} className="rounded-lg bg-lime-600 px-3 py-2 text-sm font-semibold text-white hover:bg-lime-700">Client accepted, contracts out</button>}
-                    {lead.status === "contracts_out" && <button onClick={() => updateLead(lead.id, { status: "funded", fundedAt: Date.now() })} className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700">Mark funded</button>}
+                    {lead.status === "contracts_out" && <button onClick={() => updateLead(lead.id, { status: "funded", fundedAt: Date.now() })} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700">Mark funded</button>}
                     {lead.status === "funded" && <button onClick={() => updateLead(lead.id, { status: "commission_paid", commissionPaidAt: Date.now() })} className="rounded-lg bg-yellow-500 px-3 py-2 text-sm font-semibold text-white hover:bg-yellow-600">Mark commission paid</button>}
                     {lead.status === "commission_paid" && <span className="inline-flex items-center gap-1 text-sm font-semibold text-yellow-700"><Check size={15} /> Commission paid{lead.commissionPaidAt ? ` ${fmtDate(lead.commissionPaidAt)}` : ""}</span>}
                   </div>
@@ -1379,7 +1407,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
           {/* imported data from GHL */}
           {lead.raw && (
             <Section icon={<FileText size={15} />} title="Imported data (from GHL)">
-              <button onClick={() => setRawOpen((o) => !o)} className="text-sm font-medium text-emerald-700 hover:underline">{rawOpen ? "Hide" : "Show"} exactly what GHL sent</button>
+              <button onClick={() => setRawOpen((o) => !o)} className="text-sm font-medium text-blue-700 hover:underline">{rawOpen ? "Hide" : "Show"} exactly what GHL sent</button>
               {rawOpen && <pre className="mt-2 max-h-64 overflow-auto rounded-lg bg-slate-900 p-3 text-xs leading-relaxed text-slate-100">{JSON.stringify(lead.raw.customData || lead.raw, null, 2)}</pre>}
             </Section>
           )}
@@ -1445,13 +1473,13 @@ function TemplatesEditor({ templates, persistTemplates }) {
     <div className="flex flex-col gap-2">
       <div className="flex justify-between">
         <p className="text-sm text-slate-500">Build the messages your stages send. Tokens: <span className="font-mono">{"{{first}}"} {"{{link}}"} {"{{signature}}"}</span></p>
-        <button onClick={() => setEditing(blank())} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700"><Plus size={15} /> New template</button>
+        <button onClick={() => setEditing(blank())} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700"><Plus size={15} /> New template</button>
       </div>
       {templates.map((t) => (
         <div key={t.id} className="rounded-xl border border-slate-200 bg-white p-3">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              {t.channel === "sms" ? <MessageSquare size={15} className="text-emerald-600" /> : <Mail size={15} className="text-emerald-600" />}
+              {t.channel === "sms" ? <MessageSquare size={15} className="text-blue-600" /> : <Mail size={15} className="text-blue-600" />}
               <span className="font-semibold">{t.name || "(unnamed)"}</span>
               <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">{t.channel}</span>
             </div>
@@ -1471,7 +1499,7 @@ function TemplateForm({ tpl, onSave, onCancel }) {
   const [d, setD] = useState(tpl);
   const set = (k) => (e) => setD({ ...d, [k]: e.target.value });
   return (
-    <div className="rounded-xl border border-emerald-200 bg-white p-4">
+    <div className="rounded-xl border border-blue-200 bg-white p-4">
       <div className="grid gap-3 sm:grid-cols-2">
         <Labeled label="Template name"><input value={d.name} onChange={set("name")} className={inputCls} /></Labeled>
         <Labeled label="Channel">
@@ -1482,7 +1510,7 @@ function TemplateForm({ tpl, onSave, onCancel }) {
       <div className="mt-3"><Labeled label="Message"><textarea value={d.body} onChange={set("body")} rows={d.channel === "email" ? 8 : 3} className={inputCls} /></Labeled></div>
       <div className="mt-3 flex justify-end gap-2">
         <button onClick={onCancel} className="rounded-lg px-3 py-1.5 text-sm font-medium text-slate-500 hover:bg-slate-100">Cancel</button>
-        <button disabled={!d.name.trim()} onClick={() => onSave(d)} className="rounded-lg bg-emerald-600 px-3.5 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-40">Save template</button>
+        <button disabled={!d.name.trim()} onClick={() => onSave(d)} className="rounded-lg bg-blue-600 px-3.5 py-1.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-40">Save template</button>
       </div>
     </div>
   );
@@ -1512,8 +1540,8 @@ function CadenceEditor({ templates, cadences, persistCadences }) {
           {steps.map((s, i) => (
             <div key={i} className="flex flex-wrap items-center gap-2">
               <span className="text-xs text-slate-400">Day</span>
-              <input type="number" min={0} value={s.day} onChange={(e) => setStep(i, { day: Number(e.target.value) })} className="w-16 rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-emerald-400" />
-              <select value={s.templateId} onChange={(e) => setStep(i, { templateId: e.target.value })} className="min-w-44 flex-1 rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-emerald-400">
+              <input type="number" min={0} value={s.day} onChange={(e) => setStep(i, { day: Number(e.target.value) })} className="w-16 rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-blue-400" />
+              <select value={s.templateId} onChange={(e) => setStep(i, { templateId: e.target.value })} className="min-w-44 flex-1 rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-blue-400">
                 {templates.map((t) => <option key={t.id} value={t.id}>{t.name} ({t.channel})</option>)}
               </select>
               <button onClick={() => delStep(i)} className="rounded-md p-1.5 text-rose-400 hover:bg-rose-50"><Trash2 size={15} /></button>
@@ -1563,7 +1591,7 @@ function Scripts() {
       {SCRIPTS.map((s) => (
         <div key={s.title} className="rounded-xl border border-slate-200 bg-white p-4">
           <div className="mb-2 flex items-center justify-between gap-2">
-            <h3 className="flex items-center gap-1.5 text-sm font-bold text-slate-800"><FileText size={15} className="text-emerald-600" /> {s.title}</h3>
+            <h3 className="flex items-center gap-1.5 text-sm font-bold text-slate-800"><FileText size={15} className="text-blue-600" /> {s.title}</h3>
             <CopyButton text={s.body} className="bg-slate-100 text-slate-700 hover:bg-slate-200" />
           </div>
           <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700">{s.body}</p>
@@ -1584,7 +1612,7 @@ function Settings({ config, persistConfig }) {
   return (
     <div className="mt-4 flex flex-col gap-4">
       <div className="rounded-xl border border-slate-200 bg-white p-4">
-        <h3 className="mb-3 flex items-center gap-1.5 text-sm font-bold text-slate-800"><SettingsIcon size={15} className="text-emerald-600" /> Core setup</h3>
+        <h3 className="mb-3 flex items-center gap-1.5 text-sm font-bold text-slate-800"><SettingsIcon size={15} className="text-blue-600" /> Core setup</h3>
         <div className="flex flex-col gap-3">
           <Labeled label="MyScoreIQ link (under $10k path)"><input value={draft.reportLink} onChange={set("reportLink")} className={`${inputCls} font-mono`} /></Labeled>
           <Labeled label="Application link (over $10k path)"><input value={draft.appLink || ""} onChange={set("appLink")} placeholder="https://tinyurl.com/asapfundingapp" className={`${inputCls} font-mono`} /></Labeled>
@@ -1593,8 +1621,8 @@ function Settings({ config, persistConfig }) {
           <Labeled label="Funder submission email"><input value={draft.funderEmail || ""} onChange={set("funderEmail")} className={`${inputCls} font-mono`} /></Labeled>
         </div>
         <div className="mt-4 flex items-center gap-3">
-          <button onClick={save} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"><Send size={15} /> Save</button>
-          {saved && <span className="inline-flex items-center gap-1 text-sm font-medium text-emerald-600"><Check size={15} /> Saved</span>}
+          <button onClick={save} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"><Send size={15} /> Save</button>
+          {saved && <span className="inline-flex items-center gap-1 text-sm font-medium text-blue-600"><Check size={15} /> Saved</span>}
         </div>
       </div>
       <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-500">
@@ -1630,7 +1658,7 @@ function Commissions({ leads, onOpen }) {
   return (
     <div className="mt-4 flex flex-col gap-4">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Card label="Commission earned" value={money(totalCommission)} tone="border-emerald-200 bg-emerald-50 text-emerald-900" />
+        <Card label="Commission earned" value={money(totalCommission)} tone="border-blue-200 bg-blue-50 text-blue-900" />
         <Card label="Paid out" value={money(paid)} tone="border-yellow-200 bg-yellow-50 text-yellow-900" />
         <Card label="Funded, awaiting payout" value={money(pending)} tone="border-cyan-200 bg-cyan-50 text-cyan-900" />
         <Card label="In progress (approved)" value={money(inFlightCommission)} tone="border-slate-200 bg-slate-50 text-slate-800" />
@@ -1654,9 +1682,9 @@ function Commissions({ leads, onOpen }) {
               <tbody>
                 {deals.map((l) => (
                   <tr key={l.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50">
-                    <td className="px-3 py-2"><button onClick={() => onOpen(l.id)} className="font-semibold text-slate-700 hover:text-emerald-700">{l.name || "Unnamed"}</button>{l.businessName && <div className="text-xs text-slate-400">{l.businessName}</div>}</td>
+                    <td className="px-3 py-2"><button onClick={() => onOpen(l.id)} className="font-semibold text-slate-700 hover:text-blue-700">{l.name || "Unnamed"}</button>{l.businessName && <div className="text-xs text-slate-400">{l.businessName}</div>}</td>
                     <td className="px-3 py-2 font-mono">{l.fundedAmount ? money(l.fundedAmount) : "-"}</td>
-                    <td className="px-3 py-2 font-mono font-semibold text-emerald-700">{l.commissionAmount ? money(l.commissionAmount) : "-"}</td>
+                    <td className="px-3 py-2 font-mono font-semibold text-blue-700">{l.commissionAmount ? money(l.commissionAmount) : "-"}</td>
                     <td className="px-3 py-2"><StagePill status={l.status} /></td>
                     <td className="px-3 py-2 text-xs text-slate-500">{fmtDate(l.commissionPaidAt || l.fundedAt)}</td>
                   </tr>

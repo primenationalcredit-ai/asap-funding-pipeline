@@ -698,7 +698,7 @@ function Dashboard({ userEmail }) {
       {err && <div className="mt-3 flex items-center gap-2 rounded-lg bg-rose-50 px-4 py-2.5 text-sm text-rose-700 ring-1 ring-inset ring-rose-200"><AlertCircle size={16} /> {err}</div>}
 
       {tab === "pipeline" && (
-        <Pipeline leads={filtered} allCount={leads.length} dueList={dueList} stats={stats} config={config}
+        <Pipeline leads={filtered} allLeads={leads} allCount={leads.length} dueList={dueList} stats={stats} config={config}
           query={query} setQuery={setQuery} filter={filter} setFilter={setFilter}
           addLead={addLead} onOpen={setProfileId} logTouch={logTouch} updateLead={updateLead} cadences={cadences} templates={templates} openCompose={setCompose} />
       )}
@@ -722,13 +722,27 @@ function Dashboard({ userEmail }) {
 /* ================================================================== */
 /*  Pipeline                                                          */
 /* ================================================================== */
-function Pipeline({ leads, allCount, dueList, stats, config, query, setQuery, filter, setFilter, addLead, onOpen, logTouch, updateLead, cadences, templates, openCompose }) {
+const BOARDS = {
+  outreach: { label: "Outreach", stages: ["new", "voicemail", "interested", "callback", "not_interested"] },
+  funding: { label: "Funding", stages: ["report_pulled", "submitted", "pre_approved", "contracts_out", "funded", "commission_paid"] },
+  closed: { label: "Closed", stages: ["declined", "credit_repair", "dead"] },
+};
+
+function Pipeline({ leads, allLeads, allCount, dueList, stats, config, query, setQuery, filter, setFilter, addLead, onOpen, logTouch, updateLead, cadences, templates, openCompose }) {
   const [showAdd, setShowAdd] = useState(false);
+  const [view, setView] = useState("board");
+  const [boardTab, setBoardTab] = useState("outreach");
+  const [dragId, setDragId] = useState(null);
   const sendStep = (lead, step) => {
     const tpl = step.template;
     if (!tpl) return;
     openCompose({ lead, channel: tpl.channel, to: tpl.channel === "sms" ? lead.phone : lead.email, subject: fillTokens(tpl.subject, lead, config), body: fillTokens(tpl.body, lead, config), kind: "cadence", extra: { stage: lead.status, step: step.i } });
   };
+
+  const q = query.toLowerCase();
+  const boardLeads = (allLeads || leads).filter((l) => !q || (l.name + l.phone + l.email + l.businessName + l.opportunityName + l.source + l.tags).toLowerCase().includes(q));
+  const colLeads = (key) => boardLeads.filter((l) => l.status === key).sort((a, b) => (b.lastTouchAt || b.createdAt) - (a.lastTouchAt || a.createdAt));
+  const onDrop = (key) => { if (dragId) { updateLead(dragId, { status: key }); setDragId(null); } };
 
   return (
     <div className="mt-4">
@@ -758,31 +772,113 @@ function Pipeline({ leads, allCount, dueList, stats, config, query, setQuery, fi
       )}
 
       <div className="mb-3 flex flex-wrap items-center gap-2">
+        {/* view toggle */}
+        <div className="flex gap-1 rounded-lg bg-slate-100 p-1">
+          <button onClick={() => setView("board")} className={`rounded-md px-3 py-1.5 text-sm font-medium ${view === "board" ? "bg-white text-emerald-700 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>Board</button>
+          <button onClick={() => setView("list")} className={`rounded-md px-3 py-1.5 text-sm font-medium ${view === "list" ? "bg-white text-emerald-700 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>List</button>
+        </div>
         <div className="relative min-w-44 flex-1">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search name, phone, business" className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100" />
         </div>
-        <select value={filter} onChange={(e) => setFilter(e.target.value)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-400">
-          <option value="active">Active</option>
-          <option value="new">New</option>
-          <option value="voicemail">Left Voicemail</option>
-          <option value="interested">Interested</option>
-          <option value="callback">Call Back</option>
-          <option value="report_pulled">Report Pulled</option>
-          <option value="all">All</option>
-        </select>
+        {view === "list" && (
+          <select value={filter} onChange={(e) => setFilter(e.target.value)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-400">
+            <option value="active">Active</option>
+            <option value="new">New</option>
+            <option value="voicemail">Left Voicemail</option>
+            <option value="interested">Interested</option>
+            <option value="callback">Call Back</option>
+            <option value="report_pulled">Report Pulled</option>
+            <option value="all">All</option>
+          </select>
+        )}
         <button onClick={() => setShowAdd((s) => !s)} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-emerald-700"><Plus size={16} /> Add prospect</button>
       </div>
 
       {showAdd && <AddForm onAdd={(d) => { addLead(d); setShowAdd(false); }} onCancel={() => setShowAdd(false)} />}
 
-      <div className="mb-3 flex flex-wrap gap-1.5">
-        {STAGES.map((s) => <span key={s.key} className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset ${TONE[s.tone]}`}>{s.label} <span className="font-bold">{stats[s.key] || 0}</span></span>)}
-      </div>
+      {view === "board" ? (
+        <>
+          {/* board switcher */}
+          <div className="mb-3 flex flex-wrap gap-1.5">
+            {Object.entries(BOARDS).map(([k, b]) => {
+              const count = b.stages.reduce((s, key) => s + (stats[key] || 0), 0);
+              return (
+                <button key={k} onClick={() => setBoardTab(k)} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold ${boardTab === k ? "bg-emerald-900 text-white" : "bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50"}`}>
+                  {b.label} <span className={`rounded-full px-1.5 text-xs ${boardTab === k ? "bg-emerald-700" : "bg-slate-100"}`}>{count}</span>
+                </button>
+              );
+            })}
+          </div>
 
-      {allCount === 0 ? <Empty onAdd={() => setShowAdd(true)} />
-        : leads.length === 0 ? <div className="rounded-xl border border-dashed border-slate-200 py-10 text-center text-sm text-slate-400">No prospects match this view.</div>
-        : <div className="flex flex-col gap-2">{leads.map((l) => <LeadRow key={l.id} lead={l} onOpen={() => onOpen(l.id)} cadences={cadences} templates={templates} config={config} logTouch={logTouch} updateLead={updateLead} openCompose={openCompose} />)}</div>}
+          {allCount === 0 ? <Empty onAdd={() => setShowAdd(true)} /> : (
+            <div className="flex gap-3 overflow-x-auto pb-3">
+              {BOARDS[boardTab].stages.map((key) => {
+                const stage = STAGES.find((s) => s.key === key);
+                const items = colLeads(key);
+                return (
+                  <div key={key}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={() => onDrop(key)}
+                    className="flex w-72 shrink-0 flex-col rounded-xl bg-slate-100/70 p-2">
+                    <div className="mb-2 flex items-center justify-between px-1.5 pt-1">
+                      <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ring-inset ${TONE[stage.tone]}`}>{stage.label}</span>
+                      <span className="text-xs font-bold text-slate-400">{items.length}</span>
+                    </div>
+                    <div className="flex min-h-12 flex-col gap-2">
+                      {items.map((l) => (
+                        <BoardCard key={l.id} lead={l} onOpen={() => onOpen(l.id)} cadences={cadences} templates={templates} config={config} openCompose={openCompose} updateLead={updateLead}
+                          onDragStart={() => setDragId(l.id)} onDragEnd={() => setDragId(null)} dragging={dragId === l.id} />
+                      ))}
+                      {items.length === 0 && <div className="rounded-lg border border-dashed border-slate-200 py-4 text-center text-xs text-slate-300">Drop here</div>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          <p className="mt-2 px-1 text-xs text-slate-400">Drag a card to a new column to move that lead. Click a card to open the full profile.</p>
+        </>
+      ) : (
+        <>
+          <div className="mb-3 flex flex-wrap gap-1.5">
+            {STAGES.map((s) => <span key={s.key} className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset ${TONE[s.tone]}`}>{s.label} <span className="font-bold">{stats[s.key] || 0}</span></span>)}
+          </div>
+          {allCount === 0 ? <Empty onAdd={() => setShowAdd(true)} />
+            : leads.length === 0 ? <div className="rounded-xl border border-dashed border-slate-200 py-10 text-center text-sm text-slate-400">No prospects match this view.</div>
+            : <div className="flex flex-col gap-2">{leads.map((l) => <LeadRow key={l.id} lead={l} onOpen={() => onOpen(l.id)} cadences={cadences} templates={templates} config={config} logTouch={logTouch} updateLead={updateLead} openCompose={openCompose} />)}</div>}
+        </>
+      )}
+    </div>
+  );
+}
+
+function BoardCard({ lead, onOpen, cadences, templates, config, openCompose, updateLead, onDragStart, onDragEnd, dragging }) {
+  const step = nextDue(lead, cadences, templates);
+  const rel = step ? relativeDue(step.dueAt) : null;
+  const tplSms = templates.find((t) => t.id === "first_sms");
+  const tplEmail = templates.find((t) => t.id === "first_email");
+  const stop = (e) => e.stopPropagation();
+  return (
+    <div draggable onDragStart={onDragStart} onDragEnd={onDragEnd} onClick={onOpen}
+      className={`cursor-pointer rounded-lg border border-slate-200 bg-white p-2.5 shadow-sm transition hover:border-emerald-300 hover:shadow ${dragging ? "opacity-40" : ""}`}>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="truncate text-sm font-semibold text-slate-800">{lead.name || "Unnamed"}</div>
+          {lead.businessName && <div className="truncate text-xs text-slate-400">{lead.businessName}</div>}
+        </div>
+        {rel && <span className={`shrink-0 text-xs font-medium ${rel.overdue ? "text-rose-600" : "text-orange-500"}`}>{rel.label}</span>}
+      </div>
+      {(lead.desiredAmount || lead.commissionAmount) && (
+        <div className="mt-1 text-xs text-slate-500">
+          {lead.commissionAmount ? <span className="font-semibold text-emerald-700">{money(lead.commissionAmount)} comm</span> : lead.desiredAmount ? <span>Wants {lead.desiredAmount}</span> : null}
+        </div>
+      )}
+      <div className="mt-2 flex items-center gap-1" onClick={stop}>
+        <a href={telHref(lead.phone)} onClick={() => lead.phone && updateLead(lead.id, lead.status === "new" ? { status: "called" } : {})} title="Call" className={`rounded-md p-1.5 ${lead.phone ? "bg-slate-100 text-slate-600 hover:bg-slate-200" : "pointer-events-none bg-slate-50 text-slate-300"}`}><Phone size={13} /></a>
+        <button disabled={!lead.phone} onClick={() => openCompose({ lead, channel: "sms", to: lead.phone, subject: "", body: fillTokens(tplSms?.body || "{{link}}", lead, config), kind: "link" })} title="Text" className={`rounded-md p-1.5 ${lead.phone ? "bg-emerald-600 text-white hover:bg-emerald-700" : "bg-slate-50 text-slate-300"}`}><MessageSquare size={13} /></button>
+        <button disabled={!lead.email} onClick={() => openCompose({ lead, channel: "email", to: lead.email, subject: fillTokens(tplEmail?.subject || "", lead, config), body: fillTokens(tplEmail?.body || "{{link}}", lead, config), kind: "link" })} title="Email" className={`rounded-md p-1.5 ${lead.email ? "bg-white text-emerald-700 ring-1 ring-emerald-300 hover:bg-emerald-50" : "bg-slate-50 text-slate-300"}`}><Mail size={13} /></button>
+      </div>
     </div>
   );
 }

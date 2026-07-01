@@ -879,6 +879,13 @@ function BoardCard({ lead, onOpen, cadences, templates, config, openCompose, upd
         <button disabled={!lead.phone} onClick={() => openCompose({ lead, channel: "sms", to: lead.phone, subject: "", body: fillTokens(tplSms?.body || "{{link}}", lead, config), kind: "link" })} title="Text" className={`rounded-md p-1.5 ${lead.phone ? "bg-emerald-600 text-white hover:bg-emerald-700" : "bg-slate-50 text-slate-300"}`}><MessageSquare size={13} /></button>
         <button disabled={!lead.email} onClick={() => openCompose({ lead, channel: "email", to: lead.email, subject: fillTokens(tplEmail?.subject || "", lead, config), body: fillTokens(tplEmail?.body || "{{link}}", lead, config), kind: "link" })} title="Email" className={`rounded-md p-1.5 ${lead.email ? "bg-white text-emerald-700 ring-1 ring-emerald-300 hover:bg-emerald-50" : "bg-slate-50 text-slate-300"}`}><Mail size={13} /></button>
       </div>
+      <div className="mt-2" onClick={stop}>
+        <label className="mb-0.5 block text-[10px] font-semibold uppercase tracking-wide text-slate-400">Move to</label>
+        <select value={lead.status} onChange={(e) => { e.stopPropagation(); updateLead(lead.id, { status: e.target.value }); }}
+          className="w-full rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs font-medium text-slate-700 outline-none focus:border-emerald-400">
+          {STAGES.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+        </select>
+      </div>
     </div>
   );
 }

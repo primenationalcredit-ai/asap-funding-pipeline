@@ -57,94 +57,103 @@ const DEFAULT_CONFIG = {
 };
 
 const DEFAULT_TEMPLATES = [
-  // --- Voicemail campaign (drive a callback) ---
-  { id: "vm_sms", name: "VM: tried to call (text)", channel: "sms", subject: "",
-    body: `Hey {{first}}, it's {{signature}}. Just tried calling you. We got your info and I can likely get you pre-approved today. Give me a call back or shoot me a text when you get a sec.` },
-  { id: "vm_email", name: "VM: tried to call (email)", channel: "email", subject: "Tried to reach you, {{first}}",
+  // ============ VOICEMAIL: text (pool vm_sms) ============
+  { id: "vm_sms_a", pool: "vm_sms", name: "VM text: direct", channel: "sms", subject: "",
+    body: `Hey {{first}}, it's {{signature}}. Tried calling you. Quick reason: I can likely get you pre-approved today. Call or text me back and I will make it fast.` },
+  { id: "vm_sms_b", pool: "vm_sms", name: "VM text: story", channel: "sms", subject: "",
+    body: `Hey {{first}}, {{signature}} here. Just got a business owner with a 580 score approved for $120,000, open less than 6 months. Tried reaching you. Text me back and let's see your number.` },
+  { id: "vm_sms_c", pool: "vm_sms", name: "VM text: myth bust", channel: "sms", subject: "",
+    body: `Hey {{first}}, {{signature}}. If a bank already told you no, that is their box, not ours. We shop 75+ lenders. Tried calling you. Hit me back.` },
+  { id: "vm_sms_d", pool: "vm_sms", name: "VM text: curiosity", channel: "sms", subject: "",
+    body: `{{first}}, it's {{signature}}. Most owners have no idea what they actually qualify for. Takes me 5 minutes to show you. Call or text back.` },
+
+  // ============ VOICEMAIL: email (pool vm_email) ============
+  { id: "vm_email_a", pool: "vm_email", name: "VM email: direct", channel: "email", subject: "Tried to reach you, {{first}}",
     body: `Hey {{first}},
 
-{{signature}} here. I just tried giving you a call. We received your information and I can likely get you pre-approved today.
+{{signature}} here. I just tried calling. Here is the short version: I can likely get you pre-approved today, and it costs you nothing to find out.
 
-Give me a call back or just reply to this and we will get moving. It only takes a few minutes to see what you qualify for.
+Call me back or just reply to this and we will get moving. Takes a few minutes to see what you qualify for.
 
 Talk soon,
+{{signature}}
+
+PS. A bank's no is not the final answer. We shop your file across 75+ lenders.` },
+  { id: "vm_email_b", pool: "vm_email", name: "VM email: story", channel: "email", subject: "How a 580 score got $120,000",
+    body: `Hey {{first}},
+
+Quick story while I have you. We recently worked with an owner who had a 580 score and had been open less than 6 months. Every bank passed. We got them $120,000.
+
+I am not saying you get the same number. I am saying the bank's box is not the only box. I just tried calling to see what your file looks like.
+
+Call or reply and I will get right on it.
+
 {{signature}}` },
-  { id: "vm_sms2", name: "VM: still trying (text)", channel: "sms", subject: "",
-    body: `Hi {{first}}, {{signature}} again. Still trying to reach you about getting you pre-approved. What is a good time to connect? Text me back and I will make it quick.` },
-  { id: "vm_email2", name: "VM: still trying (email)", channel: "email", subject: "Quick one, {{first}}",
-    body: `Hi {{first}},
+  { id: "vm_email_c", pool: "vm_email", name: "VM email: myth bust", channel: "email", subject: "The bank said no. So what.",
+    body: `Hey {{first}},
 
-Following up since I have not been able to reach you. I can still get you looked at for funding and likely pre-approved fast. A quick call or text back is all it takes.
+Tried reaching you. Here is the thing most owners never hear: when a bank declines you, that is one lender's opinion, not the market's.
 
-Reply here or call me whenever works.
+We take your file to 75+ lenders and let them compete. That is a completely different game, and it is free to see where you land.
+
+Reply or call me back and I will pull your options together.
 
 {{signature}}` },
 
-  // --- Interested campaign (engaged, get the report and pre-approval) ---
-  { id: "first_sms", name: "Interested: send link (text)", channel: "sms", subject: "",
-    body: `Hi {{first}}, it's {{signature}}. Great talking. Here is the secure link to pull your report so I can get you pre-approved: {{link}} About 5 min, no hit to your score. Text me when it is done.` },
-  { id: "first_email", name: "Interested: send link (email)", channel: "email", subject: "Your pre-approval, {{first}}",
+  // ============ INTERESTED / SEND LINK: text (pool int_sms) ============
+  { id: "first_sms", pool: "int_sms", name: "Interested text: standard", channel: "sms", subject: "",
+    body: `Hi {{first}}, it's {{signature}}. Great talking. Here is the secure link to pull your report so I can get you pre-approved: {{link}} About 5 minutes, no hit to your score. Text me when it is done.` },
+  { id: "int_sms_b", pool: "int_sms", name: "Interested text: story", channel: "sms", subject: "",
+    body: `{{first}}, real example: 580 score, business open under 6 months, we got them $120,000. Yours could look totally different, but I cannot show you until I see your report: {{link}} 5 min, no score hit.` },
+  { id: "int_sms_c", pool: "int_sms", name: "Interested text: risk reversal", channel: "sms", subject: "",
+    body: `{{first}}, the link is a soft pull. No hit to your score, no cost, no obligation. It is literally the only thing standing between you and a pre-approval number: {{link}}` },
+  { id: "int_sms_d", pool: "int_sms", name: "Interested text: speed", channel: "sms", subject: "",
+    body: `{{first}}, once I have your report I move fast. Pull it here and I will have real options back to you today: {{link}} Takes about 5 minutes.` },
+
+  // ============ INTERESTED / SEND LINK: email (pool int_email) ============
+  { id: "first_email", pool: "int_email", name: "Interested email: standard", channel: "email", subject: "Your pre-approval, {{first}}",
     body: `Hi {{first}},
 
 Great talking. The next step to get you pre-approved is quick. Pull your report through the secure link below so I can review your profile and line up your best options.
 
 {{link}}
 
-It takes about 5 minutes and it does not hurt your score. Once it is done, reply here or text me and I will get to work.
+About 5 minutes, and it does not hurt your score. Once it is done, reply or text me and I will get to work.
 
-Talk soon,
 {{signature}}` },
-  { id: "fu_sms", name: "Interested: nudge (text)", channel: "sms", subject: "",
-    body: `Hi {{first}}, {{signature}} here. Still want to get you pre-approved. Pull your report when you get a sec: {{link}}` },
-  { id: "fu_email", name: "Interested: nudge (email)", channel: "email", subject: "Following up on your pre-approval, {{first}}",
+  { id: "int_email_b", pool: "int_email", name: "Interested email: story", channel: "email", subject: "580 score. $120,000. Under 6 months open.",
     body: `Hi {{first}},
 
-Circling back. I just need your report pulled to get you pre-approved. Here is the secure link again:
+Here is what is possible. A recent client had a 580 score and had been in business less than 6 months. The banks all said no. We got them $120,000.
+
+Your file is its own story, and I cannot tell it until I see your report. That is all I need to show you real numbers:
 
 {{link}}
 
-About 5 minutes, no hit to your score. Reply or text once it is done.
+Takes about 5 minutes and does not touch your score. Pull it and I will get right to work.
 
 {{signature}}` },
-  { id: "val_speed_email", name: "Interested value: faster than the bank (email)", channel: "email", subject: "Why owners come to us instead of the bank, {{first}}",
+  { id: "int_email_c", pool: "int_email", name: "Interested email: 75 lenders", channel: "email", subject: "Let them compete for you, {{first}}",
     body: `Hi {{first}},
 
-Quick note while you have the link. Banks decline most small businesses and can take weeks to months. We work differently. We shop your profile across a network of funders, so instead of one bank's yes or no, you get matched to the options you actually fit, and we move as fast as your file allows.
+A bank can only offer you the bank's box. We do the opposite. We take your profile to 75+ lenders and make them compete, then bring you the best fit on amount and terms.
 
-Pull your report here so I can see what you qualify for:
+To do that I need one thing, your report:
+
 {{link}}
 
-About 5 minutes, no hit to your score.
+5 minutes, no hit to your score. Reply once it is done and I will line up your options.
 
 {{signature}}` },
-  { id: "val_options_sms", name: "Interested value: best terms (text)", channel: "sms", subject: "",
-    body: `{{first}}, the reason we beat the bank for most owners: we shop your file across multiple funders for the best terms, not just one desk's answer. Pull your report and I will line up your options: {{link}}` },
-  { id: "val_options_email", name: "Interested value: we shop your file (email)", channel: "email", subject: "Getting you the best terms, not just the first yes",
-    body: `Hi {{first}},
 
-A bank can only offer you the bank's box. We take your profile to a network of funders and bring back the best fit on amount and terms, then move quickly to get it funded.
-
-To do that I just need your report:
-{{link}}
-
-Takes about 5 minutes.
-
-{{signature}}` },
-  { id: "val_noimpact_sms", name: "Interested value: soft pull reminder (text)", channel: "sms", subject: "",
-    body: `{{first}}, quick reminder, the link is a soft pull through My Score IQ, about 5 minutes, no hit to your score. It is the only thing I need to get you pre-approved: {{link}}` },
-  { id: "lastcall_email", name: "Interested: last call (email)", channel: "email", subject: "Closing your file, {{first}}?",
-    body: `Hi {{first}},
-
-I have kept your file open but have not seen your report come through. If the timing is not right, no problem, just let me know. If you still want to get pre-approved, it is a quick 5 minute pull here:
-{{link}}
-
-Either way, I am here when you are ready.
-{{signature}}` },
-
-  // --- Call back campaign (you spoke, agreed to reconnect) ---
-  { id: "cb_sms", name: "Call back: reconnect (text)", channel: "sms", subject: "",
+  // ============ CALL BACK: text (pool cb_sms) ============
+  { id: "cb_sms_a", pool: "cb_sms", name: "Call back text: reconnect", channel: "sms", subject: "",
     body: `Hi {{first}}, {{signature}} here, circling back like we planned. When is a good time to connect so I can get you pre-approved? Text me a time that works.` },
-  { id: "cb_email", name: "Call back: reconnect (email)", channel: "email", subject: "Picking back up, {{first}}",
+  { id: "cb_sms_b", pool: "cb_sms", name: "Call back text: nudge", channel: "sms", subject: "",
+    body: `{{first}}, still holding your spot. 5 minutes on the phone is all I need to see what you qualify for. What time today or tomorrow works?` },
+
+  // ============ CALL BACK: email (pool cb_email) ============
+  { id: "cb_email_a", pool: "cb_email", name: "Call back email: reconnect", channel: "email", subject: "Picking back up, {{first}}",
     body: `Hi {{first}},
 
 Following up like we talked about. I can get you pre-approved quickly, I just need a few minutes with you. What time works best to connect this week?
@@ -152,25 +161,43 @@ Following up like we talked about. I can get you pre-approved quickly, I just ne
 Reply here or text me and we will lock it in.
 
 {{signature}}` },
-
-  // --- Not interested (light, long-term) ---
-  { id: "ni_email", name: "Not interested: keep in touch (email)", channel: "email", subject: "Here when you need us, {{first}}",
+  { id: "cb_email_b", pool: "cb_email", name: "Call back email: value", channel: "email", subject: "Still worth 5 minutes, {{first}}",
     body: `Hi {{first}},
 
-No pressure at all. If your situation changes and you want funding, we move fast and shop for the best terms across a network of funders, not just one bank's answer.
+No pressure, just keeping my word to follow up. The reason a quick call matters: most owners have no idea what they actually qualify for until we look, and looking is free.
 
-I will keep your info on file. Reach out anytime and we will pick right back up.
+When are you around? I will keep it short and tell you straight where you stand.
 
 {{signature}}` },
 
-  // --- After report pulled ---
-  { id: "pulled_sms", name: "Got it, reviewing (text)", channel: "sms", subject: "",
-    body: `Got your report, {{first}}, thank you. Reviewing now to get you pre-approved and I will be back to you today. {{signature}}` },
+  // ============ NOT INTERESTED: email (pool ni_email) ============
+  { id: "ni_email_a", pool: "ni_email", name: "Not interested: keep in touch", channel: "email", subject: "Here when you need us, {{first}}",
+    body: `Hi {{first}},
 
-  // --- Application (after pre-approval, for more) ---
-  { id: "app_sms", name: "Application: more funding (text)", channel: "sms", subject: "",
+No pressure at all. If your situation changes and you want funding, we move fast and shop the best terms across 75+ lenders, not just one bank's answer.
+
+I will keep your info on file. Reach out anytime and we pick right back up.
+
+{{signature}}` },
+  { id: "ni_email_b", pool: "ni_email", name: "Not interested: door open", channel: "email", subject: "When the timing is right, {{first}}",
+    body: `Hi {{first}},
+
+Totally understand it is not the moment. One thing to file away: the day you do need capital, you do not want to be starting from scratch.
+
+Keep my number. When you are ready, we can usually get you a pre-approval fast. I am here.
+
+{{signature}}` },
+
+  // ============ AFTER REPORT PULLED: text (pool pulled_sms) ============
+  { id: "pulled_sms_a", pool: "pulled_sms", name: "Got it, reviewing", channel: "sms", subject: "",
+    body: `Got your report, {{first}}, thank you. Reviewing now to get you pre-approved and I will be back to you today. {{signature}}` },
+  { id: "pulled_sms_b", pool: "pulled_sms", name: "Got it, working it", channel: "sms", subject: "",
+    body: `{{first}}, got it. Taking your file to my lenders now to line up the best options. I will have something back for you today. {{signature}}` },
+
+  // ============ APPLICATION (after pre-approval): pool app_sms / app_email ============
+  { id: "app_sms_a", pool: "app_sms", name: "Application: more funding (text)", channel: "sms", subject: "",
     body: `Hi {{first}}, to go for more funding we need a quick application with your last few bank statements. You can do it all in one place, about 10 minutes: {{applink}}` },
-  { id: "app_email", name: "Application: more funding (email)", channel: "email", subject: "Your funding application, {{first}}",
+  { id: "app_email_a", pool: "app_email", name: "Application: more funding (email)", channel: "email", subject: "Your funding application, {{first}}",
     body: `Hi {{first}},
 
 To go for more funding we need a short application along with your last 4 months of business bank statements. You can complete and sign everything in one place here, about 10 minutes:
@@ -186,37 +213,37 @@ Have your bank statements, a voided check, and your driver's license handy. Repl
 const DEFAULT_CADENCES = {
   new: [],
   voicemail: [
-    { day: 0, templateId: "vm_sms" },
-    { day: 0, templateId: "vm_email" },
-    { day: 2, templateId: "vm_sms2" },
-    { day: 5, templateId: "vm_email2" },
-    { day: 9, templateId: "vm_sms2" },
-    { day: 16, templateId: "vm_email2" },
-    { day: 30, templateId: "vm_sms2" },
+    { day: 0, pool: "vm_sms" },
+    { day: 0, pool: "vm_email" },
+    { day: 2, pool: "vm_sms" },
+    { day: 5, pool: "vm_email" },
+    { day: 9, pool: "vm_sms" },
+    { day: 16, pool: "vm_email" },
+    { day: 30, pool: "vm_sms" },
   ],
   interested: [
-    { day: 0, templateId: "first_sms" },
-    { day: 0, templateId: "first_email" },
-    { day: 1, templateId: "fu_sms" },
-    { day: 3, templateId: "val_speed_email" },
-    { day: 6, templateId: "val_noimpact_sms" },
-    { day: 10, templateId: "val_options_email" },
-    { day: 16, templateId: "fu_sms" },
-    { day: 23, templateId: "val_options_sms" },
-    { day: 30, templateId: "lastcall_email" },
+    { day: 0, pool: "int_sms" },
+    { day: 0, pool: "int_email" },
+    { day: 1, pool: "int_sms" },
+    { day: 3, pool: "int_email" },
+    { day: 6, pool: "int_sms" },
+    { day: 10, pool: "int_email" },
+    { day: 16, pool: "int_sms" },
+    { day: 23, pool: "int_email" },
+    { day: 30, pool: "int_sms" },
   ],
   callback: [
-    { day: 0, templateId: "cb_sms" },
-    { day: 2, templateId: "cb_email" },
-    { day: 5, templateId: "cb_sms" },
-    { day: 12, templateId: "cb_email" },
-    { day: 25, templateId: "cb_sms" },
+    { day: 0, pool: "cb_sms" },
+    { day: 2, pool: "cb_email" },
+    { day: 5, pool: "cb_sms" },
+    { day: 12, pool: "cb_email" },
+    { day: 25, pool: "cb_sms" },
   ],
   not_interested: [
-    { day: 10, templateId: "ni_email" },
-    { day: 30, templateId: "ni_email" },
+    { day: 10, pool: "ni_email" },
+    { day: 30, pool: "ni_email" },
   ],
-  report_pulled: [{ day: 0, templateId: "pulled_sms" }],
+  report_pulled: [{ day: 0, pool: "pulled_sms" }],
   submitted: [],
   pre_approved: [],
   contracts_out: [],
@@ -302,6 +329,11 @@ function leadPatchToRow(patch) {
 /*  Helpers                                                           */
 /* ================================================================== */
 const firstName = (n) => (n || "").trim().split(/\s+/)[0] || "there";
+
+// Stable pseudo-random pick so a given lead+step always shows the same variant
+function hashStr(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
+function pickFrom(list, seed) { if (!list || !list.length) return null; return list[hashStr(String(seed)) % list.length]; }
+function poolTemplates(templates, pool) { return (templates || []).filter((t) => t.pool === pool); }
 function callOpener(lead) {
   const calls = (lead?.touches || []).filter((t) => t.kind === "call");
   const last = calls.length ? calls[calls.length - 1] : null;
@@ -400,7 +432,9 @@ function cadenceSteps(lead, cadences, templates) {
   const steps = cadences[lead.status] || [];
   const entered = lead.stageEnteredAt || lead.createdAt;
   return steps.map((s, i) => {
-    const tpl = templates.find((t) => t.id === s.templateId);
+    const tpl = s.pool
+      ? pickFrom(poolTemplates(templates, s.pool), lead.id + ":" + s.pool + ":" + i)
+      : templates.find((t) => t.id === s.templateId);
     const dueAt = entered + s.day * DAY;
     const done = (lead.touches || []).some(
       (t) => t.kind === "cadence" && t.stage === lead.status && t.step === i && t.at >= entered - 5000
@@ -884,8 +918,8 @@ function Pipeline({ leads, allLeads, allCount, dueList, stats, config, query, se
 function BoardCard({ lead, onOpen, cadences, templates, config, openCompose, updateLead, onDragStart, onDragEnd, dragging }) {
   const step = nextDue(lead, cadences, templates);
   const rel = step ? relativeDue(step.dueAt) : null;
-  const tplSms = templates.find((t) => t.id === "first_sms");
-  const tplEmail = templates.find((t) => t.id === "first_email");
+  const tplSms = pickFrom(poolTemplates(templates, "int_sms"), lead.id) || templates.find((t) => t.id === "first_sms");
+  const tplEmail = pickFrom(poolTemplates(templates, "int_email"), lead.id) || templates.find((t) => t.id === "first_email");
   const stop = (e) => e.stopPropagation();
   return (
     <div draggable onDragStart={onDragStart} onDragEnd={onDragEnd} onClick={onOpen}
@@ -951,8 +985,8 @@ function AddForm({ onAdd, onCancel }) {
 function LeadRow({ lead, onOpen, cadences, templates, config, logTouch, updateLead, openCompose }) {
   const step = nextDue(lead, cadences, templates);
   const rel = step ? relativeDue(step.dueAt) : null;
-  const tplSms = templates.find((t) => t.id === "first_sms");
-  const tplEmail = templates.find((t) => t.id === "first_email");
+  const tplSms = pickFrom(poolTemplates(templates, "int_sms"), lead.id) || templates.find((t) => t.id === "first_sms");
+  const tplEmail = pickFrom(poolTemplates(templates, "int_email"), lead.id) || templates.find((t) => t.id === "first_email");
   const stop = (e) => e.stopPropagation();
   return (
     <div onClick={onOpen} className="cursor-pointer rounded-xl border border-slate-200 bg-white px-4 py-3 text-left transition hover:border-blue-300 hover:shadow-sm">
@@ -1460,7 +1494,7 @@ function Messaging({ templates, persistTemplates, cadences, persistCadences }) {
 
 function TemplatesEditor({ templates, persistTemplates }) {
   const [editing, setEditing] = useState(null); // template object or null
-  const blank = () => ({ id: "t_" + Math.random().toString(36).slice(2, 9), name: "", channel: "sms", subject: "", body: "" });
+  const blank = () => ({ id: "t_" + Math.random().toString(36).slice(2, 9), name: "", channel: "sms", pool: "", subject: "", body: "" });
   const save = (tpl) => {
     const exists = templates.some((t) => t.id === tpl.id);
     persistTemplates(exists ? templates.map((t) => (t.id === tpl.id ? tpl : t)) : [...templates, tpl]);
@@ -1481,6 +1515,7 @@ function TemplatesEditor({ templates, persistTemplates }) {
             <div className="flex items-center gap-2">
               {t.channel === "sms" ? <MessageSquare size={15} className="text-blue-600" /> : <Mail size={15} className="text-blue-600" />}
               <span className="font-semibold">{t.name || "(unnamed)"}</span>
+              {t.pool && <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-600">{POOL_LABELS[t.pool] || t.pool}</span>}
               <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">{t.channel}</span>
             </div>
             <div className="flex gap-1">
@@ -1506,6 +1541,12 @@ function TemplateForm({ tpl, onSave, onCancel }) {
           <select value={d.channel} onChange={set("channel")} className={inputCls}><option value="sms">Text (SMS)</option><option value="email">Email</option></select>
         </Labeled>
       </div>
+      <div className="mt-3"><Labeled label="Message pool (leads get a random variant from the same pool)">
+        <select value={d.pool || ""} onChange={set("pool")} className={inputCls}>
+          <option value="">None (not in rotation)</option>
+          {Object.entries(POOL_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+        </select>
+      </Labeled></div>
       {d.channel === "email" && <div className="mt-3"><Labeled label="Subject"><input value={d.subject} onChange={set("subject")} className={inputCls} /></Labeled></div>}
       <div className="mt-3"><Labeled label="Message"><textarea value={d.body} onChange={set("body")} rows={d.channel === "email" ? 8 : 3} className={inputCls} /></Labeled></div>
       <div className="mt-3 flex justify-end gap-2">
@@ -1516,17 +1557,27 @@ function TemplateForm({ tpl, onSave, onCancel }) {
   );
 }
 
+const POOL_LABELS = {
+  vm_sms: "Voicemail, text", vm_email: "Voicemail, email",
+  int_sms: "Interested, text", int_email: "Interested, email",
+  cb_sms: "Call back, text", cb_email: "Call back, email",
+  ni_email: "Not interested, email", pulled_sms: "Report pulled, text",
+  app_sms: "Application, text", app_email: "Application, email",
+};
+
 function CadenceEditor({ templates, cadences, persistCadences }) {
-  const [stage, setStage] = useState("link_sent");
+  const [stage, setStage] = useState("interested");
   const steps = cadences[stage] || [];
+  const pools = [...new Set(templates.map((t) => t.pool).filter(Boolean))];
+  const poolLabel = (p) => (POOL_LABELS[p] || p) + ` (${poolTemplates(templates, p).length})`;
   const update = (next) => persistCadences({ ...cadences, [stage]: next });
-  const addStep = () => update([...steps, { day: 1, templateId: templates[0]?.id || "" }]);
+  const addStep = () => update([...steps, { day: 1, pool: pools[0] || "" }]);
   const setStep = (i, patch) => update(steps.map((s, idx) => (idx === i ? { ...s, ...patch } : s)));
   const delStep = (i) => update(steps.filter((_, idx) => idx !== i));
 
   return (
     <div>
-      <p className="mb-3 text-sm text-slate-500">For each stage, set which message goes out and how many days after the client enters that stage. When they move stages, this stage's steps stop and the new stage's steps begin.</p>
+      <p className="mb-3 text-sm text-slate-500">Each step sends from a message pool, and the app picks a random variant per lead so people get different messages. Set how many days after entering the stage it goes out.</p>
       <div className="mb-3 flex flex-wrap gap-1.5">
         {STAGES.map((s) => (
           <button key={s.key} onClick={() => setStage(s.key)} className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset ${stage === s.key ? TONE[s.tone] + " ring-2" : "bg-white text-slate-500 ring-slate-200 hover:bg-slate-50"}`}>
@@ -1541,8 +1592,9 @@ function CadenceEditor({ templates, cadences, persistCadences }) {
             <div key={i} className="flex flex-wrap items-center gap-2">
               <span className="text-xs text-slate-400">Day</span>
               <input type="number" min={0} value={s.day} onChange={(e) => setStep(i, { day: Number(e.target.value) })} className="w-16 rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-blue-400" />
-              <select value={s.templateId} onChange={(e) => setStep(i, { templateId: e.target.value })} className="min-w-44 flex-1 rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-blue-400">
-                {templates.map((t) => <option key={t.id} value={t.id}>{t.name} ({t.channel})</option>)}
+              <select value={s.pool || ""} onChange={(e) => setStep(i, { pool: e.target.value, templateId: undefined })} className="min-w-44 flex-1 rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-blue-400">
+                {!s.pool && <option value="">Pick a message pool</option>}
+                {pools.map((p) => <option key={p} value={p}>{poolLabel(p)}</option>)}
               </select>
               <button onClick={() => delStep(i)} className="rounded-md p-1.5 text-rose-400 hover:bg-rose-50"><Trash2 size={15} /></button>
             </div>

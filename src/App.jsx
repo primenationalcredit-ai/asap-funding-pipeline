@@ -59,13 +59,13 @@ const DEFAULT_CONFIG = {
 const DEFAULT_TEMPLATES = [
   // ============ VOICEMAIL: text (pool vm_sms) ============
   { id: "vm_sms_a", pool: "vm_sms", name: "VM text: direct", channel: "sms", subject: "",
-    body: `Hey {{first}}, it's {{signature}}. Tried calling you. Quick reason: I can likely get you pre-approved today. Call or text me back and I will make it fast.` },
+    body: `Hi {{first}}, it's Joe with ASAP. I got your request for information from Facebook and tried giving you a call. Give me a quick call back or shoot me a text when you get a sec.` },
   { id: "vm_sms_b", pool: "vm_sms", name: "VM text: story", channel: "sms", subject: "",
-    body: `Hey {{first}}, {{signature}} here. Just got a business owner with a 580 score approved for $120,000, open less than 6 months. Tried reaching you. Text me back and let's see your number.` },
+    body: `Hi {{first}}, Joe with ASAP here. You reached out to us on Facebook and I tried to connect. I have some options that could really help your business. Call or text me back.` },
   { id: "vm_sms_c", pool: "vm_sms", name: "VM text: myth bust", channel: "sms", subject: "",
-    body: `Hey {{first}}, {{signature}}. If a bank already told you no, that is their box, not ours. We shop 75+ lenders. Tried calling you. Hit me back.` },
+    body: `Hi {{first}}, it's Joe from ASAP. Following up on the request you sent us through Facebook. Whenever you have 5 minutes, text me back and we can go over everything.` },
   { id: "vm_sms_d", pool: "vm_sms", name: "VM text: curiosity", channel: "sms", subject: "",
-    body: `{{first}}, it's {{signature}}. Most owners have no idea what they actually qualify for. Takes me 5 minutes to show you. Call or text back.` },
+    body: `{{first}}, Joe with ASAP. Tried reaching you about the info you requested on Facebook. Text me back a good time to connect and I will keep it quick.` },
 
   // ============ VOICEMAIL: email (pool vm_email) ============
   { id: "vm_email_a", pool: "vm_email", name: "VM email: direct", channel: "email", subject: "Tried to reach you, {{first}}",
@@ -102,13 +102,13 @@ Reply or call me back and I will pull your options together.
 
   // ============ INTERESTED / SEND LINK: text (pool int_sms) ============
   { id: "first_sms", pool: "int_sms", name: "Interested text: standard", channel: "sms", subject: "",
-    body: `Hi {{first}}, it's {{signature}}. Great talking. Here is the secure link to pull your report so I can get you pre-approved: {{link}} About 5 minutes, no hit to your score. Text me when it is done.` },
+    body: `Hi {{first}}, it's Joe with ASAP. Great talking. Here is the secure link to pull your report so I can review your options: {{link}} About 5 minutes, no hit to your score. Text me when it is done.` },
   { id: "int_sms_b", pool: "int_sms", name: "Interested text: story", channel: "sms", subject: "",
-    body: `{{first}}, real example: 580 score, business open under 6 months, we got them $120,000. Yours could look totally different, but I cannot show you until I see your report: {{link}} 5 min, no score hit.` },
+    body: `Hi {{first}}, Joe with ASAP. Thanks for the info you sent us from Facebook. The next step is quick, pull your report here so I can see how I can help: {{link}} 5 min, no score hit.` },
   { id: "int_sms_c", pool: "int_sms", name: "Interested text: risk reversal", channel: "sms", subject: "",
-    body: `{{first}}, the link is a soft pull. No hit to your score, no cost, no obligation. It is literally the only thing standing between you and a pre-approval number: {{link}}` },
+    body: `{{first}}, the link is a soft pull. No hit to your score, no cost, no obligation. It is the one thing I need to show you your options: {{link}}` },
   { id: "int_sms_d", pool: "int_sms", name: "Interested text: speed", channel: "sms", subject: "",
-    body: `{{first}}, once I have your report I move fast. Pull it here and I will have real options back to you today: {{link}} Takes about 5 minutes.` },
+    body: `{{first}}, once I have your report I move fast and will get right back to you. Pull it here, about 5 minutes: {{link}}` },
 
   // ============ INTERESTED / SEND LINK: email (pool int_email) ============
   { id: "first_email", pool: "int_email", name: "Interested email: standard", channel: "email", subject: "Your pre-approval, {{first}}",
@@ -148,9 +148,9 @@ To do that I need one thing, your report:
 
   // ============ CALL BACK: text (pool cb_sms) ============
   { id: "cb_sms_a", pool: "cb_sms", name: "Call back text: reconnect", channel: "sms", subject: "",
-    body: `Hi {{first}}, {{signature}} here, circling back like we planned. When is a good time to connect so I can get you pre-approved? Text me a time that works.` },
+    body: `Hi {{first}}, Joe with ASAP, circling back like we planned. When is a good time to connect? Text me a time that works.` },
   { id: "cb_sms_b", pool: "cb_sms", name: "Call back text: nudge", channel: "sms", subject: "",
-    body: `{{first}}, still holding your spot. 5 minutes on the phone is all I need to see what you qualify for. What time today or tomorrow works?` },
+    body: `{{first}}, Joe with ASAP here. Still holding your spot. 5 minutes is all I need. What time today or tomorrow works?` },
 
   // ============ CALL BACK: email (pool cb_email) ============
   { id: "cb_email_a", pool: "cb_email", name: "Call back email: reconnect", channel: "email", subject: "Picking back up, {{first}}",
@@ -190,13 +190,13 @@ Keep my number. When you are ready, we can usually get you a pre-approval fast. 
 
   // ============ AFTER REPORT PULLED: text (pool pulled_sms) ============
   { id: "pulled_sms_a", pool: "pulled_sms", name: "Got it, reviewing", channel: "sms", subject: "",
-    body: `Got your report, {{first}}, thank you. Reviewing now to get you pre-approved and I will be back to you today. {{signature}}` },
+    body: `Got your report, {{first}}, thank you. Reviewing everything now and I will be back to you today. Joe with ASAP` },
   { id: "pulled_sms_b", pool: "pulled_sms", name: "Got it, working it", channel: "sms", subject: "",
-    body: `{{first}}, got it. Taking your file to my lenders now to line up the best options. I will have something back for you today. {{signature}}` },
+    body: `{{first}}, got it, thank you. Going through your file now to see how I can help. Back to you today. Joe with ASAP` },
 
   // ============ APPLICATION (after pre-approval): pool app_sms / app_email ============
   { id: "app_sms_a", pool: "app_sms", name: "Application: more funding (text)", channel: "sms", subject: "",
-    body: `Hi {{first}}, to go for more funding we need a quick application with your last few bank statements. You can do it all in one place, about 10 minutes: {{applink}}` },
+    body: `Hi {{first}}, to move forward we need a quick application with your last few bank statements. You can do it all in one place, about 10 minutes: {{applink}}` },
   { id: "app_email_a", pool: "app_email", name: "Application: more funding (email)", channel: "email", subject: "Your funding application, {{first}}",
     body: `Hi {{first}},
 

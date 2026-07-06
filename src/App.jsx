@@ -59,13 +59,13 @@ const DEFAULT_CONFIG = {
 const DEFAULT_TEMPLATES = [
   // ============ VOICEMAIL: text (pool vm_sms) ============
   { id: "vm_sms_a", pool: "vm_sms", name: "VM text: direct", channel: "sms", subject: "",
-    body: `Hi {{first}}, it's Joe with ASAP. I got your request for information from Facebook and tried giving you a call. Give me a quick call back or shoot me a text when you get a sec.` },
+    body: `Hi {{first}}, it's Joe with ASAP. You responded to one of our Facebook ads about getting your business approved, and I just tried giving you a call. Give me a quick call back or shoot me a text.` },
   { id: "vm_sms_b", pool: "vm_sms", name: "VM text: story", channel: "sms", subject: "",
-    body: `Hi {{first}}, Joe with ASAP here. You reached out to us on Facebook and I tried to connect. I have some options that could really help your business. Call or text me back.` },
+    body: `Hi {{first}}, Joe with ASAP here. I saw you responded to our Facebook ad about getting your business approved, and I tried reaching you by phone. Call or text me back and I will walk you through it.` },
   { id: "vm_sms_c", pool: "vm_sms", name: "VM text: myth bust", channel: "sms", subject: "",
-    body: `Hi {{first}}, it's Joe from ASAP. Following up on the request you sent us through Facebook. Whenever you have 5 minutes, text me back and we can go over everything.` },
+    body: `Hi {{first}}, it's Joe from ASAP. You reached out through our Facebook ad about getting your business approved. This is not spam, just following up like you asked. Text me back a good time to connect.` },
   { id: "vm_sms_d", pool: "vm_sms", name: "VM text: curiosity", channel: "sms", subject: "",
-    body: `{{first}}, Joe with ASAP. Tried reaching you about the info you requested on Facebook. Text me back a good time to connect and I will keep it quick.` },
+    body: `{{first}}, Joe with ASAP. Following up on the Facebook ad you responded to about getting your business approved. Whenever you have a sec, call or text me back and I will keep it quick.` },
 
   // ============ VOICEMAIL: email (pool vm_email) ============
   { id: "vm_email_a", pool: "vm_email", name: "VM email: direct", channel: "email", subject: "Tried to reach you, {{first}}",

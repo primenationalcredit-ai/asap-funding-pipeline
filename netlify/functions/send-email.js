@@ -1,8 +1,8 @@
-import nodemailer from "nodemailer";
 import { createClient } from "@supabase/supabase-js";
 
 const resp = (statusCode, obj) => ({ statusCode, headers: { "Content-Type": "application/json" }, body: JSON.stringify(obj) });
 
+// Only logged-in users of the app may send
 async function requireUser(event) {
   const auth = event.headers.authorization || event.headers.Authorization || "";
   const token = auth.replace(/^Bearer\s+/i, "");
@@ -24,28 +24,31 @@ export const handler = async (event) => {
   const { to, subject, text } = body;
   if (!to || !text) return resp(422, { error: "Missing recipient or message" });
 
-  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
-    return resp(500, { error: "Email is not configured yet. Set SMTP_HOST, SMTP_USER, SMTP_PASS in Netlify." });
-  }
+  const apiKey = process.env.SENDGRID_API_KEY;
+  if (!apiKey) return resp(500, { error: "Email is not configured yet. Set SENDGRID_API_KEY in Netlify." });
 
-  const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: Number(process.env.SMTP_PORT || 587),
-    secure: false,
-    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-  });
-
+  const fromAddr = process.env.EMAIL_FROM;
+  if (!fromAddr) return resp(500, { error: "Set EMAIL_FROM in Netlify to your verified SendGrid sender address." });
   const fromName = process.env.EMAIL_FROM_NAME || "";
-  const fromAddr = process.env.EMAIL_FROM || process.env.SMTP_USER;
+
+  const payload = {
+    personalizations: [{ to: [{ email: to }] }],
+    from: { email: fromAddr, name: fromName || undefined },
+    subject: subject || "",
+    content: [{ type: "text/plain", value: text }],
+  };
+  if (process.env.EMAIL_REPLY_TO) payload.reply_to = { email: process.env.EMAIL_REPLY_TO };
 
   try {
-    const info = await transporter.sendMail({
-      from: fromName ? `${fromName} <${fromAddr}>` : fromAddr,
-      to,
-      subject: subject || "",
-      text,
+    const r = await fetch("https://api.sendgrid.com/v3/mail/send", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
     });
-    return resp(200, { ok: true, id: info.messageId });
+    if (r.status === 202) return resp(200, { ok: true });
+    let detail = "";
+    try { const j = await r.json(); detail = (j.errors && j.errors.map((e) => e.message).join("; ")) || JSON.stringify(j); } catch { detail = await r.text(); }
+    return resp(500, { error: `SendGrid ${r.status}: ${detail}` });
   } catch (e) {
     return resp(500, { error: String(e.message || e) });
   }

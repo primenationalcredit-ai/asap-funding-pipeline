@@ -59,42 +59,42 @@ const DEFAULT_CONFIG = {
 const DEFAULT_TEMPLATES = [
   // ============ VOICEMAIL: text (pool vm_sms) ============
   { id: "vm_sms_a", pool: "vm_sms", name: "VM text: direct", channel: "sms", subject: "",
-    body: `Hi {{first}}, it's Joe with ASAP. You responded to one of our Facebook ads about getting your business approved, and I just tried giving you a call. Give me a quick call back or shoot me a text.` },
+    body: `Hi {{first}}, it's Joe with ASAP. I just gave you a call about the Facebook ad you responded to on getting your business approved. Give me a quick call back or shoot me a text when you get a sec.` },
   { id: "vm_sms_b", pool: "vm_sms", name: "VM text: story", channel: "sms", subject: "",
-    body: `Hi {{first}}, Joe with ASAP here. I saw you responded to our Facebook ad about getting your business approved, and I tried reaching you by phone. Call or text me back and I will walk you through it.` },
+    body: `Hi {{first}}, Joe with ASAP here. I just called you about the Facebook ad you responded to on getting your business approved. Call or text me back and I will walk you through it.` },
   { id: "vm_sms_c", pool: "vm_sms", name: "VM text: myth bust", channel: "sms", subject: "",
-    body: `Hi {{first}}, it's Joe from ASAP. You reached out through our Facebook ad about getting your business approved. This is not spam, just following up like you asked. Text me back a good time to connect.` },
+    body: `Hi {{first}}, it's Joe from ASAP. I just tried calling you about the Facebook ad you responded to on getting your business approved. This is not spam, just following up like you asked. Text me back a good time to connect.` },
   { id: "vm_sms_d", pool: "vm_sms", name: "VM text: curiosity", channel: "sms", subject: "",
-    body: `{{first}}, Joe with ASAP. Following up on the Facebook ad you responded to about getting your business approved. Whenever you have a sec, call or text me back and I will keep it quick.` },
+    body: `{{first}}, Joe with ASAP. I just gave you a call about the Facebook ad you responded to on getting your business approved. Whenever you have a sec, call or text me back and I will keep it quick.` },
 
   // ============ VOICEMAIL: email (pool vm_email) ============
   { id: "vm_email_a", pool: "vm_email", name: "VM email: direct", channel: "email", subject: "Tried to reach you, {{first}}",
     body: `Hey {{first}},
 
-{{signature}} here. I just tried calling. Here is the short version: I can likely get you pre-approved today, and it costs you nothing to find out.
+{{signature}} here. You responded to one of our Facebook ads about getting your business approved, and I just tried giving you a call.
 
-Call me back or just reply to this and we will get moving. Takes a few minutes to see what you qualify for.
+Here is the short version: I can likely get you pre-approved today, and it costs you nothing to find out. Call me back or just reply to this and we will get moving. Takes a few minutes to see what you qualify for.
 
 Talk soon,
 {{signature}}
 
 PS. A bank's no is not the final answer. We shop your file across 75+ lenders.` },
-  { id: "vm_email_b", pool: "vm_email", name: "VM email: story", channel: "email", subject: "How a 580 score got $120,000",
+  { id: "vm_email_b", pool: "vm_email", name: "VM email: story", channel: "email", subject: "Quick question about your business, {{first}}",
     body: `Hey {{first}},
 
-Quick story while I have you. We recently worked with an owner who had a 580 score and had been open less than 6 months. Every bank passed. We got them $120,000.
+You responded to one of our Facebook ads about getting your business approved, and I just tried giving you a call.
 
-I am not saying you get the same number. I am saying the bank's box is not the only box. I just tried calling to see what your file looks like.
+Quick story while I have you. We recently worked with an owner who had a 580 score and had been open less than 6 months. Every bank passed. We got them $120,000. I am not saying you get the same number, I am saying the bank's box is not the only box, and I would love to see what your file looks like.
 
 Call or reply and I will get right on it.
 
 {{signature}}` },
-  { id: "vm_email_c", pool: "vm_email", name: "VM email: myth bust", channel: "email", subject: "The bank said no. So what.",
+  { id: "vm_email_c", pool: "vm_email", name: "VM email: myth bust", channel: "email", subject: "Following up, {{first}}",
     body: `Hey {{first}},
 
-Tried reaching you. Here is the thing most owners never hear: when a bank declines you, that is one lender's opinion, not the market's.
+You responded to one of our Facebook ads about getting your business approved, and I just tried reaching you by phone.
 
-We take your file to 75+ lenders and let them compete. That is a completely different game, and it is free to see where you land.
+Here is the thing most owners never hear: when a bank declines you, that is one lender's opinion, not the market's. We take your file to 75+ lenders and let them compete. That is a completely different game, and it is free to see where you land.
 
 Reply or call me back and I will pull your options together.
 
@@ -121,7 +121,7 @@ Great talking. The next step to get you pre-approved is quick. Pull your report 
 About 5 minutes, and it does not hurt your score. Once it is done, reply or text me and I will get to work.
 
 {{signature}}` },
-  { id: "int_email_b", pool: "int_email", name: "Interested email: story", channel: "email", subject: "580 score. $120,000. Under 6 months open.",
+  { id: "int_email_b", pool: "int_email", name: "Interested email: story", channel: "email", subject: "A quick idea for your business, {{first}}",
     body: `Hi {{first}},
 
 Here is what is possible. A recent client had a 580 score and had been in business less than 6 months. The banks all said no. We got them $120,000.
@@ -133,7 +133,7 @@ Your file is its own story, and I cannot tell it until I see your report. That i
 Takes about 5 minutes and does not touch your score. Pull it and I will get right to work.
 
 {{signature}}` },
-  { id: "int_email_c", pool: "int_email", name: "Interested email: 75 lenders", channel: "email", subject: "Let them compete for you, {{first}}",
+  { id: "int_email_c", pool: "int_email", name: "Interested email: 75 lenders", channel: "email", subject: "Circling back, {{first}}",
     body: `Hi {{first}},
 
 A bank can only offer you the bank's box. We do the opposite. We take your profile to 75+ lenders and make them compete, then bring you the best fit on amount and terms.

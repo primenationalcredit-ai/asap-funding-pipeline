@@ -103,13 +103,13 @@ Reply or call me back and I will pull your options together.
 
   // ============ INTERESTED / SEND LINK: text (pool int_sms) ============
   { id: "first_sms", pool: "int_sms", name: "Interested text: standard", channel: "sms", subject: "",
-    body: `Hi {{first}}, it's Joe with ASAP. Great talking. Here is the secure link to pull your report so I can review your options: {{link}} About 5 minutes, no hit to your score. Text me when it is done.` },
+    body: `Hi {{first}}, Joe with ASAP. Here is the one thing between you and knowing exactly what you qualify for, your report: {{link}} 5 minutes, soft pull, zero hit to your score. Text me DONE when it is in and I will get to work.` },
   { id: "int_sms_b", pool: "int_sms", name: "Interested text: story", channel: "sms", subject: "",
-    body: `Hi {{first}}, Joe with ASAP. Thanks for the info you sent us from Facebook. The next step is quick, pull your report here so I can see how I can help: {{link}} 5 min, no score hit.` },
+    body: `{{first}}, Joe with ASAP. You did the hard part by reaching out. This part takes 5 minutes: pull your report here so I can show you real numbers, not guesses: {{link}} No hit to your score.` },
   { id: "int_sms_c", pool: "int_sms", name: "Interested text: risk reversal", channel: "sms", subject: "",
-    body: `{{first}}, the link is a soft pull. No hit to your score, no cost, no obligation. It is the one thing I need to show you your options: {{link}}` },
+    body: `{{first}}, most owners are shocked when they see what they actually qualify for. I cannot show you until I see your report though, and it is a soft pull, no score hit: {{link}} Worth 5 minutes?` },
   { id: "int_sms_d", pool: "int_sms", name: "Interested text: speed", channel: "sms", subject: "",
-    body: `{{first}}, once I have your report I move fast and will get right back to you. Pull it here, about 5 minutes: {{link}}` },
+    body: `{{first}}, here is my promise: pull your report and I will have real options back to you the same day. That is it. 5 minutes on your end: {{link}}` },
 
   // ============ INTERESTED / SEND LINK: email (pool int_email) ============
   { id: "first_email", pool: "int_email", name: "Interested email: standard", channel: "email", subject: "Your pre-approval, {{first}}",
@@ -149,23 +149,23 @@ To do that I need one thing, your report:
 
   // ============ ACCOUNT CHECK: text (pool acct_sms) ============
   { id: "acct_sms_a", pool: "acct_sms", name: "Account check: text", channel: "sms", subject: "",
-    body: `Hi {{first}}, Joe with ASAP. Were you able to get your MyScoreIQ account set up? Here is the link again: {{link}} Takes about 5 minutes. If you already have MyScoreIQ but cannot get in, we can use SmartCredit instead: {{smartcredit}}` },
+    body: `{{first}}, Joe with ASAP. Quick one: were you able to get your MyScoreIQ account created? That report is the only thing between you and knowing exactly what you qualify for. Here is the link again, 5 minutes: {{link}} Reply DONE when it is set and I will take it from there.` },
   { id: "acct_sms_b", pool: "acct_sms", name: "Account check: text 2", channel: "sms", subject: "",
-    body: `{{first}}, checking in, did you get the report account created yet? MyScoreIQ: {{link}} Or if that one gives you trouble, SmartCredit works too: {{smartcredit}} Let me know if you hit a snag and I will walk you through it.` },
+    body: `{{first}}, not going to let you leave money on the table. Two minutes to create your MyScoreIQ account and I can tell you what you qualify for today: {{link}} If you get stuck anywhere, text me STUCK and I will jump on a call with you.` },
 
   // ============ ACCOUNT CHECK: email (pool acct_email) ============
   { id: "acct_email_a", pool: "acct_email", name: "Account check: email", channel: "email", subject: "Were you able to set up your account, {{first}}?",
     body: `Hi {{first}},
 
-Quick check, were you able to get your MyScoreIQ account created? Here is the link again so you do not have to dig for it:
+Quick check, were you able to get your MyScoreIQ account created?
+
+Here is the link again so you do not have to dig for it:
 
 {{link}}
 
-It only takes about 5 minutes. If you already have a MyScoreIQ account but cannot get access, no problem, we can use SmartCredit instead:
+Here is why it matters: that report is the only thing I need to tell you exactly what you qualify for. No report, no numbers. Five minutes and you will know where you stand.
 
-{{smartcredit}}
-
-Reply or text me if you get stuck anywhere and I will walk you through it.
+Get stuck anywhere? Just reply to this and I will walk you through it, or hop on a quick call with you.
 
 {{signature}}` },
 
@@ -248,6 +248,21 @@ Keep my number. When you are ready, we can usually get you a pre-approval fast. 
   // ============ APPLICATION (after pre-approval): pool app_sms / app_email ============
   { id: "app_sms_a", pool: "app_sms", name: "Application: more funding (text)", channel: "sms", subject: "",
     body: `Hi {{first}}, to move forward we need a quick application with your last few bank statements. You can do it all in one place, about 10 minutes: {{applink}}` },
+  // ============ MANUAL (never auto-sent, shows in the Insert-a-template picker) ============
+  { id: "manual_smartcredit_sms", pool: "manual", name: "SmartCredit backup (text)", channel: "sms", subject: "",
+    body: `{{first}}, no problem. If MyScoreIQ is not working for you, use SmartCredit instead, it does the same thing: {{smartcredit}} About 5 minutes. Text me DONE once you are in.` },
+  { id: "manual_smartcredit_email", pool: "manual", name: "SmartCredit backup (email)", channel: "email", subject: "Use this instead, {{first}}",
+    body: `Hi {{first}},
+
+No problem at all. If you cannot get into MyScoreIQ, we can use SmartCredit instead. It gives me the same information:
+
+{{smartcredit}}
+
+Takes about 5 minutes. Reply or text me once you are in and I will take it from there.
+
+{{signature}}` },
+  { id: "manual_checkin_sms", pool: "manual", name: "Warm check-in (text)", channel: "sms", subject: "",
+    body: `{{first}}, Joe with ASAP. Just thinking about your business, still want to help you get where you are trying to go. Got a couple minutes to talk this week?` },
   { id: "app_email_a", pool: "app_email", name: "Application: more funding (email)", channel: "email", subject: "Your funding application, {{first}}",
     body: `Hi {{first}},
 
@@ -1711,6 +1726,7 @@ const POOL_LABELS = {
   cb_sms: "Call back, text", cb_email: "Call back, email",
   ni_email: "Not interested, email", pulled_sms: "Report pulled, text",
   app_sms: "Application, text", app_email: "Application, email",
+  manual: "Manual only (not auto-sent)",
 };
 
 function CadenceEditor({ templates, cadences, persistCadences }) {

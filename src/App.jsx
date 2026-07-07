@@ -50,6 +50,7 @@ const DAY = 86400000;
 /* ================================================================== */
 const DEFAULT_CONFIG = {
   reportLink: "https://www.myscoreiq.com/industry-score-preferred.aspx?offercode=432143MH",
+  smartCreditLink: "https://www.smartcredit.com/?PID=52188",
   appLink: "https://tinyurl.com/asapfundingapp",
   signature: "Joe at ASAP Funding USA",
   funderName: "Torro",
@@ -146,6 +147,56 @@ To do that I need one thing, your report:
 
 {{signature}}` },
 
+  // ============ ACCOUNT CHECK: text (pool acct_sms) ============
+  { id: "acct_sms_a", pool: "acct_sms", name: "Account check: text", channel: "sms", subject: "",
+    body: `Hi {{first}}, Joe with ASAP. Were you able to get your MyScoreIQ account set up? Here is the link again: {{link}} Takes about 5 minutes. If you already have MyScoreIQ but cannot get in, we can use SmartCredit instead: {{smartcredit}}` },
+  { id: "acct_sms_b", pool: "acct_sms", name: "Account check: text 2", channel: "sms", subject: "",
+    body: `{{first}}, checking in, did you get the report account created yet? MyScoreIQ: {{link}} Or if that one gives you trouble, SmartCredit works too: {{smartcredit}} Let me know if you hit a snag and I will walk you through it.` },
+
+  // ============ ACCOUNT CHECK: email (pool acct_email) ============
+  { id: "acct_email_a", pool: "acct_email", name: "Account check: email", channel: "email", subject: "Were you able to set up your account, {{first}}?",
+    body: `Hi {{first}},
+
+Quick check, were you able to get your MyScoreIQ account created? Here is the link again so you do not have to dig for it:
+
+{{link}}
+
+It only takes about 5 minutes. If you already have a MyScoreIQ account but cannot get access, no problem, we can use SmartCredit instead:
+
+{{smartcredit}}
+
+Reply or text me if you get stuck anywhere and I will walk you through it.
+
+{{signature}}` },
+
+  // ============ SUCCESS STORIES: text (pool story_sms) ============
+  { id: "story_sms_a", pool: "story_sms", name: "Success story: text", channel: "sms", subject: "",
+    body: `{{first}}, just helped a business owner with a 600 score pull together $85,000 for their shop. Every owner's situation is different, but I would love to show you what is possible for yours. Got 5 minutes to talk?` },
+  { id: "story_sms_b", pool: "story_sms", name: "Success story: text 2", channel: "sms", subject: "",
+    body: `{{first}}, a lot of owners think a lower score shuts the door. It does not. We recently got someone open under a year approved when their bank passed. Worth a quick call to see your options?` },
+
+  // ============ SUCCESS STORIES: email (pool story_email) ============
+  { id: "story_email_a", pool: "story_email", name: "Success story: email", channel: "email", subject: "What we did for an owner like you, {{first}}",
+    body: `Hi {{first}},
+
+Wanted to share a quick one. We recently worked with a business owner who had a 600 score and figured they had no shot. Their bank had already passed. We took their file to our network and got them $85,000.
+
+Your situation is its own story, and I would love to see what we can do for you. It starts with a quick conversation, no cost and no obligation.
+
+Reply here or give me a call and let's talk.
+
+{{signature}}` },
+  { id: "story_email_b", pool: "story_email", name: "Success story: email 2", channel: "email", subject: "A lower score is not the end of the road, {{first}}",
+    body: `Hi {{first}},
+
+A lot of owners assume a lower credit score means no capital. That is not how it works when you have someone shopping your file the right way.
+
+We recently helped an owner who had been in business under a year, and whose bank had already said no, get approved. Different lenders, different criteria, different answer.
+
+I would love to see what is possible for you. Got a few minutes this week to talk?
+
+{{signature}}` },
+
   // ============ CALL BACK: text (pool cb_sms) ============
   { id: "cb_sms_a", pool: "cb_sms", name: "Call back text: reconnect", channel: "sms", subject: "",
     body: `Hi {{first}}, Joe with ASAP, circling back like we planned. When is a good time to connect? Text me a time that works.` },
@@ -224,13 +275,15 @@ const DEFAULT_CADENCES = {
   interested: [
     { day: 0, pool: "int_sms" },
     { day: 0, pool: "int_email" },
-    { day: 1, pool: "int_sms" },
-    { day: 3, pool: "int_email" },
-    { day: 6, pool: "int_sms" },
-    { day: 10, pool: "int_email" },
-    { day: 16, pool: "int_sms" },
-    { day: 23, pool: "int_email" },
-    { day: 30, pool: "int_sms" },
+    { day: 1, pool: "acct_sms" },
+    { day: 1, pool: "acct_email" },
+    { day: 2, pool: "acct_sms" },
+    { day: 3, pool: "story_sms" },
+    { day: 5, pool: "story_email" },
+    { day: 9, pool: "story_sms" },
+    { day: 14, pool: "story_email" },
+    { day: 21, pool: "story_sms" },
+    { day: 30, pool: "int_email" },
   ],
   callback: [
     { day: 0, pool: "cb_sms" },
@@ -329,6 +382,8 @@ function leadPatchToRow(patch) {
 /*  Helpers                                                           */
 /* ================================================================== */
 const firstName = (n) => (n || "").trim().split(/\s+/)[0] || "there";
+const leadTitle = (l) => (l.businessName && l.businessName.trim()) || l.name || "Unnamed";
+const leadSubName = (l) => ((l.businessName && l.businessName.trim()) ? l.name : "");
 
 // Stable pseudo-random pick so a given lead+step always shows the same variant
 function hashStr(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
@@ -350,6 +405,7 @@ function fillTokens(text, lead, config) {
     .replaceAll("{{first}}", firstName(lead.name))
     .replaceAll("{{name}}", lead.name || "")
     .replaceAll("{{link}}", config.reportLink || "[set your MyScoreIQ link in Settings]")
+    .replaceAll("{{smartcredit}}", config.smartCreditLink || "https://www.smartcredit.com/?PID=52188")
     .replaceAll("{{applink}}", config.appLink || APP_LINK_DEFAULT)
     .replaceAll("{{signature}}", config.signature || "");
 }
@@ -395,6 +451,60 @@ function fmtDateTime(ts) {
   if (!ts) return "";
   return new Date(ts).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
+const STAGE_PLAYBOOK = {
+  new: [
+    "Call the lead now (use the Call button).",
+    "Log what happened: no answer, or spoke to them.",
+    "If no answer, the voicemail campaign starts automatically.",
+    "If you spoke to them, pick Interested, Call back, or Not interested.",
+  ],
+  voicemail: [
+    "Try calling again if you have time.",
+    "Send the due follow-up texts and emails (they drive a callback).",
+    "When they respond, log the call and move them to Interested.",
+  ],
+  interested: [
+    "Send the MyScoreIQ link so they can pull their report (Text link / Email link).",
+    "Next day, send the 'did you create your account?' follow-up.",
+    "If they cannot access MyScoreIQ, send the SmartCredit backup link.",
+    "Once the report is in, upload it and move to Report Pulled.",
+  ],
+  callback: [
+    "Call them back at the time you agreed.",
+    "Log the call with notes on what happened.",
+    "If they are ready, move them to Interested and send the link.",
+  ],
+  not_interested: [
+    "Leave them in the light nurture, no action needed.",
+    "If they re-engage, move them back to Interested.",
+  ],
+  report_pulled: [
+    "Review the credit report.",
+    "Submit it to Torro (Submit button below).",
+  ],
+  submitted: [
+    "Wait for Torro's response.",
+    "When it comes back, mark Approved or Declined under Outcome from Torro.",
+  ],
+  pre_approved: [
+    "Review the offer with the client.",
+    "If they want more, send the application.",
+    "When they accept, click 'Client accepted, contracts out'.",
+  ],
+  contracts_out: [
+    "Make sure contracts get signed.",
+    "Once funded, click 'Mark funded' and enter the amounts.",
+  ],
+  funded: [
+    "Enter the funded amount and your commission.",
+    "When Torro pays you, click 'Mark commission paid'.",
+  ],
+  declined: [
+    "Note the decline reason.",
+    "Send them to Credit Repair to get approval-ready, or resubmit if something changed.",
+  ],
+};
+
 function nextStepFor(lead) {
   switch (lead.status) {
     case "new": return { text: "Call them. Log what happens below and the right campaign starts on its own.", tone: "slate" };
@@ -449,7 +559,8 @@ function nextDue(lead, cadences, templates) {
 }
 
 // Send through the in-app backend (RingCentral / Outlook). Requires login.
-async function apiSend(path, payload) {
+// Retries automatically on rate-limit responses so batches don't fail.
+async function apiSend(path, payload, attempt = 0) {
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
   const res = await fetch(`/api/${path}`, {
@@ -459,6 +570,11 @@ async function apiSend(path, payload) {
   });
   let j = {};
   try { j = await res.json(); } catch { /* ignore */ }
+  const rateLimited = res.status === 429 || /rate.*exceed|too many|429/i.test(j.error || "");
+  if (rateLimited && attempt < 4) {
+    await new Promise((r) => setTimeout(r, 1500 * (attempt + 1))); // 1.5s, 3s, 4.5s, 6s
+    return apiSend(path, payload, attempt + 1);
+  }
   if (!res.ok || j.error) throw new Error(j.error || `Send failed (${res.status})`);
   return j;
 }
@@ -706,8 +822,8 @@ function Dashboard({ userEmail }) {
 
   if (!loaded) return <div className="flex min-h-96 items-center justify-center font-sans text-slate-400">Loading your pipeline...</div>;
 
-  const NAV = [["pipeline", "Pipeline", LayoutGrid], ["commissions", "Commissions", DollarSign], ["messaging", "Messaging", MessageSquare], ["scripts", "Scripts", FileText], ["settings", "Settings", SettingsIcon]];
-  const tabTitle = { pipeline: "Pipeline", commissions: "Commissions", messaging: "Messaging", scripts: "Call scripts", settings: "Settings" }[tab];
+  const NAV = [["pipeline", "Pipeline", LayoutGrid], ["commissions", "Commissions", DollarSign], ["team", "Team", User], ["messaging", "Messaging", MessageSquare], ["scripts", "Scripts", FileText], ["settings", "Settings", SettingsIcon]];
+  const tabTitle = { pipeline: "Pipeline", commissions: "Commissions", team: "Team activity", messaging: "Messaging", scripts: "Call scripts", settings: "Settings" }[tab];
 
   return (
     <div className="flex min-h-screen bg-slate-50 font-sans text-slate-800">
@@ -767,6 +883,7 @@ function Dashboard({ userEmail }) {
           )}
           {tab === "messaging" && <Messaging templates={templates} persistTemplates={persistTemplates} cadences={cadences} persistCadences={persistCadences} />}
           {tab === "commissions" && <Commissions leads={leads} onOpen={setProfileId} />}
+          {tab === "team" && <Team leads={leads} onOpen={setProfileId} />}
           {tab === "scripts" && <Scripts />}
           {tab === "settings" && <Settings config={config} persistConfig={persistConfig} />}
         </div>
@@ -777,7 +894,7 @@ function Dashboard({ userEmail }) {
           onClose={() => setProfileId(null)} updateLead={updateLead} removeLead={removeLead} logTouch={logTouch} openCompose={setCompose} />
       )}
 
-      {compose && <ComposeModal compose={compose} onClose={() => setCompose(null)} onSent={handleSent} />}
+      {compose && <ComposeModal compose={compose} onClose={() => setCompose(null)} onSent={handleSent} templates={templates} config={config} />}
     </div>
   );
 }
@@ -816,7 +933,7 @@ function Pipeline({ leads, allLeads, allCount, dueList, stats, config, query, se
               const rel = relativeDue(step.dueAt);
               return (
                 <div key={l.id} className="flex flex-wrap items-center gap-2 rounded-lg bg-white px-3 py-2 ring-1 ring-orange-100">
-                  <button onClick={() => onOpen(l.id)} className="font-semibold hover:text-blue-700">{l.name || "Unnamed"}</button>
+                  <button onClick={() => onOpen(l.id)} className="font-semibold hover:text-blue-700">{leadTitle(l)}</button>
                   <StagePill status={l.status} />
                   <span className={`text-xs font-medium ${rel.overdue ? "text-rose-600" : "text-orange-600"}`}>{rel.label}</span>
                   <span className="text-xs text-slate-400">{step.template?.name}</span>
@@ -926,8 +1043,8 @@ function BoardCard({ lead, onOpen, cadences, templates, config, openCompose, upd
       className={`cursor-pointer rounded-lg border border-slate-200 bg-white p-2.5 shadow-sm transition hover:border-blue-300 hover:shadow ${dragging ? "opacity-40" : ""}`}>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <div className="truncate text-sm font-semibold text-slate-800">{lead.name || "Unnamed"}</div>
-          {lead.businessName && <div className="truncate text-xs text-slate-400">{lead.businessName}</div>}
+          <div className="truncate text-sm font-semibold text-slate-800">{leadTitle(lead)}</div>
+          {leadSubName(lead) && <div className="truncate text-xs text-slate-400">{leadSubName(lead)}</div>}
         </div>
         {rel && <span className={`shrink-0 text-xs font-medium ${rel.overdue ? "text-rose-600" : "text-orange-500"}`}>{rel.label}</span>}
       </div>
@@ -993,14 +1110,14 @@ function LeadRow({ lead, onOpen, cadences, templates, config, logTouch, updateLe
       <div className="flex items-center gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="truncate font-semibold">{lead.name || "Unnamed"}</span>
+            <span className="truncate font-semibold">{leadTitle(lead)}</span>
             <StagePill status={lead.status} />
             {rel && <span className={`text-xs font-medium ${rel.overdue ? "text-rose-600" : "text-orange-500"}`}>{rel.label}</span>}
           </div>
           <div className="mt-0.5 flex flex-wrap gap-x-3 font-mono text-xs text-slate-500">
             {lead.phone && <span>{lead.phone}</span>}
             {lead.email && <span className="truncate">{lead.email}</span>}
-            {lead.businessName && <span className="not-italic text-slate-400">{lead.businessName}</span>}
+            {leadSubName(lead) && <span className="not-italic text-slate-400">{leadSubName(lead)}</span>}
           </div>
           <div className="mt-1.5"><QualChips lead={lead} /></div>
         </div>
@@ -1017,11 +1134,18 @@ function LeadRow({ lead, onOpen, cadences, templates, config, logTouch, updateLe
 /* ================================================================== */
 /*  Compose modal (copy-paste now, one-click send once configured)    */
 /* ================================================================== */
-function ComposeModal({ compose, onClose, onSent }) {
+function ComposeModal({ compose, onClose, onSent, templates = [], config = {} }) {
   const { lead, channel, to, subject: subj0, body: body0 } = compose;
   const [subject, setSubject] = useState(subj0 || "");
   const [body, setBody] = useState(body0 || "");
   const [busy, setBusy] = useState(false);
+  const picks = templates.filter((t) => t.channel === channel);
+  const applyTemplate = (id) => {
+    const t = templates.find((x) => x.id === id);
+    if (!t) return;
+    if (channel === "email") setSubject(fillTokens(t.subject, lead, config));
+    setBody(fillTokens(t.body, lead, config));
+  };
   const sendViaApp = async () => {
     setBusy(true);
     try { await sendMessage(channel, to, subject, body); onSent(); }
@@ -1040,6 +1164,15 @@ function ComposeModal({ compose, onClose, onSent }) {
         </div>
         <div className="space-y-3 px-5 py-4">
           <div className="text-xs text-slate-500">To: <span className="font-mono text-slate-700">{to || "(missing)"}</span></div>
+          {picks.length > 0 && (
+            <div>
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400">Insert a saved template</label>
+              <select defaultValue="" onChange={(e) => { applyTemplate(e.target.value); e.target.value = ""; }} className={inputCls}>
+                <option value="">Pick a template to insert...</option>
+                {picks.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+            </div>
+          )}
           {channel === "email" && (
             <div>
               <div className="mb-1 flex items-center justify-between">
@@ -1137,7 +1270,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
         {/* head */}
         <div className="sticky top-0 z-10 flex items-center justify-between gap-3 rounded-t-2xl border-b border-slate-100 bg-white px-5 py-3.5">
           <div className="min-w-0">
-            <div className="flex items-center gap-2"><span className="truncate text-lg font-bold">{lead.name || "Unnamed"}</span><StagePill status={lead.status} /></div>
+            <div className="flex items-center gap-2"><span className="truncate text-lg font-bold">{leadTitle(lead)}</span><StagePill status={lead.status} /></div>
             <div className="mt-0.5"><QualChips lead={lead} /></div>
           </div>
           <div className="flex items-center gap-2">
@@ -1152,6 +1285,19 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
             <div className={`flex items-start gap-2 rounded-xl px-4 py-3 text-sm font-medium ring-1 ring-inset ${TONE[nextStepFor(lead).tone]}`}>
               <span className="mt-0.5 shrink-0 text-xs font-bold uppercase tracking-wide opacity-70">Next</span>
               <span>{nextStepFor(lead).text}</span>
+            </div>
+          )}
+          {STAGE_PLAYBOOK[lead.status] && (
+            <div className="rounded-xl border border-blue-200 bg-blue-50/50 px-4 py-3">
+              <div className="mb-1.5 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-blue-700"><ListChecks size={14} /> Playbook for this stage</div>
+              <ol className="ml-1 flex flex-col gap-1">
+                {STAGE_PLAYBOOK[lead.status].map((step, i) => (
+                  <li key={i} className="flex items-start gap-2 text-sm text-slate-700">
+                    <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white">{i + 1}</span>
+                    <span>{step}</span>
+                  </li>
+                ))}
+              </ol>
             </div>
           )}
           {/* contact actions */}
@@ -1560,6 +1706,8 @@ function TemplateForm({ tpl, onSave, onCancel }) {
 const POOL_LABELS = {
   vm_sms: "Voicemail, text", vm_email: "Voicemail, email",
   int_sms: "Interested, text", int_email: "Interested, email",
+  acct_sms: "Account check, text", acct_email: "Account check, email",
+  story_sms: "Success story, text", story_email: "Success story, email",
   cb_sms: "Call back, text", cb_email: "Call back, email",
   ni_email: "Not interested, email", pulled_sms: "Report pulled, text",
   app_sms: "Application, text", app_email: "Application, email",
@@ -1667,6 +1815,7 @@ function Settings({ config, persistConfig }) {
         <h3 className="mb-3 flex items-center gap-1.5 text-sm font-bold text-slate-800"><SettingsIcon size={15} className="text-blue-600" /> Core setup</h3>
         <div className="flex flex-col gap-3">
           <Labeled label="MyScoreIQ link (under $10k path)"><input value={draft.reportLink} onChange={set("reportLink")} className={`${inputCls} font-mono`} /></Labeled>
+          <Labeled label="SmartCredit link (backup report tool)"><input value={draft.smartCreditLink || ""} onChange={set("smartCreditLink")} className={`${inputCls} font-mono`} /></Labeled>
           <Labeled label="Application link (over $10k path)"><input value={draft.appLink || ""} onChange={set("appLink")} placeholder="https://tinyurl.com/asapfundingapp" className={`${inputCls} font-mono`} /></Labeled>
           <Labeled label="Signature / who it is from"><input value={draft.signature} onChange={set("signature")} className={inputCls} /></Labeled>
           <Labeled label="Funder name"><input value={draft.funderName || ""} onChange={set("funderName")} className={inputCls} /></Labeled>
@@ -1688,6 +1837,79 @@ function Settings({ config, persistConfig }) {
 /*  Commissions                                                       */
 /* ================================================================== */
 const money = (n) => "$" + (Number(n) || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
+function Team({ leads, onOpen }) {
+  const [day, setDay] = useState(() => new Date().toISOString().slice(0, 10));
+  // flatten all touches with lead context
+  const acts = [];
+  for (const l of leads) {
+    for (const t of (l.touches || [])) {
+      acts.push({ ...t, leadId: l.id, leadName: leadTitle(l) });
+    }
+  }
+  const dayStart = new Date(day + "T00:00:00").getTime();
+  const dayEnd = dayStart + 86400000;
+  const todays = acts.filter((a) => a.at >= dayStart && a.at < dayEnd);
+  const reps = [...new Set(acts.map((a) => a.by).filter(Boolean))];
+  if (reps.length === 0) reps.push("(unassigned)");
+
+  const statsFor = (rep) => {
+    const mine = todays.filter((a) => (a.by || "(unassigned)") === rep);
+    const calls = mine.filter((a) => a.kind === "call");
+    return {
+      calls: calls.length,
+      voicemails: calls.filter((a) => /voicemail/i.test(a.disposition || "")).length,
+      spoke: calls.filter((a) => /spoke/i.test(a.disposition || "")).length,
+      texts: mine.filter((a) => a.channel === "sms").length,
+      emails: mine.filter((a) => a.channel === "email").length,
+      notes: calls.filter((a) => a.note).length,
+    };
+  };
+
+  const recent = [...todays].sort((a, b) => b.at - a.at).slice(0, 40);
+
+  return (
+    <div className="mt-4 flex flex-col gap-4">
+      <div className="flex items-center gap-2">
+        <label className="text-sm font-medium text-slate-500">Day</label>
+        <input type="date" value={day} onChange={(e) => setDay(e.target.value)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm outline-none focus:border-blue-400" />
+      </div>
+      {reps.map((rep) => {
+        const s = statsFor(rep);
+        const cells = [["Calls", s.calls], ["Voicemails", s.voicemails], ["Spoke to", s.spoke], ["Texts", s.texts], ["Emails", s.emails], ["Notes", s.notes]];
+        return (
+          <div key={rep} className="rounded-xl border border-slate-200 bg-white p-4">
+            <div className="mb-3 flex items-center gap-2 text-sm font-bold text-slate-800"><User size={15} className="text-blue-600" /> {rep}</div>
+            <div className="grid grid-cols-3 gap-3 sm:grid-cols-6">
+              {cells.map(([label, val]) => (
+                <div key={label} className="rounded-lg bg-slate-50 p-3 text-center">
+                  <div className="text-2xl font-bold text-slate-800">{val}</div>
+                  <div className="text-xs text-slate-400">{label}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+      <div className="rounded-xl border border-slate-200 bg-white p-1">
+        <div className="px-3 py-2 text-sm font-bold text-slate-800">Activity for {day} ({recent.length})</div>
+        {recent.length === 0 ? <p className="px-3 py-6 text-center text-sm text-slate-400">No activity logged this day.</p> : (
+          <div className="flex flex-col">
+            {recent.map((a, i) => (
+              <div key={i} className="flex flex-wrap items-center gap-2 border-b border-slate-50 px-3 py-2 text-sm last:border-0">
+                <span className="text-xs text-slate-400">{fmtDateTime(a.at).split(", ").pop()}</span>
+                <button onClick={() => onOpen(a.leadId)} className="font-semibold text-slate-700 hover:text-blue-700">{a.leadName}</button>
+                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">{a.kind === "call" ? (a.disposition || "call") : (a.channel === "sms" ? "text" : a.channel === "email" ? "email" : a.kind)}</span>
+                {a.note && <span className="text-slate-500">{a.note}</span>}
+                <span className="ml-auto text-xs text-slate-400">{a.by || ""}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function Commissions({ leads, onOpen }) {
   const deals = leads.filter((l) => ["funded", "commission_paid"].includes(l.status))
     .sort((a, b) => (b.fundedAt || b.lastTouchAt || 0) - (a.fundedAt || a.lastTouchAt || 0));

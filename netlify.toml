@@ -6,7 +6,7 @@
 [functions]
   node_bundler = "esbuild"
 
-# Friendly paths for webhook and send functions
+# Friendly path for the GHL webhook
 [[redirects]]
   from = "/api/ghl-webhook"
   to = "/.netlify/functions/ghl-webhook"
@@ -20,4 +20,14 @@
 [[redirects]]
   from = "/api/send-sms"
   to = "/.netlify/functions/send-sms"
+  status = 200
+
+[[redirects]]
+  from = "/api/rc-inbound-sms"
+  to = "/.netlify/functions/rc-inbound-sms"
+  status = 200
+
+[[redirects]]
+  from = "/api/rc-subscribe"
+  to = "/.netlify/functions/rc-subscribe"
   status = 200

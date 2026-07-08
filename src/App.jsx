@@ -721,8 +721,20 @@ function Dashboard({ userEmail }) {
   const [compose, setCompose] = useState(null);
   const [live, setLive] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
+  const [comms, setComms] = useState([]);
+  const [activities, setActivities] = useState([]);
   // keep the auto-snooze setting available inside stable callbacks
   const autoSnoozeDaysRef = useRef(3);
+
+  const refetchComms = useCallback(async () => {
+    const { data } = await supabase.from("communications").select("*").order("at", { ascending: false }).limit(2000);
+    if (data) setComms(data);
+  }, []);
+
+  const refetchActivities = useCallback(async () => {
+    const { data } = await supabase.from("activities").select("*").order("due_at", { ascending: true });
+    if (data) setActivities(data);
+  }, []);
 
   const refetchLeads = useCallback(async () => {
     const { data, error } = await supabase.from("leads").select("*").order("created_at", { ascending: false });
@@ -743,14 +755,18 @@ function Dashboard({ userEmail }) {
         if (map.cadences) setCadences(map.cadences);
         else await supabase.from("app_config").upsert({ key: "cadences", value: DEFAULT_CADENCES });
         await refetchLeads();
+        // these tables are optional: if the migration has not run yet, ignore
+        try { await refetchComms(); await refetchActivities(); } catch { /* not migrated yet */ }
       } catch (e) { setErr(String(e.message || e)); }
       finally { setLoaded(true); }
     })();
     const channel = supabase.channel("leads-stream")
       .on("postgres_changes", { event: "*", schema: "public", table: "leads" }, () => refetchLeads())
+      .on("postgres_changes", { event: "*", schema: "public", table: "communications" }, () => refetchComms())
+      .on("postgres_changes", { event: "*", schema: "public", table: "activities" }, () => refetchActivities())
       .subscribe((s) => setLive(s === "SUBSCRIBED"));
     return () => { supabase.removeChannel(channel); };
-  }, [refetchLeads]);
+  }, [refetchLeads, refetchComms, refetchActivities]);
 
   useEffect(() => { autoSnoozeDaysRef.current = config.autoSnoozeDays ?? 3; }, [config.autoSnoozeDays]);
 
@@ -820,15 +836,46 @@ function Dashboard({ userEmail }) {
     await supabase.from("leads").delete().eq("id", id);
   }, []);
 
-  const handleSent = useCallback(() => {
+  const handleSent = useCallback((sent) => {
     setCompose((c) => {
       if (c) {
         logTouch(c.lead.id, c.channel, c.kind, c.extra || {});
+        // keep a full copy of what went out, so the thread reads like a conversation
+        if (sent && sent.viaApp) {
+          supabase.from("communications").insert({
+            lead_id: c.lead.id,
+            direction: "out",
+            channel: c.channel,
+            subject: sent.subject || null,
+            body: sent.body || "",
+            to_addr: c.to || null,
+            by_user: userEmail,
+          }).then(({ error }) => { if (!error) refetchComms(); });
+        }
         if (c.afterSent) c.afterSent();
       }
       return null;
     });
-  }, [logTouch]);
+  }, [logTouch, userEmail, refetchComms]);
+
+  const addActivity = useCallback(async (leadId, act) => {
+    const { error } = await supabase.from("activities").insert({
+      lead_id: leadId, type: act.type, title: act.title || null, notes: act.notes || null,
+      due_at: new Date(act.dueAt).toISOString(), created_by: userEmail, assigned_to: act.assignedTo || userEmail,
+    });
+    if (error) setErr(error.message); else refetchActivities();
+  }, [userEmail, refetchActivities]);
+
+  const completeActivity = useCallback(async (id, done = true) => {
+    const { error } = await supabase.from("activities")
+      .update({ done, done_at: done ? new Date().toISOString() : null }).eq("id", id);
+    if (error) setErr(error.message); else refetchActivities();
+  }, [refetchActivities]);
+
+  const deleteActivity = useCallback(async (id) => {
+    await supabase.from("activities").delete().eq("id", id);
+    refetchActivities();
+  }, [refetchActivities]);
 
   const dueList = useMemo(() => (
     leads.map((l) => ({ l, step: nextDue(l, cadences, templates) }))
@@ -856,8 +903,9 @@ function Dashboard({ userEmail }) {
 
   if (!loaded) return <div className="flex min-h-96 items-center justify-center font-sans text-slate-400">Loading your pipeline...</div>;
 
-  const NAV = [["pipeline", "Pipeline", LayoutGrid], ["followups", "Follow-ups", Clock], ["commissions", "Commissions", DollarSign], ["team", "Team", User], ["messaging", "Messaging", MessageSquare], ["scripts", "Scripts", FileText], ["settings", "Settings", SettingsIcon]];
-  const tabTitle = { pipeline: "Pipeline", followups: "Follow-ups", commissions: "Commissions", team: "Team activity", messaging: "Messaging", scripts: "Call scripts", settings: "Settings" }[tab];
+  const actAlerts = useMemo(() => activities.filter((a) => !a.done && ["overdue", "today"].includes(actBucket(a))).length, [activities]);
+  const NAV = [["pipeline", "Pipeline", LayoutGrid], ["activities", "Activities", CalendarClock], ["followups", "Follow-ups", Clock], ["commissions", "Commissions", DollarSign], ["team", "Team", User], ["messaging", "Messaging", MessageSquare], ["scripts", "Scripts", FileText], ["settings", "Settings", SettingsIcon]];
+  const tabTitle = { pipeline: "Pipeline", activities: "Activities", followups: "Follow-ups", commissions: "Commissions", team: "Team activity", messaging: "Messaging", scripts: "Call scripts", settings: "Settings" }[tab];
 
   return (
     <div className="flex min-h-screen bg-slate-50 font-sans text-slate-800">
@@ -885,6 +933,9 @@ function Dashboard({ userEmail }) {
               {k === "followups" && dueList.length > 0 && (
                 <span className="ml-auto hidden rounded-full bg-orange-500 px-1.5 text-[11px] font-bold text-white md:inline">{dueList.length}</span>
               )}
+              {k === "activities" && actAlerts > 0 && (
+                <span className="ml-auto hidden rounded-full bg-rose-500 px-1.5 text-[11px] font-bold text-white md:inline">{actAlerts}</span>
+              )}
             </button>
           ))}
         </nav>
@@ -907,6 +958,7 @@ function Dashboard({ userEmail }) {
             <h1 className="text-lg font-bold tracking-tight text-slate-800">{tabTitle}</h1>
             {tab === "pipeline" && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-500">{leads.length}</span>}
             {tab === "followups" && dueList.length > 0 && <span className="rounded-full bg-orange-100 px-2 py-0.5 text-xs font-semibold text-orange-700">{dueList.length}</span>}
+            {tab === "activities" && actAlerts > 0 && <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-700">{actAlerts} due</span>}
           </div>
           <button onClick={() => { setTab("pipeline"); setShowAdd(true); }} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-500"><Plus size={16} /> <span className="hidden sm:inline">Add client</span></button>
         </header>
@@ -921,6 +973,7 @@ function Dashboard({ userEmail }) {
               onGoFollowups={() => setTab("followups")} />
           )}
           {tab === "followups" && <Followups dueList={dueList} config={config} onOpen={setProfileId} openCompose={setCompose} updateLead={updateLead} />}
+          {tab === "activities" && <Activities activities={activities} leads={leads} onOpen={setProfileId} completeActivity={completeActivity} deleteActivity={deleteActivity} />}
           {tab === "messaging" && <Messaging templates={templates} persistTemplates={persistTemplates} cadences={cadences} persistCadences={persistCadences} />}
           {tab === "commissions" && <Commissions leads={leads} onOpen={setProfileId} />}
           {tab === "team" && <Team leads={leads} onOpen={setProfileId} />}
@@ -931,6 +984,7 @@ function Dashboard({ userEmail }) {
 
       {profileLead && (
         <Profile lead={profileLead} config={config} templates={templates} cadences={cadences} userEmail={userEmail}
+          comms={comms} activities={activities} addActivity={addActivity} completeActivity={completeActivity} deleteActivity={deleteActivity}
           onClose={() => setProfileId(null)} updateLead={updateLead} removeLead={removeLead} logTouch={logTouch} openCompose={setCompose} />
       )}
 
@@ -1167,7 +1221,7 @@ function ComposeModal({ compose, onClose, onSent, templates = [], config = {} })
   };
   const sendViaApp = async () => {
     setBusy(true);
-    try { await sendMessage(channel, to, subject, body); onSent(); }
+    try { await sendMessage(channel, to, subject, body); onSent({ viaApp: true, subject, body }); }
     catch (e) { alert("Could not send via app: " + e.message + "\n\nYou can still copy the message and send it manually."); }
     finally { setBusy(false); }
   };
@@ -1211,7 +1265,7 @@ function ComposeModal({ compose, onClose, onSent, templates = [], config = {} })
           <p className="text-xs text-slate-400">Copy this into {channel === "sms" ? "RingCentral" : "Outlook"} and send it, then mark it sent so the stage and follow-ups update. Once your keys are set, use Send via app to do it in one click.</p>
           <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-100 pt-3">
             <button onClick={sendViaApp} disabled={busy} className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-2 text-sm font-medium text-blue-700 ring-1 ring-blue-300 hover:bg-blue-50 disabled:opacity-40"><Send size={15} /> {busy ? "Sending..." : "Send via app"}</button>
-            <button onClick={onSent} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"><Check size={15} /> Mark as sent</button>
+            <button onClick={() => onSent({ viaApp: true, subject, body })} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"><Check size={15} /> Mark as sent</button>
           </div>
         </div>
       </div>
@@ -1222,7 +1276,7 @@ function ComposeModal({ compose, onClose, onSent, templates = [], config = {} })
 /* ================================================================== */
 /*  Profile (client detail)                                           */
 /* ================================================================== */
-function Profile({ lead, config, templates, cadences, onClose, updateLead, removeLead, logTouch, openCompose, userEmail }) {
+function Profile({ lead, config, templates, cadences, onClose, updateLead, removeLead, logTouch, openCompose, userEmail, comms = [], activities = [], addActivity, completeActivity, deleteActivity }) {
   const EDITABLE = ["name", "phone", "email", "notes", "desiredAmount", "fundingPurpose", "fundingTimeline", "monthlyRevenue", "creditScore", "timeInBusiness",
     "businessName", "businessType", "einStatus", "bestTime", "nextStep", "myscoreiqUsername", "myscoreiqPassword", "ssnLast4", "fundedAmount", "commissionAmount", "declineReason"];
   const [draft, setDraft] = useState(lead);
@@ -1283,6 +1337,8 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
 
   const steps = cadenceSteps(lead, cadences, templates);
   const nextStep = nextDue(lead, cadences, templates);
+  const leadComms = comms.filter((c) => c.lead_id === lead.id);
+  const leadActivities = activities.filter((a) => a.lead_id === lead.id);
 
   return (
     <div className="fixed inset-0 z-50 flex justify-center overflow-y-auto bg-slate-900/40 p-3 sm:p-6" onClick={onClose}>
@@ -1326,6 +1382,12 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
               </ol>
             </div>
           )}
+
+          {/* scheduled calls and tasks */}
+          <ActivityPanel lead={lead} activities={leadActivities} addActivity={addActivity} completeActivity={completeActivity} deleteActivity={deleteActivity} />
+
+          {/* conversation thread */}
+          <CommThread comms={leadComms} />
 
           {/* automation control */}
           <div className={`rounded-xl border px-4 py-3 ${lead.automationPaused ? "border-amber-200 bg-amber-50" : "border-slate-200 bg-white"}`}>
@@ -1908,6 +1970,229 @@ function Settings({ config, persistConfig }) {
 /*  Commissions                                                       */
 /* ================================================================== */
 const money = (n) => "$" + (Number(n) || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
+const ACT_TYPES = [
+  { key: "call", label: "Call" },
+  { key: "followup", label: "Follow-up" },
+  { key: "meeting", label: "Meeting" },
+  { key: "task", label: "Task" },
+];
+
+function actBucket(a) {
+  const due = new Date(a.due_at).getTime();
+  const now = Date.now();
+  const endOfToday = new Date(); endOfToday.setHours(23, 59, 59, 999);
+  if (due < now) return "overdue";
+  if (due <= endOfToday.getTime()) return "today";
+  if (due <= endOfToday.getTime() + 7 * DAY) return "week";
+  return "later";
+}
+
+function ActivityPanel({ lead, activities, addActivity, completeActivity, deleteActivity }) {
+  const [open, setOpen] = useState(false);
+  const [type, setType] = useState("call");
+  const [title, setTitle] = useState("");
+  const [when, setWhen] = useState("");
+  const [notes, setNotes] = useState("");
+
+  const openActs = activities.filter((a) => !a.done).sort((a, b) => new Date(a.due_at) - new Date(b.due_at));
+  const doneActs = activities.filter((a) => a.done);
+
+  const save = () => {
+    if (!when) return;
+    addActivity(lead.id, { type, title: title || ACT_TYPES.find((t) => t.key === type).label, dueAt: new Date(when).getTime(), notes });
+    setTitle(""); setWhen(""); setNotes(""); setOpen(false);
+  };
+
+  // default to tomorrow 10am when opening the form
+  const openForm = () => {
+    const d = new Date(Date.now() + DAY);
+    d.setHours(10, 0, 0, 0);
+    const pad = (n) => String(n).padStart(2, "0");
+    setWhen(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`);
+    setOpen(true);
+  };
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-slate-500">
+          <CalendarClock size={14} /> Scheduled calls &amp; tasks
+          {openActs.length > 0 && <span className="rounded-full bg-blue-100 px-1.5 text-[11px] font-bold text-blue-700">{openActs.length}</span>}
+        </div>
+        {!open && <button onClick={openForm} className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-2.5 py-1.5 text-sm font-semibold text-white hover:bg-blue-500"><Plus size={14} /> Schedule</button>}
+      </div>
+
+      {open && (
+        <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50/40 p-3">
+          <div className="grid gap-2 sm:grid-cols-2">
+            <Labeled label="Type">
+              <select value={type} onChange={(e) => setType(e.target.value)} className={inputCls}>
+                {ACT_TYPES.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+              </select>
+            </Labeled>
+            <Labeled label="When">
+              <input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} className={inputCls} />
+            </Labeled>
+          </div>
+          <div className="mt-2"><Labeled label="Title"><input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Call back about the report" className={inputCls} /></Labeled></div>
+          <div className="mt-2"><Labeled label="Notes (optional)"><input value={notes} onChange={(e) => setNotes(e.target.value)} className={inputCls} /></Labeled></div>
+          <div className="mt-2 flex justify-end gap-2">
+            <button onClick={() => setOpen(false)} className="rounded-lg px-3 py-1.5 text-sm font-medium text-slate-500 hover:bg-slate-100">Cancel</button>
+            <button onClick={save} disabled={!when} className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-40">Save</button>
+          </div>
+        </div>
+      )}
+
+      {openActs.length === 0 && !open && <p className="mt-2 text-sm text-slate-400">Nothing scheduled for this lead.</p>}
+
+      {openActs.length > 0 && (
+        <div className="mt-2 flex flex-col gap-1.5">
+          {openActs.map((a) => {
+            const due = new Date(a.due_at).getTime();
+            const overdue = due < Date.now();
+            return (
+              <div key={a.id} className={`flex flex-wrap items-center gap-2 rounded-lg px-2.5 py-2 text-sm ring-1 ring-inset ${overdue ? "bg-rose-50 ring-rose-200" : "bg-slate-50 ring-slate-100"}`}>
+                <button onClick={() => completeActivity(a.id, true)} title="Mark done" className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 border-slate-300 hover:border-blue-500 hover:bg-white" />
+                <span className="rounded bg-white px-1.5 text-xs font-medium capitalize text-slate-600 ring-1 ring-slate-200">{a.type}</span>
+                <span className="font-medium text-slate-800">{a.title}</span>
+                {a.notes && <span className="text-xs text-slate-400">{a.notes}</span>}
+                <span className={`ml-auto text-xs font-semibold ${overdue ? "text-rose-600" : "text-slate-500"}`}>{fmtDateTime(due)}</span>
+                <button onClick={() => deleteActivity(a.id)} className="rounded p-1 text-slate-300 hover:text-rose-500"><Trash2 size={13} /></button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {doneActs.length > 0 && <p className="mt-2 text-xs text-slate-400">{doneActs.length} completed</p>}
+    </div>
+  );
+}
+
+function CommThread({ comms }) {
+  const [expanded, setExpanded] = useState(false);
+  if (!comms || comms.length === 0) {
+    return (
+      <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+        <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-slate-500"><MessageSquare size={14} /> Conversation</div>
+        <p className="mt-2 text-sm text-slate-400">No messages recorded yet. Texts and emails you send from the app show up here, along with any replies.</p>
+      </div>
+    );
+  }
+  const sorted = [...comms].sort((a, b) => new Date(a.at) - new Date(b.at));
+  const shown = expanded ? sorted : sorted.slice(-8);
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-slate-500"><MessageSquare size={14} /> Conversation ({comms.length})</div>
+        {sorted.length > 8 && <button onClick={() => setExpanded((s) => !s)} className="text-xs font-medium text-blue-600 hover:underline">{expanded ? "Show recent" : `Show all ${sorted.length}`}</button>}
+      </div>
+      <div className="mt-3 flex flex-col gap-2">
+        {shown.map((c) => {
+          const inbound = c.direction === "in";
+          return (
+            <div key={c.id} className={`flex ${inbound ? "justify-start" : "justify-end"}`}>
+              <div className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm ${inbound ? "rounded-bl-sm bg-slate-100 text-slate-800" : "rounded-br-sm bg-blue-600 text-white"}`}>
+                <div className={`mb-0.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide ${inbound ? "text-slate-400" : "text-blue-200"}`}>
+                  {c.channel === "sms" ? <MessageSquare size={10} /> : <Mail size={10} />}
+                  {inbound ? "Received" : "Sent"}
+                  <span className="font-normal normal-case">{fmtDateTime(new Date(c.at).getTime())}</span>
+                </div>
+                {c.subject && <div className={`text-xs font-semibold ${inbound ? "text-slate-600" : "text-blue-100"}`}>{c.subject}</div>}
+                <div className="whitespace-pre-wrap">{c.body}</div>
+                {!inbound && c.by_user && <div className="mt-0.5 text-[10px] text-blue-200">{c.by_user}</div>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function Activities({ activities, leads, onOpen, completeActivity, deleteActivity }) {
+  const [showDone, setShowDone] = useState(false);
+  const leadById = useMemo(() => Object.fromEntries(leads.map((l) => [l.id, l])), [leads]);
+  const open = activities.filter((a) => !a.done);
+  const done = activities.filter((a) => a.done).slice(-30).reverse();
+
+  const groups = [
+    ["overdue", "Overdue", "border-rose-200 bg-rose-50 text-rose-700"],
+    ["today", "Today", "border-orange-200 bg-orange-50 text-orange-700"],
+    ["week", "Next 7 days", "border-slate-200 bg-white text-slate-600"],
+    ["later", "Later", "border-slate-200 bg-white text-slate-500"],
+  ];
+
+  const Row = ({ a }) => {
+    const lead = leadById[a.lead_id];
+    const due = new Date(a.due_at).getTime();
+    const overdue = !a.done && due < Date.now();
+    return (
+      <div className="flex flex-wrap items-center gap-2 border-b border-slate-50 px-3 py-2.5 text-sm last:border-0">
+        {!a.done && (
+          <button onClick={() => completeActivity(a.id, true)} title="Mark done"
+            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 border-slate-300 hover:border-blue-500 hover:bg-blue-50" />
+        )}
+        {a.done && <Check size={16} className="shrink-0 text-emerald-500" />}
+        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium capitalize text-slate-600">{a.type}</span>
+        <span className={`font-medium ${a.done ? "text-slate-400 line-through" : "text-slate-800"}`}>{a.title || "(untitled)"}</span>
+        {lead && <button onClick={() => onOpen(lead.id)} className="text-xs font-semibold text-blue-700 hover:underline">{leadTitle(lead)}</button>}
+        {a.notes && <span className="text-xs text-slate-400">{a.notes}</span>}
+        <span className={`ml-auto text-xs font-medium ${overdue ? "text-rose-600" : "text-slate-500"}`}>{fmtDateTime(due)}</span>
+        <button onClick={() => deleteActivity(a.id)} className="rounded p-1 text-slate-300 hover:bg-rose-50 hover:text-rose-500"><Trash2 size={14} /></button>
+      </div>
+    );
+  };
+
+  const counts = { overdue: 0, today: 0 };
+  open.forEach((a) => { const b = actBucket(a); if (counts[b] !== undefined) counts[b]++; });
+
+  return (
+    <div className="mt-4 flex flex-col gap-4">
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div className="rounded-xl border border-rose-200 bg-rose-50 p-4">
+          <div className="text-xs font-semibold uppercase tracking-wide text-rose-500">Overdue</div>
+          <div className="mt-1 text-2xl font-bold text-rose-800">{counts.overdue}</div>
+        </div>
+        <div className="rounded-xl border border-orange-200 bg-orange-50 p-4">
+          <div className="text-xs font-semibold uppercase tracking-wide text-orange-500">Today</div>
+          <div className="mt-1 text-2xl font-bold text-orange-800">{counts.today}</div>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-4">
+          <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">All open</div>
+          <div className="mt-1 text-2xl font-bold text-slate-800">{open.length}</div>
+        </div>
+      </div>
+
+      {open.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 py-14 text-center">
+          <CalendarClock size={28} className="mx-auto text-slate-300" />
+          <div className="mt-2 text-sm font-medium text-slate-600">Nothing scheduled</div>
+          <div className="mt-1 text-sm text-slate-400">Open a lead and use "Schedule a call or task" to add one.</div>
+        </div>
+      ) : groups.map(([key, label, cls]) => {
+        const items = open.filter((a) => actBucket(a) === key);
+        if (items.length === 0) return null;
+        return (
+          <div key={key} className={`rounded-xl border ${cls.split(" ").slice(0, 2).join(" ")} p-1`}>
+            <div className={`px-3 py-2 text-sm font-bold ${cls.split(" ").slice(2).join(" ")}`}>{label} ({items.length})</div>
+            <div className="rounded-lg bg-white">{items.map((a) => <Row key={a.id} a={a} />)}</div>
+          </div>
+        );
+      })}
+
+      {done.length > 0 && (
+        <div>
+          <button onClick={() => setShowDone((s) => !s)} className="text-sm font-medium text-slate-400 hover:text-slate-600">
+            {showDone ? "Hide" : "Show"} completed ({done.length})
+          </button>
+          {showDone && <div className="mt-2 rounded-xl border border-slate-200 bg-white p-1">{done.map((a) => <Row key={a.id} a={a} />)}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Followups({ dueList, config, onOpen, openCompose, updateLead }) {
   const [showAll, setShowAll] = useState(false);
   const sendStep = (lead, step) => {

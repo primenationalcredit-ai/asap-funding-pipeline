@@ -627,6 +627,95 @@ function StagePill({ status }) {
   const s = STAGES.find((x) => x.key === status) || STAGES[0];
   return <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ring-inset ${TONE[s.tone]}`}>{s.label}</span>;
 }
+
+// Simplified linear journey shown as a stepper at the top of a lead
+const JOURNEY = [
+  { key: "new", label: "New", match: ["new", "called"] },
+  { key: "contacted", label: "Contacted", match: ["voicemail", "callback", "not_interested"] },
+  { key: "interested", label: "Interested", match: ["interested"] },
+  { key: "report", label: "Report", match: ["report_pulled"] },
+  { key: "submitted", label: "Submitted", match: ["submitted"] },
+  { key: "decision", label: "Decision", match: ["pre_approved", "contracts_out", "declined"] },
+  { key: "funded", label: "Funded", match: ["funded", "commission_paid"] },
+];
+function journeyIndex(status) {
+  const i = JOURNEY.findIndex((j) => j.match.includes(status));
+  return i === -1 ? 0 : i;
+}
+function StageStepper({ status }) {
+  const special = status === "declined" || status === "credit_repair" || status === "dead";
+  const current = journeyIndex(status);
+  return (
+    <div className="flex items-center">
+      {JOURNEY.map((j, i) => {
+        const done = i < current;
+        const here = i === current;
+        const isDecisionDeclined = j.key === "decision" && status === "declined";
+        const dotCls = isDecisionDeclined
+          ? "bg-rose-500 text-white ring-rose-500"
+          : here ? "bg-blue-600 text-white ring-blue-600"
+          : done ? "bg-blue-100 text-blue-700 ring-blue-200"
+          : "bg-white text-slate-300 ring-slate-200";
+        return (
+          <div key={j.key} className="flex flex-1 items-center last:flex-none">
+            <div className="flex flex-col items-center">
+              <div className={`flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-bold ring-2 ${dotCls}`}>
+                {done ? <Check size={12} /> : i + 1}
+              </div>
+              <span className={`mt-1 whitespace-nowrap text-[10px] font-medium ${here ? (isDecisionDeclined ? "text-rose-600" : "text-blue-700") : done ? "text-slate-500" : "text-slate-300"}`}>
+                {isDecisionDeclined ? "Declined" : j.label}
+              </span>
+            </div>
+            {i < JOURNEY.length - 1 && <div className={`mx-1 h-0.5 flex-1 ${i < current ? "bg-blue-200" : "bg-slate-100"}`} />}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// The talk track Lydia uses when a lead is declined for credit reasons
+function AcceleratorScript({ defaultOpen = false }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="rounded-xl border border-fuchsia-200 bg-fuchsia-50/60">
+      <button onClick={() => setOpen((s) => !s)} className="flex w-full items-center gap-2 px-4 py-2.5 text-left">
+        <ListChecks size={15} className="text-fuchsia-600" />
+        <span className="text-sm font-bold text-fuchsia-800">Script: turn this decline into a yes</span>
+        <ChevronDown size={16} className={`ml-auto text-fuchsia-400 transition ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div className="space-y-2.5 border-t border-fuchsia-200 px-4 py-3 text-sm text-slate-700">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Never say "credit repair." Never quote price. Goal: transfer or book a consultation.</p>
+
+          <div><span className="font-semibold text-slate-800">1. Deliver it, keep momentum:</span> "Based on where your credit sits right now, the lenders aren't in a position to approve you just yet. But this is common and it's fixable. We have a way to get you approval-ready, usually in about 60 to 120 days."</div>
+
+          <div><span className="font-semibold text-slate-800">2. Reframe:</span> "A no today is almost never a no forever. It usually comes down to a few things on your report dragging your profile down. Once that's cleaned up and your credit is built back up, lenders start saying yes."</div>
+
+          <div><span className="font-semibold text-slate-800">3. What we do:</span> "We work two sides at once. We go through your report and work to remove the negative and inaccurate items holding you back, and we help you build your credit back up the right way. That combination is what gets you from a no to approved. And we move fast, most clients are looking at 60 to 120 days."</div>
+
+          <div><span className="font-semibold text-slate-800">4. Trust:</span> "I talk to owners every day who were exactly where you are, got told no, and a few months later they're getting approved for the funding they needed."</div>
+
+          <div><span className="font-semibold text-slate-800">5. Ask for the yes:</span> "Does that sound like something you'd want to get set up so you can finally get approved?"</div>
+
+          <div className="rounded-lg bg-white p-2.5 ring-1 ring-fuchsia-200">
+            <span className="font-semibold text-fuchsia-800">6. Hand off.</span> If a specialist is free: "Let me connect you right now, stay right there with me." Then introduce: "I've got [name] here, they went through funding and we need to get their credit approval-ready so we can get them funded." If nobody's free: book the consultation and confirm their callback number.
+          </div>
+
+          <details className="text-xs text-slate-500">
+            <summary className="cursor-pointer font-semibold text-slate-600">Common pushbacks</summary>
+            <div className="mt-1.5 space-y-1.5">
+              <div><b>Cost?</b> "That's exactly what the specialist goes over, they build the plan around what you actually need. That's why I want to connect you."</div>
+              <div><b>Need to think?</b> "Fair, the specialist call is free with no obligation, worst case you walk away knowing exactly what your path to approved looks like."</div>
+              <div><b>Is this credit repair?</b> "It's a full approval-readiness program, we work on removing what's hurting your report and building your credit back up. The specialist walks you through it."</div>
+              <div><b>Will it hurt my credit?</b> "No, everything we do is designed to strengthen your profile, not hurt it."</div>
+            </div>
+          </details>
+        </div>
+      )}
+    </div>
+  );
+}
 function QualChips({ lead, size = "sm" }) {
   const items = [["Wants", lead.desiredAmount], ["Rev/mo", lead.monthlyRevenue], ["Score", lead.creditScore], ["In biz", lead.timeInBusiness]].filter(([, v]) => v);
   if (items.length === 0) return null;
@@ -1371,6 +1460,11 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
   return (
     <div className="fixed inset-0 z-50 flex justify-center overflow-y-auto bg-slate-900/40 p-3 sm:p-6" onClick={onClose}>
       <div className="my-auto w-full max-w-2xl rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+        {/* journey stepper */}
+        <div className="border-b border-slate-100 px-5 py-3">
+          <StageStepper status={lead.status} />
+        </div>
+
         {/* head */}
         <div className="sticky top-0 z-10 flex items-center justify-between gap-3 rounded-t-2xl border-b border-slate-100 bg-white px-5 py-3.5">
           <div className="min-w-0">
@@ -1584,7 +1678,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
           </Section>
 
           {/* qualification + business (editable) */}
-          <Section icon={<Building2 size={15} />} title="Qualification & business">
+          <Section icon={<Building2 size={15} />} title="Qualification & business" collapsible defaultOpen={false}>
             <div className="grid gap-3 sm:grid-cols-2">
               <Labeled label="Desired amount"><input value={draft.desiredAmount} onChange={set("desiredAmount")} className={inputCls} /></Labeled>
               <Labeled label="Monthly revenue"><input value={draft.monthlyRevenue} onChange={set("monthlyRevenue")} className={inputCls} /></Labeled>
@@ -1609,7 +1703,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
           </Section>
 
           {/* MyScoreIQ credentials (sensitive) */}
-          <Section icon={<KeyRound size={15} className="text-amber-500" />} title="MyScoreIQ access">
+          <Section icon={<KeyRound size={15} className="text-amber-500" />} title="MyScoreIQ access" collapsible defaultOpen={false}>
             <div className="mb-2 flex items-center gap-1.5 rounded-md bg-amber-50 px-2.5 py-1.5 text-xs text-amber-700 ring-1 ring-inset ring-amber-200">
               <AlertCircle size={13} /> Sensitive. Stored as entered. Add a login to this app before saving real credentials.
             </div>
@@ -1638,7 +1732,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
           </Section>
 
           {/* application (after pre-approval, if they want more) */}
-          <Section icon={<FileText size={15} />} title="Application (for more funding)">
+          <Section icon={<FileText size={15} />} title="Application (for more funding)" collapsible defaultOpen={false}>
             {lead.status === "pre_approved" && (
               <div className="mb-2 rounded-md bg-teal-50 px-2.5 py-1.5 text-xs font-medium text-teal-700 ring-1 ring-inset ring-teal-200">
                 Pre-approved. If the client wants more than Torro offered, send the full application so they can sign and upload bank statements.
@@ -1697,8 +1791,11 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
                     Declined{lead.declineReason ? `: ${lead.declineReason}` : ""}. Work them toward approval-ready.
                   </div>
                   <Labeled label="Decline reason"><input value={draft.declineReason} onChange={set("declineReason")} className={inputCls} /></Labeled>
+                  <div className="mt-2 mb-3">
+                    <AcceleratorScript defaultOpen={/credit|score/i.test(lead.declineReason || "")} />
+                  </div>
                   <div className="mt-2 flex flex-wrap gap-2">
-                    <button onClick={() => updateLead(lead.id, { status: "credit_repair" })} className="rounded-lg bg-fuchsia-600 px-3 py-2 text-sm font-semibold text-white hover:bg-fuchsia-700">Send to Credit Repair</button>
+                    <button onClick={() => updateLead(lead.id, { status: "credit_repair" })} className="rounded-lg bg-fuchsia-600 px-3 py-2 text-sm font-semibold text-white hover:bg-fuchsia-700">Interested, transferring now</button>
                     <button onClick={() => updateLead(lead.id, { status: "submitted" })} className="rounded-lg bg-white px-3 py-2 text-sm font-medium text-slate-600 ring-1 ring-inset ring-slate-200 hover:bg-slate-50">Resubmit to Torro</button>
                   </div>
                 </div>
@@ -1745,7 +1842,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
 
           {/* imported data from GHL */}
           {lead.raw && (
-            <Section icon={<FileText size={15} />} title="Imported data (from GHL)">
+            <Section icon={<FileText size={15} />} title="Imported data (from GHL)" collapsible defaultOpen={false}>
               <button onClick={() => setRawOpen((o) => !o)} className="text-sm font-medium text-blue-700 hover:underline">{rawOpen ? "Hide" : "Show"} exactly what GHL sent</button>
               {rawOpen && <pre className="mt-2 max-h-64 overflow-auto rounded-lg bg-slate-900 p-3 text-xs leading-relaxed text-slate-100">{JSON.stringify(lead.raw.customData || lead.raw, null, 2)}</pre>}
             </Section>
@@ -1761,11 +1858,23 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
     </div>
   );
 }
-function Section({ icon, title, children }) {
+function Section({ icon, title, children, collapsible = false, defaultOpen = true }) {
+  const [open, setOpen] = useState(defaultOpen);
+  if (!collapsible) {
+    return (
+      <div>
+        <h3 className="mb-2 flex items-center gap-1.5 text-sm font-bold text-slate-800">{icon} {title}</h3>
+        {children}
+      </div>
+    );
+  }
   return (
     <div>
-      <h3 className="mb-2 flex items-center gap-1.5 text-sm font-bold text-slate-800">{icon} {title}</h3>
-      {children}
+      <button onClick={() => setOpen((s) => !s)} className="mb-2 flex w-full items-center gap-1.5 text-sm font-bold text-slate-800">
+        {icon} {title}
+        <ChevronDown size={15} className={`ml-auto text-slate-400 transition ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && children}
     </div>
   );
 }
@@ -1948,6 +2057,13 @@ function Scripts() {
   return (
     <div className="mt-4 flex flex-col gap-3">
       <p className="px-1 text-sm text-slate-500">Swap <span className="font-mono text-slate-700">{"{NAME}"}</span> and <span className="font-mono text-slate-700">{"{YOUR NAME}"}</span> as you go.</p>
+
+      <div className="rounded-xl border border-fuchsia-200 bg-fuchsia-50/40 p-4">
+        <h3 className="mb-1 flex items-center gap-1.5 text-sm font-bold text-fuchsia-800"><ListChecks size={15} /> When funding is declined (credit)</h3>
+        <p className="mb-2 text-xs text-slate-500">Pivot a decline into the accelerator program and hand off to a specialist. Also appears automatically on any declined lead.</p>
+        <AcceleratorScript defaultOpen />
+      </div>
+
       {SCRIPTS.map((s) => (
         <div key={s.title} className="rounded-xl border border-slate-200 bg-white p-4">
           <div className="mb-2 flex items-center justify-between gap-2">

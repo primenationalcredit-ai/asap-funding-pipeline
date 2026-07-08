@@ -1400,13 +1400,18 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
                 <div>
                   <div className="text-xs font-semibold uppercase tracking-wide text-blue-700">Opener</div>
                   <p className="mt-1 text-sm text-slate-700">
-                    Hi {firstName(draft.name)}, this is {config.signature}. {[
-                      draft.desiredAmount && `from what you sent over I see you're looking for ${draft.desiredAmount}`,
-                      draft.fundingPurpose && `to put toward ${draft.fundingPurpose}`,
-                      draft.businessName && `for ${draft.businessName}`,
-                      draft.fundingTimeline && `and you need it ${draft.fundingTimeline}`,
-                    ].filter(Boolean).join(", ")}
-                    {(draft.desiredAmount || draft.fundingPurpose || draft.businessName || draft.fundingTimeline) ? ". " : ""}
+                    Hi {firstName(draft.name)}, this is {config.signature}.{" "}
+                    {(() => {
+                      const bn = (draft.businessName || "").trim();
+                      const dupe = bn && bn.toLowerCase() === (draft.name || "").trim().toLowerCase();
+                      const bits = [
+                        draft.desiredAmount && `From what you sent over I see you're looking for ${draft.desiredAmount}`,
+                        draft.fundingPurpose && `to put toward ${draft.fundingPurpose}`,
+                        (bn && !dupe) && `for ${bn}`,
+                        draft.fundingTimeline && `and you need it ${draft.fundingTimeline}`,
+                      ].filter(Boolean);
+                      return bits.length ? bits.join(", ") + ". " : "";
+                    })()}
                     My job is to get you funding as fast as possible and, just as important, the best options for your situation, not just the quickest yes. Let me confirm a couple of things.
                   </p>
                 </div>

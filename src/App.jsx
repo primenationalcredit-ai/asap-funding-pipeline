@@ -901,9 +901,10 @@ function Dashboard({ userEmail }) {
 
   const profileLead = leads.find((l) => l.id === profileId) || null;
 
+  const actAlerts = useMemo(() => activities.filter((a) => !a.done && ["overdue", "today"].includes(actBucket(a))).length, [activities]);
+
   if (!loaded) return <div className="flex min-h-96 items-center justify-center font-sans text-slate-400">Loading your pipeline...</div>;
 
-  const actAlerts = useMemo(() => activities.filter((a) => !a.done && ["overdue", "today"].includes(actBucket(a))).length, [activities]);
   const NAV = [["pipeline", "Pipeline", LayoutGrid], ["activities", "Activities", CalendarClock], ["followups", "Follow-ups", Clock], ["commissions", "Commissions", DollarSign], ["team", "Team", User], ["messaging", "Messaging", MessageSquare], ["scripts", "Scripts", FileText], ["settings", "Settings", SettingsIcon]];
   const tabTitle = { pipeline: "Pipeline", activities: "Activities", followups: "Follow-ups", commissions: "Commissions", team: "Team activity", messaging: "Messaging", scripts: "Call scripts", settings: "Settings" }[tab];
 

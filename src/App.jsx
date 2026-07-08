@@ -1291,6 +1291,12 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
         <div className="sticky top-0 z-10 flex items-center justify-between gap-3 rounded-t-2xl border-b border-slate-100 bg-white px-5 py-3.5">
           <div className="min-w-0">
             <div className="flex items-center gap-2"><span className="truncate text-lg font-bold">{leadTitle(lead)}</span><StagePill status={lead.status} /></div>
+            {leadSubName(lead) && (
+              <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm">
+                <span className="inline-flex items-center gap-1 font-medium text-slate-700"><User size={13} className="shrink-0 text-slate-400" /> {leadSubName(lead)}</span>
+                {lead.phone && <a href={telHref(lead.phone)} className="font-mono text-xs text-slate-400 hover:text-blue-600">{lead.phone}</a>}
+              </div>
+            )}
             <div className="mt-0.5"><QualChips lead={lead} /></div>
           </div>
           <div className="flex items-center gap-2">

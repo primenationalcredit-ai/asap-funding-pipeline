@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import {
   Phone, MessageSquare, Mail, Copy, Check, Plus, Search, Settings as SettingsIcon,
   Clock, Trash2, User, FileText, Send, AlertCircle, ChevronDown, Zap, Wifi,
@@ -55,6 +55,7 @@ const DEFAULT_CONFIG = {
   signature: "Joe at ASAP Funding USA",
   funderName: "Torro",
   funderEmail: "slocsubmissions@torro.com",
+  autoSnoozeDays: 3,
 };
 
 const DEFAULT_TEMPLATES = [
@@ -355,6 +356,8 @@ function rowToLead(r) {
     fundedAmount: r.funded_amount != null ? r.funded_amount : "",
     commissionAmount: r.commission_amount != null ? r.commission_amount : "",
     declineReason: r.decline_reason || "",
+    automationPaused: !!r.automation_paused,
+    snoozeUntil: r.snooze_until ? new Date(r.snooze_until).getTime() : null,
     fundedAt: r.funded_at ? new Date(r.funded_at).getTime() : null,
     commissionPaidAt: r.commission_paid_at ? new Date(r.commission_paid_at).getTime() : null,
     reportUploadedAt: r.report_uploaded_at ? new Date(r.report_uploaded_at).getTime() : null,
@@ -378,6 +381,7 @@ const FIELD_MAP = {
   myscoreiqUsername: "myscoreiq_username", myscoreiqPassword: "myscoreiq_password", ssnLast4: "ssn_last4",
   reportPath: "report_path",
   fundedAmount: "funded_amount", commissionAmount: "commission_amount", declineReason: "decline_reason",
+  automationPaused: "automation_paused",
 };
 function leadPatchToRow(patch) {
   const row = {};
@@ -389,6 +393,7 @@ function leadPatchToRow(patch) {
     else if (k === "reportUploadedAt") row.report_uploaded_at = v ? new Date(v).toISOString() : null;
     else if (k === "fundedAt") row.funded_at = v ? new Date(v).toISOString() : null;
     else if (k === "commissionPaidAt") row.commission_paid_at = v ? new Date(v).toISOString() : null;
+    else if (k === "snoozeUntil") row.snooze_until = v ? new Date(v).toISOString() : null;
   }
   return row;
 }
@@ -556,18 +561,22 @@ function relativeDue(ts) {
 function cadenceSteps(lead, cadences, templates) {
   const steps = cadences[lead.status] || [];
   const entered = lead.stageEnteredAt || lead.createdAt;
+  const snooze = lead.snoozeUntil || 0;
   return steps.map((s, i) => {
     const tpl = s.pool
       ? pickFrom(poolTemplates(templates, s.pool), lead.id + ":" + s.pool + ":" + i)
       : templates.find((t) => t.id === s.templateId);
-    const dueAt = entered + s.day * DAY;
+    const scheduledAt = entered + s.day * DAY;
+    // A snooze pushes anything that would have been due before it
+    const dueAt = Math.max(scheduledAt, snooze);
     const done = (lead.touches || []).some(
       (t) => t.kind === "cadence" && t.stage === lead.status && t.step === i && t.at >= entered - 5000
     );
-    return { i, day: s.day, template: tpl, channel: tpl?.channel, dueAt, done };
+    return { i, day: s.day, template: tpl, channel: tpl?.channel, scheduledAt, dueAt, done };
   });
 }
 function nextDue(lead, cadences, templates) {
+  if (lead.automationPaused) return null; // paused: nothing is ever due
   const steps = cadenceSteps(lead, cadences, templates).filter((s) => !s.done && s.template);
   if (steps.length === 0) return null;
   return steps.sort((a, b) => a.dueAt - b.dueAt)[0];
@@ -712,6 +721,8 @@ function Dashboard({ userEmail }) {
   const [compose, setCompose] = useState(null);
   const [live, setLive] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
+  // keep the auto-snooze setting available inside stable callbacks
+  const autoSnoozeDaysRef = useRef(3);
 
   const refetchLeads = useCallback(async () => {
     const { data, error } = await supabase.from("leads").select("*").order("created_at", { ascending: false });
@@ -740,6 +751,8 @@ function Dashboard({ userEmail }) {
       .subscribe((s) => setLive(s === "SUBSCRIBED"));
     return () => { supabase.removeChannel(channel); };
   }, [refetchLeads]);
+
+  useEffect(() => { autoSnoozeDaysRef.current = config.autoSnoozeDays ?? 3; }, [config.autoSnoozeDays]);
 
   const saveConfigKey = useCallback(async (key, value) => {
     await supabase.from("app_config").upsert({ key, value });
@@ -778,6 +791,12 @@ function Dashboard({ userEmail }) {
       if (kind === "link" && !l.linkSentAt) {
         patch.linkSentAt = now;
         if (l.status === "new" || l.status === "called") { patch.status = "link_sent"; patch.stageEnteredAt = now; }
+      }
+      // A real human touch (a logged call, or a note) means we are mid-conversation.
+      // Push the next automated message out so we do not blast them.
+      if (kind === "call" || extra.note) {
+        const days = Number(autoSnoozeDaysRef.current) || 0;
+        if (days > 0) patch.snoozeUntil = now + days * DAY;
       }
       computed = patch;
       return { ...l, ...patch };
@@ -837,8 +856,8 @@ function Dashboard({ userEmail }) {
 
   if (!loaded) return <div className="flex min-h-96 items-center justify-center font-sans text-slate-400">Loading your pipeline...</div>;
 
-  const NAV = [["pipeline", "Pipeline", LayoutGrid], ["commissions", "Commissions", DollarSign], ["team", "Team", User], ["messaging", "Messaging", MessageSquare], ["scripts", "Scripts", FileText], ["settings", "Settings", SettingsIcon]];
-  const tabTitle = { pipeline: "Pipeline", commissions: "Commissions", team: "Team activity", messaging: "Messaging", scripts: "Call scripts", settings: "Settings" }[tab];
+  const NAV = [["pipeline", "Pipeline", LayoutGrid], ["followups", "Follow-ups", Clock], ["commissions", "Commissions", DollarSign], ["team", "Team", User], ["messaging", "Messaging", MessageSquare], ["scripts", "Scripts", FileText], ["settings", "Settings", SettingsIcon]];
+  const tabTitle = { pipeline: "Pipeline", followups: "Follow-ups", commissions: "Commissions", team: "Team activity", messaging: "Messaging", scripts: "Call scripts", settings: "Settings" }[tab];
 
   return (
     <div className="flex min-h-screen bg-slate-50 font-sans text-slate-800">
@@ -863,6 +882,9 @@ function Dashboard({ userEmail }) {
             <button key={k} onClick={() => setTab(k)} title={label}
               className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition ${tab === k ? "bg-blue-800 text-white" : "text-blue-200 hover:bg-blue-900 hover:text-white"}`}>
               <Icon size={18} className="shrink-0" /> <span className="hidden md:inline">{label}</span>
+              {k === "followups" && dueList.length > 0 && (
+                <span className="ml-auto hidden rounded-full bg-orange-500 px-1.5 text-[11px] font-bold text-white md:inline">{dueList.length}</span>
+              )}
             </button>
           ))}
         </nav>
@@ -884,6 +906,7 @@ function Dashboard({ userEmail }) {
           <div className="flex items-center gap-2">
             <h1 className="text-lg font-bold tracking-tight text-slate-800">{tabTitle}</h1>
             {tab === "pipeline" && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-500">{leads.length}</span>}
+            {tab === "followups" && dueList.length > 0 && <span className="rounded-full bg-orange-100 px-2 py-0.5 text-xs font-semibold text-orange-700">{dueList.length}</span>}
           </div>
           <button onClick={() => { setTab("pipeline"); setShowAdd(true); }} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-500"><Plus size={16} /> <span className="hidden sm:inline">Add client</span></button>
         </header>
@@ -894,8 +917,10 @@ function Dashboard({ userEmail }) {
           {tab === "pipeline" && (
             <Pipeline leads={filtered} allLeads={leads} allCount={leads.length} dueList={dueList} stats={stats} config={config}
               query={query} setQuery={setQuery} filter={filter} setFilter={setFilter} showAdd={showAdd} setShowAdd={setShowAdd}
-              addLead={addLead} onOpen={setProfileId} logTouch={logTouch} updateLead={updateLead} cadences={cadences} templates={templates} openCompose={setCompose} />
+              addLead={addLead} onOpen={setProfileId} logTouch={logTouch} updateLead={updateLead} cadences={cadences} templates={templates} openCompose={setCompose}
+              onGoFollowups={() => setTab("followups")} />
           )}
+          {tab === "followups" && <Followups dueList={dueList} config={config} onOpen={setProfileId} openCompose={setCompose} updateLead={updateLead} />}
           {tab === "messaging" && <Messaging templates={templates} persistTemplates={persistTemplates} cadences={cadences} persistCadences={persistCadences} />}
           {tab === "commissions" && <Commissions leads={leads} onOpen={setProfileId} />}
           {tab === "team" && <Team leads={leads} onOpen={setProfileId} />}
@@ -923,15 +948,10 @@ const BOARDS = {
   closed: { label: "Closed", stages: ["declined", "credit_repair", "dead"] },
 };
 
-function Pipeline({ leads, allLeads, allCount, dueList, stats, config, query, setQuery, filter, setFilter, showAdd, setShowAdd, addLead, onOpen, logTouch, updateLead, cadences, templates, openCompose }) {
+function Pipeline({ leads, allLeads, allCount, dueList, stats, config, query, setQuery, filter, setFilter, showAdd, setShowAdd, addLead, onOpen, logTouch, updateLead, cadences, templates, openCompose, onGoFollowups }) {
   const [view, setView] = useState("board");
   const [boardTab, setBoardTab] = useState("outreach");
   const [dragId, setDragId] = useState(null);
-  const sendStep = (lead, step) => {
-    const tpl = step.template;
-    if (!tpl) return;
-    openCompose({ lead, channel: tpl.channel, to: tpl.channel === "sms" ? lead.phone : lead.email, subject: fillTokens(tpl.subject, lead, config), body: fillTokens(tpl.body, lead, config), kind: "cadence", extra: { stage: lead.status, step: step.i } });
-  };
 
   const q = query.toLowerCase();
   const boardLeads = (allLeads || leads).filter((l) => !q || (l.name + l.phone + l.email + l.businessName + l.opportunityName + l.source + l.tags).toLowerCase().includes(q));
@@ -941,28 +961,10 @@ function Pipeline({ leads, allLeads, allCount, dueList, stats, config, query, se
   return (
     <div className="mt-4">
       {dueList.length > 0 && (
-        <div className="mb-4 rounded-xl border border-orange-200 bg-orange-50 p-3">
-          <div className="mb-2 flex items-center gap-1.5 px-1 text-sm font-semibold text-orange-800"><Clock size={15} /> Follow up now ({dueList.length})</div>
-          <div className="flex flex-col gap-2">
-            {dueList.map(({ l, step }) => {
-              const rel = relativeDue(step.dueAt);
-              return (
-                <div key={l.id} className="flex flex-wrap items-center gap-2 rounded-lg bg-white px-3 py-2 ring-1 ring-orange-100">
-                  <button onClick={() => onOpen(l.id)} className="font-semibold hover:text-blue-700">{leadTitle(l)}</button>
-                  <StagePill status={l.status} />
-                  <span className={`text-xs font-medium ${rel.overdue ? "text-rose-600" : "text-orange-600"}`}>{rel.label}</span>
-                  <span className="text-xs text-slate-400">{step.template?.name}</span>
-                  <div className="ml-auto">
-                    <button onClick={() => sendStep(l, step)}
-                      className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-sm font-medium ${step.channel === "sms" ? "bg-blue-600 text-white hover:bg-blue-700" : "bg-white text-blue-700 ring-1 ring-blue-300 hover:bg-blue-50"}`}>
-                      {step.channel === "sms" ? <MessageSquare size={14} /> : <Mail size={14} />} Send
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+        <button onClick={onGoFollowups} className="mb-4 flex w-full items-center gap-2 rounded-xl border border-orange-200 bg-orange-50 px-4 py-2.5 text-left text-sm font-semibold text-orange-800 hover:bg-orange-100">
+          <Clock size={15} /> {dueList.length} follow-up{dueList.length === 1 ? "" : "s"} due
+          <span className="ml-auto text-xs font-medium text-orange-600">Open Follow-ups &rarr;</span>
+        </button>
       )}
 
       <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -1061,7 +1063,9 @@ function BoardCard({ lead, onOpen, cadences, templates, config, openCompose, upd
           <div className="truncate text-sm font-semibold text-slate-800">{leadTitle(lead)}</div>
           {leadSubName(lead) && <div className="truncate text-xs text-slate-400">{leadSubName(lead)}</div>}
         </div>
-        {rel && <span className={`shrink-0 text-xs font-medium ${rel.overdue ? "text-rose-600" : "text-orange-500"}`}>{rel.label}</span>}
+        {lead.automationPaused
+          ? <span className="shrink-0 rounded bg-amber-100 px-1.5 text-[10px] font-bold text-amber-800">PAUSED</span>
+          : rel && <span className={`shrink-0 text-xs font-medium ${rel.overdue ? "text-rose-600" : "text-orange-500"}`}>{rel.label}</span>}
       </div>
       {(lead.desiredAmount || lead.commissionAmount) && (
         <div className="mt-1 text-xs text-slate-500">
@@ -1278,6 +1282,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
   };
 
   const steps = cadenceSteps(lead, cadences, templates);
+  const nextStep = nextDue(lead, cadences, templates);
 
   return (
     <div className="fixed inset-0 z-50 flex justify-center overflow-y-auto bg-slate-900/40 p-3 sm:p-6" onClick={onClose}>
@@ -1315,6 +1320,44 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
               </ol>
             </div>
           )}
+
+          {/* automation control */}
+          <div className={`rounded-xl border px-4 py-3 ${lead.automationPaused ? "border-amber-200 bg-amber-50" : "border-slate-200 bg-white"}`}>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Automated follow-ups</div>
+              {lead.automationPaused ? (
+                <span className="rounded-full bg-amber-200 px-2 py-0.5 text-xs font-bold text-amber-900">Paused</span>
+              ) : nextStep ? (
+                <span className="text-xs text-slate-500">Next: <span className="font-semibold text-slate-700">{nextStep.template?.name}</span> {relativeDue(nextStep.dueAt).label.toLowerCase()}</span>
+              ) : (
+                <span className="text-xs text-slate-400">Nothing scheduled</span>
+              )}
+              <div className="ml-auto">
+                {lead.automationPaused ? (
+                  <button onClick={() => updateLead(lead.id, { automationPaused: false })} className="rounded-lg bg-slate-800 px-3 py-1.5 text-sm font-semibold text-white hover:bg-slate-900">Resume</button>
+                ) : (
+                  <button onClick={() => updateLead(lead.id, { automationPaused: true })} className="rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50">Pause</button>
+                )}
+              </div>
+            </div>
+            {!lead.automationPaused && (
+              <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
+                <span className="text-slate-400">Push next follow-up out</span>
+                {[1, 3, 7, 14].map((d) => (
+                  <button key={d} onClick={() => updateLead(lead.id, { snoozeUntil: Date.now() + d * DAY })} className="rounded-md bg-slate-100 px-2 py-1 font-medium text-slate-600 hover:bg-slate-200">{d}d</button>
+                ))}
+                <input type="date" onChange={(e) => e.target.value && updateLead(lead.id, { snoozeUntil: new Date(e.target.value + "T09:00:00").getTime() })}
+                  className="rounded-md border border-slate-200 px-2 py-1 text-xs outline-none focus:border-blue-400" />
+                {lead.snoozeUntil > Date.now() && (
+                  <span className="ml-1 text-slate-500">Paused until <span className="font-semibold">{fmtDate(lead.snoozeUntil)}</span></span>
+                )}
+              </div>
+            )}
+            <p className="mt-2 text-xs text-slate-400">
+              Logging a call or note automatically pushes the next message out {config.autoSnoozeDays ?? 3} days, so nobody gets blasted mid-conversation.
+            </p>
+          </div>
+
           {/* contact actions */}
           <div className="flex flex-wrap gap-2">
             <a href={telHref(lead.phone)} onClick={() => lead.phone && updateLead(lead.id, lead.status === "new" ? { status: "called" } : {})} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium ${lead.phone ? "bg-slate-800 text-white hover:bg-slate-900" : "pointer-events-none bg-slate-100 text-slate-300"}`}><Phone size={15} /> Call</a>
@@ -1832,6 +1875,7 @@ function Settings({ config, persistConfig }) {
         <div className="flex flex-col gap-3">
           <Labeled label="MyScoreIQ link (under $10k path)"><input value={draft.reportLink} onChange={set("reportLink")} className={`${inputCls} font-mono`} /></Labeled>
           <Labeled label="SmartCredit link (backup report tool)"><input value={draft.smartCreditLink || ""} onChange={set("smartCreditLink")} className={`${inputCls} font-mono`} /></Labeled>
+          <Labeled label="Auto-snooze days after a logged call or note"><input type="number" min={0} value={draft.autoSnoozeDays ?? 3} onChange={(e) => setDraft({ ...draft, autoSnoozeDays: Number(e.target.value) })} className={inputCls} /></Labeled>
           <Labeled label="Application link (over $10k path)"><input value={draft.appLink || ""} onChange={set("appLink")} placeholder="https://tinyurl.com/asapfundingapp" className={`${inputCls} font-mono`} /></Labeled>
           <Labeled label="Signature / who it is from"><input value={draft.signature} onChange={set("signature")} className={inputCls} /></Labeled>
           <Labeled label="Funder name"><input value={draft.funderName || ""} onChange={set("funderName")} className={inputCls} /></Labeled>
@@ -1853,6 +1897,87 @@ function Settings({ config, persistConfig }) {
 /*  Commissions                                                       */
 /* ================================================================== */
 const money = (n) => "$" + (Number(n) || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
+function Followups({ dueList, config, onOpen, openCompose, updateLead }) {
+  const [showAll, setShowAll] = useState(false);
+  const sendStep = (lead, step) => {
+    const tpl = step.template;
+    if (!tpl) return;
+    openCompose({
+      lead, channel: tpl.channel,
+      to: tpl.channel === "sms" ? lead.phone : lead.email,
+      subject: fillTokens(tpl.subject, lead, config),
+      body: fillTokens(tpl.body, lead, config),
+      kind: "cadence", extra: { stage: lead.status, step: step.i },
+    });
+  };
+  const snooze = (lead, days) => updateLead(lead.id, { snoozeUntil: Date.now() + days * DAY });
+  const pause = (lead) => updateLead(lead.id, { automationPaused: true });
+
+  const overdue = dueList.filter((x) => relativeDue(x.step.dueAt).overdue);
+  const upcoming = dueList.filter((x) => !relativeDue(x.step.dueAt).overdue);
+  const shown = showAll ? dueList : dueList.slice(0, 25);
+
+  if (dueList.length === 0) {
+    return (
+      <div className="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50 py-14 text-center">
+        <Check size={28} className="mx-auto text-emerald-400" />
+        <div className="mt-2 text-sm font-medium text-slate-600">All caught up</div>
+        <div className="mt-1 text-sm text-slate-400">No follow-ups are due right now.</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-4 flex flex-col gap-4">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="rounded-xl border border-rose-200 bg-rose-50 p-4">
+          <div className="text-xs font-semibold uppercase tracking-wide text-rose-500">Overdue</div>
+          <div className="mt-1 text-2xl font-bold text-rose-800">{overdue.length}</div>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-4">
+          <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">Due soon</div>
+          <div className="mt-1 text-2xl font-bold text-slate-800">{upcoming.length}</div>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        {shown.map(({ l, step }) => {
+          const rel = relativeDue(step.dueAt);
+          return (
+            <div key={l.id} className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <button onClick={() => onOpen(l.id)} className="font-semibold text-slate-800 hover:text-blue-700">{leadTitle(l)}</button>
+                <StagePill status={l.status} />
+                <span className={`text-xs font-semibold ${rel.overdue ? "text-rose-600" : "text-orange-500"}`}>{rel.label}</span>
+                <span className="text-xs text-slate-400">{step.template?.name}</span>
+                <div className="ml-auto flex items-center gap-1.5">
+                  <button onClick={() => sendStep(l, step)}
+                    className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-sm font-medium ${step.channel === "sms" ? "bg-blue-600 text-white hover:bg-blue-500" : "bg-white text-blue-700 ring-1 ring-blue-300 hover:bg-blue-50"}`}>
+                    {step.channel === "sms" ? <MessageSquare size={14} /> : <Mail size={14} />} Send
+                  </button>
+                </div>
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
+                <span className="text-slate-400">Snooze</span>
+                {[1, 3, 7].map((d) => (
+                  <button key={d} onClick={() => snooze(l, d)} className="rounded-md bg-slate-100 px-2 py-1 font-medium text-slate-600 hover:bg-slate-200">{d}d</button>
+                ))}
+                <button onClick={() => pause(l)} className="ml-1 rounded-md px-2 py-1 font-medium text-slate-400 hover:bg-slate-100 hover:text-slate-600">Pause automation</button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {!showAll && dueList.length > 25 && (
+        <button onClick={() => setShowAll(true)} className="rounded-lg bg-slate-100 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-200">
+          Show all {dueList.length}
+        </button>
+      )}
+    </div>
+  );
+}
+
 function Team({ leads, onOpen }) {
   const [day, setDay] = useState(() => new Date().toISOString().slice(0, 10));
   // flatten all touches with lead context

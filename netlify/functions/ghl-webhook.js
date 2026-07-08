@@ -27,6 +27,22 @@ function pickFrom(objs, keys) {
   return "";
 }
 
+// Last-resort: find any key that looks like a business-name field
+// (legal_business_name, businessName, company_name, dba, etc.)
+function fuzzyBusinessName(objs) {
+  const looksRight = (k) => {
+    const s = k.toLowerCase().replace(/[^a-z]/g, "");
+    return (s.includes("business") && s.includes("name")) || s === "companyname" || s === "company" || s === "dba" || s === "legalname";
+  };
+  for (const o of objs) {
+    if (!o || typeof o !== "object") continue;
+    for (const [k, v] of Object.entries(o)) {
+      if (looksRight(k) && v !== undefined && v !== null && String(v).trim() !== "") return String(v).trim();
+    }
+  }
+  return "";
+}
+
 function normalize(payload) {
   const top = payload || {};
   const cd = payload.customData || {};
@@ -49,7 +65,14 @@ function normalize(payload) {
     tags: pickFrom([top, cd], ["tags"]),
     // opportunity / qualification fields (from customData mapping)
     opportunity_name: pickFrom([cd, top], ["opportunity_name", "opportunityName"]),
-    business_name: pickFrom([cd, top], ["business_name", "businessName", "company", "company_name"]) || pickFrom([cd, top], ["opportunity_name", "opportunityName"]),
+    business_name:
+      pickFrom([cd, top], [
+        "business_name", "businessName",
+        "legal_business_name", "legalBusinessName", "legal_business", "legalName",
+        "company", "company_name", "companyName", "dba",
+      ])
+      || fuzzyBusinessName([cd, top, con])
+      || pickFrom([cd, top], ["opportunity_name", "opportunityName"]),
     pipeline_stage: pickFrom([cd, top], ["pipeline_stage", "pipelineStage", "stage"]),
     desired_amount: pickFrom([cd, top], ["desired_amount", "desiredAmount"]),
     estimated_credit_score: pickFrom([cd, top], ["estimated_credit_score", "estimatedCreditScore", "credit_score"]),

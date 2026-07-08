@@ -1959,9 +1959,58 @@ function Settings({ config, persistConfig }) {
           {saved && <span className="inline-flex items-center gap-1 text-sm font-medium text-blue-600"><Check size={15} /> Saved</span>}
         </div>
       </div>
+      <InboundTexts />
       <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-500">
         Build your messages and per-stage follow-up sequences under the <span className="font-semibold text-slate-700">Messaging</span> tab.
       </div>
+    </div>
+  );
+}
+
+function InboundTexts() {
+  const [busy, setBusy] = useState("");
+  const [msg, setMsg] = useState(null);
+
+  const call = async (method) => {
+    setBusy(method); setMsg(null);
+    try {
+      const { data } = await supabase.auth.getSession();
+      const res = await fetch("/api/rc-subscribe", {
+        method,
+        headers: { Authorization: `Bearer ${data.session?.access_token}` },
+      });
+      const j = await res.json();
+      if (!res.ok || j.error) throw new Error(j.error || `Failed (${res.status})`);
+      if (method === "POST") {
+        setMsg({ ok: true, text: `Connected. RingCentral will now push replies here. Subscription ${j.id} is ${j.status}.` });
+      } else {
+        const records = j.subscriptions?.records || [];
+        setMsg({ ok: true, text: records.length ? `${records.length} active subscription(s). Delivering to ${j.deliveryUrl}` : "No subscription yet. Click Connect." });
+      }
+    } catch (e) {
+      setMsg({ ok: false, text: String(e.message || e) });
+    } finally { setBusy(""); }
+  };
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-4">
+      <div className="mb-1 flex items-center gap-1.5 text-sm font-bold text-slate-800"><MessageSquare size={15} className="text-blue-600" /> Inbound texts</div>
+      <p className="mb-3 text-sm text-slate-500">
+        Connect once so client replies land in each lead's conversation. Your RingCentral app needs the <span className="font-medium text-slate-700">Read Messages</span> scope first.
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <button onClick={() => call("POST")} disabled={!!busy} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-40">
+          <Zap size={15} /> {busy === "POST" ? "Connecting..." : "Connect inbound texts"}
+        </button>
+        <button onClick={() => call("GET")} disabled={!!busy} className="rounded-lg bg-white px-3.5 py-2 text-sm font-medium text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50 disabled:opacity-40">
+          {busy === "GET" ? "Checking..." : "Check status"}
+        </button>
+      </div>
+      {msg && (
+        <div className={`mt-3 rounded-lg px-3 py-2 text-sm ring-1 ring-inset ${msg.ok ? "bg-blue-50 text-blue-800 ring-blue-200" : "bg-rose-50 text-rose-700 ring-rose-200"}`}>
+          {msg.text}
+        </div>
+      )}
     </div>
   );
 }

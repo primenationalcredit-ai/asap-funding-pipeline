@@ -877,6 +877,18 @@ function Dashboard({ userEmail }) {
     refetchActivities();
   }, [refetchActivities]);
 
+  // Reply to a lead from inside the app (text or email). Sends, then logs it.
+  const sendReply = useCallback(async (lead, channel, subject, body) => {
+    const to = channel === "sms" ? lead.phone : lead.email;
+    await sendMessage(channel, to, subject, body); // throws on failure, surfaced by caller
+    await supabase.from("communications").insert({
+      lead_id: lead.id, direction: "out", channel,
+      subject: subject || null, body, to_addr: to || null, by_user: userEmail,
+    });
+    logTouch(lead.id, channel, "reply", {});
+    refetchComms();
+  }, [userEmail, logTouch, refetchComms]);
+
   const dueList = useMemo(() => (
     leads.map((l) => ({ l, step: nextDue(l, cadences, templates) }))
       .filter((x) => x.step && x.step.dueAt <= Date.now() + DAY)
@@ -903,10 +915,20 @@ function Dashboard({ userEmail }) {
 
   const actAlerts = useMemo(() => activities.filter((a) => !a.done && ["overdue", "today"].includes(actBucket(a))).length, [activities]);
 
+  // A lead is "unread" when the most recent message is inbound (they texted last).
+  const unreadLeadIds = useMemo(() => {
+    const latest = {};
+    for (const c of comms) {
+      const t = new Date(c.at).getTime();
+      if (!latest[c.lead_id] || t > latest[c.lead_id].t) latest[c.lead_id] = { t, dir: c.direction };
+    }
+    return new Set(Object.entries(latest).filter(([, v]) => v.dir === "in").map(([id]) => id));
+  }, [comms]);
+
   if (!loaded) return <div className="flex min-h-96 items-center justify-center font-sans text-slate-400">Loading your pipeline...</div>;
 
-  const NAV = [["pipeline", "Pipeline", LayoutGrid], ["activities", "Activities", CalendarClock], ["followups", "Follow-ups", Clock], ["commissions", "Commissions", DollarSign], ["team", "Team", User], ["messaging", "Messaging", MessageSquare], ["scripts", "Scripts", FileText], ["settings", "Settings", SettingsIcon]];
-  const tabTitle = { pipeline: "Pipeline", activities: "Activities", followups: "Follow-ups", commissions: "Commissions", team: "Team activity", messaging: "Messaging", scripts: "Call scripts", settings: "Settings" }[tab];
+  const NAV = [["pipeline", "Pipeline", LayoutGrid], ["inbox", "Inbox", MessageSquare], ["activities", "Activities", CalendarClock], ["followups", "Follow-ups", Clock], ["commissions", "Commissions", DollarSign], ["team", "Team", User], ["messaging", "Templates", FileText], ["scripts", "Scripts", ListChecks], ["settings", "Settings", SettingsIcon]];
+  const tabTitle = { pipeline: "Pipeline", inbox: "Inbox", activities: "Activities", followups: "Follow-ups", commissions: "Commissions", team: "Team activity", messaging: "Message templates", scripts: "Call scripts", settings: "Settings" }[tab];
 
   return (
     <div className="flex min-h-screen bg-slate-50 font-sans text-slate-800">
@@ -937,6 +959,9 @@ function Dashboard({ userEmail }) {
               {k === "activities" && actAlerts > 0 && (
                 <span className="ml-auto hidden rounded-full bg-rose-500 px-1.5 text-[11px] font-bold text-white md:inline">{actAlerts}</span>
               )}
+              {k === "inbox" && unreadLeadIds.size > 0 && (
+                <span className="ml-auto hidden rounded-full bg-blue-500 px-1.5 text-[11px] font-bold text-white md:inline">{unreadLeadIds.size}</span>
+              )}
             </button>
           ))}
         </nav>
@@ -960,6 +985,7 @@ function Dashboard({ userEmail }) {
             {tab === "pipeline" && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-500">{leads.length}</span>}
             {tab === "followups" && dueList.length > 0 && <span className="rounded-full bg-orange-100 px-2 py-0.5 text-xs font-semibold text-orange-700">{dueList.length}</span>}
             {tab === "activities" && actAlerts > 0 && <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-700">{actAlerts} due</span>}
+            {tab === "inbox" && unreadLeadIds.size > 0 && <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700">{unreadLeadIds.size} unread</span>}
           </div>
           <button onClick={() => { setTab("pipeline"); setShowAdd(true); }} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-500"><Plus size={16} /> <span className="hidden sm:inline">Add client</span></button>
         </header>
@@ -974,6 +1000,7 @@ function Dashboard({ userEmail }) {
               onGoFollowups={() => setTab("followups")} />
           )}
           {tab === "followups" && <Followups dueList={dueList} config={config} onOpen={setProfileId} openCompose={setCompose} updateLead={updateLead} />}
+          {tab === "inbox" && <Conversations leads={leads} comms={comms} unreadLeadIds={unreadLeadIds} onSend={sendReply} onOpen={setProfileId} />}
           {tab === "activities" && <Activities activities={activities} leads={leads} onOpen={setProfileId} completeActivity={completeActivity} deleteActivity={deleteActivity} />}
           {tab === "messaging" && <Messaging templates={templates} persistTemplates={persistTemplates} cadences={cadences} persistCadences={persistCadences} />}
           {tab === "commissions" && <Commissions leads={leads} onOpen={setProfileId} />}
@@ -985,7 +1012,7 @@ function Dashboard({ userEmail }) {
 
       {profileLead && (
         <Profile lead={profileLead} config={config} templates={templates} cadences={cadences} userEmail={userEmail}
-          comms={comms} activities={activities} addActivity={addActivity} completeActivity={completeActivity} deleteActivity={deleteActivity}
+          comms={comms} activities={activities} addActivity={addActivity} completeActivity={completeActivity} deleteActivity={deleteActivity} sendReply={sendReply}
           onClose={() => setProfileId(null)} updateLead={updateLead} removeLead={removeLead} logTouch={logTouch} openCompose={setCompose} />
       )}
 
@@ -1277,7 +1304,7 @@ function ComposeModal({ compose, onClose, onSent, templates = [], config = {} })
 /* ================================================================== */
 /*  Profile (client detail)                                           */
 /* ================================================================== */
-function Profile({ lead, config, templates, cadences, onClose, updateLead, removeLead, logTouch, openCompose, userEmail, comms = [], activities = [], addActivity, completeActivity, deleteActivity }) {
+function Profile({ lead, config, templates, cadences, onClose, updateLead, removeLead, logTouch, openCompose, userEmail, comms = [], activities = [], addActivity, completeActivity, deleteActivity, sendReply }) {
   const EDITABLE = ["name", "phone", "email", "notes", "desiredAmount", "fundingPurpose", "fundingTimeline", "monthlyRevenue", "creditScore", "timeInBusiness",
     "businessName", "businessType", "einStatus", "bestTime", "nextStep", "myscoreiqUsername", "myscoreiqPassword", "ssnLast4", "fundedAmount", "commissionAmount", "declineReason"];
   const [draft, setDraft] = useState(lead);
@@ -1387,8 +1414,8 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
           {/* scheduled calls and tasks */}
           <ActivityPanel lead={lead} activities={leadActivities} addActivity={addActivity} completeActivity={completeActivity} deleteActivity={deleteActivity} />
 
-          {/* conversation thread */}
-          <CommThread comms={leadComms} />
+          {/* conversation thread with inline reply */}
+          <Conversation lead={lead} comms={comms} onSend={sendReply} compact />
 
           {/* automation control */}
           <div className={`rounded-xl border px-4 py-3 ${lead.automationPaused ? "border-amber-200 bg-amber-50" : "border-slate-200 bg-white"}`}>
@@ -2119,26 +2146,40 @@ function ActivityPanel({ lead, activities, addActivity, completeActivity, delete
   );
 }
 
-function CommThread({ comms }) {
-  const [expanded, setExpanded] = useState(false);
-  if (!comms || comms.length === 0) {
-    return (
-      <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-        <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-slate-500"><MessageSquare size={14} /> Conversation</div>
-        <p className="mt-2 text-sm text-slate-400">No messages recorded yet. Texts and emails you send from the app show up here, along with any replies.</p>
-      </div>
-    );
-  }
-  const sorted = [...comms].sort((a, b) => new Date(a.at) - new Date(b.at));
-  const shown = expanded ? sorted : sorted.slice(-8);
+
+function Conversation({ lead, comms, onSend, compact = false }) {
+  const [channel, setChannel] = useState("sms");
+  const [subject, setSubject] = useState("");
+  const [body, setBody] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const endRef = useRef(null);
+
+  const thread = useMemo(
+    () => comms.filter((c) => c.lead_id === lead.id).sort((a, b) => new Date(a.at) - new Date(b.at)),
+    [comms, lead.id]
+  );
+  useEffect(() => { endRef.current?.scrollIntoView({ block: "nearest" }); }, [thread.length]);
+
+  const canSend = channel === "sms" ? !!lead.phone : !!lead.email;
+  const send = async () => {
+    if (!body.trim() || !canSend) return;
+    setBusy(true); setErr("");
+    try { await onSend(lead, channel, subject, body); setBody(""); setSubject(""); }
+    catch (e) { setErr(String(e.message || e)); }
+    finally { setBusy(false); }
+  };
+
   return (
-    <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-slate-500"><MessageSquare size={14} /> Conversation ({comms.length})</div>
-        {sorted.length > 8 && <button onClick={() => setExpanded((s) => !s)} className="text-xs font-medium text-blue-600 hover:underline">{expanded ? "Show recent" : `Show all ${sorted.length}`}</button>}
+    <div className="rounded-xl border border-slate-200 bg-white">
+      <div className="flex items-center gap-1.5 border-b border-slate-100 px-4 py-2.5 text-xs font-bold uppercase tracking-wide text-slate-500">
+        <MessageSquare size={14} className="text-blue-600" /> Conversation
+        {thread.length > 0 && <span className="text-slate-400">({thread.length})</span>}
       </div>
-      <div className="mt-3 flex flex-col gap-2">
-        {shown.map((c) => {
+
+      <div className={`flex flex-col gap-2 overflow-y-auto px-4 py-3 ${compact ? "max-h-72" : "max-h-[380px]"}`}>
+        {thread.length === 0 && <p className="py-6 text-center text-sm text-slate-400">No messages yet. Send a text or email below and it will show here, along with their replies.</p>}
+        {thread.map((c) => {
           const inbound = c.direction === "in";
           return (
             <div key={c.id} className={`flex ${inbound ? "justify-start" : "justify-end"}`}>
@@ -2150,11 +2191,94 @@ function CommThread({ comms }) {
                 </div>
                 {c.subject && <div className={`text-xs font-semibold ${inbound ? "text-slate-600" : "text-blue-100"}`}>{c.subject}</div>}
                 <div className="whitespace-pre-wrap">{c.body}</div>
-                {!inbound && c.by_user && <div className="mt-0.5 text-[10px] text-blue-200">{c.by_user}</div>}
               </div>
             </div>
           );
         })}
+        <div ref={endRef} />
+      </div>
+
+      {/* composer */}
+      <div className="border-t border-slate-100 p-3">
+        <div className="mb-2 flex gap-1 rounded-lg bg-slate-100 p-1 text-sm">
+          <button onClick={() => setChannel("sms")} className={`flex-1 rounded-md py-1.5 font-medium ${channel === "sms" ? "bg-white text-blue-700 shadow-sm" : "text-slate-500"}`}><MessageSquare size={13} className="mr-1 inline" /> Text</button>
+          <button onClick={() => setChannel("email")} className={`flex-1 rounded-md py-1.5 font-medium ${channel === "email" ? "bg-white text-blue-700 shadow-sm" : "text-slate-500"}`}><Mail size={13} className="mr-1 inline" /> Email</button>
+        </div>
+        {channel === "email" && (
+          <input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Subject" className="mb-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400" />
+        )}
+        <div className="flex items-end gap-2">
+          <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={2} placeholder={canSend ? `Type a ${channel === "sms" ? "text" : "email"}...` : channel === "sms" ? "No phone on file" : "No email on file"} disabled={!canSend}
+            className="flex-1 resize-none rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400 disabled:bg-slate-50" />
+          <button onClick={send} disabled={busy || !body.trim() || !canSend} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 py-2.5 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-40">
+            <Send size={15} /> {busy ? "..." : "Send"}
+          </button>
+        </div>
+        {err && <div className="mt-2 rounded-lg bg-rose-50 px-3 py-1.5 text-xs text-rose-700">{err}</div>}
+      </div>
+    </div>
+  );
+}
+
+// GHL-style inbox: leads with messages on the left, the thread + reply on the right
+function Conversations({ leads, comms, unreadLeadIds, onSend, onOpen }) {
+  const withMsgs = useMemo(() => {
+    const latest = {};
+    for (const c of comms) {
+      const t = new Date(c.at).getTime();
+      if (!latest[c.lead_id] || t > latest[c.lead_id].t) latest[c.lead_id] = { t, c };
+    }
+    return Object.entries(latest)
+      .map(([leadId, v]) => ({ lead: leads.find((l) => l.id === leadId), last: v.c, t: v.t }))
+      .filter((x) => x.lead)
+      .sort((a, b) => b.t - a.t);
+  }, [comms, leads]);
+
+  const [selId, setSelId] = useState(withMsgs[0]?.lead.id || null);
+  const selected = leads.find((l) => l.id === selId) || withMsgs[0]?.lead || null;
+
+  if (withMsgs.length === 0) {
+    return (
+      <div className="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50 py-14 text-center">
+        <MessageSquare size={28} className="mx-auto text-slate-300" />
+        <div className="mt-2 text-sm font-medium text-slate-600">No conversations yet</div>
+        <div className="mt-1 text-sm text-slate-400">Texts and emails you send, and replies you receive, show up here.</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-4 grid gap-3 md:grid-cols-[320px_1fr]">
+      <div className="flex max-h-[560px] flex-col overflow-y-auto rounded-xl border border-slate-200 bg-white">
+        {withMsgs.map(({ lead, last }) => {
+          const unread = unreadLeadIds.has(lead.id);
+          const active = selected?.id === lead.id;
+          return (
+            <button key={lead.id} onClick={() => setSelId(lead.id)}
+              className={`flex flex-col gap-0.5 border-b border-slate-50 px-3 py-2.5 text-left last:border-0 ${active ? "bg-blue-50" : "hover:bg-slate-50"}`}>
+              <div className="flex items-center gap-2">
+                {unread && <span className="h-2 w-2 shrink-0 rounded-full bg-blue-600" />}
+                <span className={`truncate text-sm ${unread ? "font-bold text-slate-900" : "font-medium text-slate-700"}`}>{leadTitle(lead)}</span>
+                <span className="ml-auto shrink-0 text-[10px] text-slate-400">{fmtDateTime(new Date(last.at).getTime()).split(",")[0]}</span>
+              </div>
+              <div className="flex items-center gap-1 text-xs text-slate-400">
+                {last.direction === "in" ? "" : "You: "}
+                <span className="truncate">{last.body}</span>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+      <div>
+        {selected && (
+          <>
+            <div className="mb-2 flex items-center gap-2">
+              <button onClick={() => onOpen(selected.id)} className="text-sm font-bold text-slate-800 hover:text-blue-700">{leadTitle(selected)}</button>
+              <StagePill status={selected.status} />
+            </div>
+            <Conversation lead={selected} comms={comms} onSend={onSend} />
+          </>
+        )}
       </div>
     </div>
   );

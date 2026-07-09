@@ -17,7 +17,7 @@ import { createClient } from "@supabase/supabase-js";
 
 const DAY = 86400000;
 const CALL_DAYS = [1, 2, 3, 4, 6, 8, 10, 13, 16, 19, 21];
-const DEFAULT_STAGES = ["new", "report_pulled"];
+const DEFAULT_STAGES = ["voicemail", "interested", "callback"];
 
 const hashStr = (s) => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; };
 const pickFrom = (list, seed) => (!list || !list.length ? null : list[hashStr(String(seed)) % list.length]);
@@ -94,7 +94,8 @@ async function run() {
   if (!config.autoSendEnabled) return { skipped: "autoSendEnabled is off" };
   if (!inBusinessHours()) return { skipped: "outside business hours" };
 
-  const stages = config.autoSendStages || DEFAULT_STAGES;
+  // Always target the nurture stages where tailored sequences live.
+  const stages = DEFAULT_STAGES;
   const { data: leads, error } = await supabase.from("leads").select("*").in("status", stages);
   if (error) throw error;
 

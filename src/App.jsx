@@ -58,7 +58,7 @@ const DEFAULT_CONFIG = {
   autoSnoozeDays: 3,
   emailSignature: "Joe Mahlow\nASAP Funding USA\nfunding@asapfundingusa.com",
   autoSendEnabled: false,
-  autoSendStages: ["new", "report_pulled"],
+  autoSendStages: ["voicemail", "interested", "callback"],
 };
 
 const DEFAULT_TEMPLATES = [
@@ -2120,7 +2120,7 @@ function Settings({ config, persistConfig }) {
       </div>
       <div className="rounded-xl border border-slate-200 bg-white p-4">
         <h3 className="mb-1 flex items-center gap-1.5 text-sm font-bold text-slate-800"><Zap size={15} className="text-blue-600" /> Automated outreach</h3>
-        <p className="mb-3 text-sm text-slate-500">When on, the app auto-sends the next due message and auto-schedules follow-up calls for leads in New Leads and Reports, during business hours only (Mon to Fri, 8am to 5pm Central). It skips anyone who replied, opted out, is paused, or snoozed, and never stacks calls.</p>
+        <p className="mb-3 text-sm text-slate-500">When on, the app auto-sends the next due message and auto-schedules follow-up calls for leads in Left Voicemail, Interested, and Call Back, during business hours only (Mon to Fri, 8am to 5pm Central). It skips anyone who replied, opted out, is paused, or snoozed, and never stacks calls.</p>
         <label className="flex items-center gap-3">
           <input type="checkbox" checked={!!draft.autoSendEnabled} onChange={(e) => { const next = { ...draft, autoSendEnabled: e.target.checked }; setDraft(next); persistConfig(next); }} className="h-5 w-5 rounded border-slate-300 text-blue-600 focus:ring-blue-400" />
           <span className="text-sm font-medium text-slate-700">Auto-send messages and schedule calls</span>

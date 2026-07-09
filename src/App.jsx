@@ -678,6 +678,7 @@ function rowToLead(r) {
     lastTouchAt: r.last_touch_at ? new Date(r.last_touch_at).getTime() : null,
     touches: Array.isArray(r.touches) ? r.touches : [],
     raw: r.raw || null,
+    confirmedFields: Array.isArray(r.confirmed_fields) ? r.confirmed_fields : [],
   };
 }
 const FIELD_MAP = {
@@ -685,7 +686,7 @@ const FIELD_MAP = {
   status: "status", touches: "touches",
   opportunityName: "opportunity_name", pipelineStage: "pipeline_stage",
   desiredAmount: "desired_amount", creditScore: "estimated_credit_score",
-  fundingPurpose: "funding_purpose", fundingTimeline: "funding_timeline",
+  fundingPurpose: "funding_purpose", fundingTimeline: "funding_timeline", confirmedFields: "confirmed_fields",
   monthlyRevenue: "monthly_revenue", timeInBusiness: "time_in_business",
   businessName: "business_name", businessType: "business_type", einStatus: "ein_status",
   bestTime: "best_time", nextStep: "next_step",
@@ -1088,6 +1089,26 @@ function Labeled({ label, children }) {
   );
 }
 const inputCls = "w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100";
+
+// A labeled input that shows a "confirm with client" flag until verified.
+// Editing the value auto-confirms it.
+function ConfirmField({ label, value, onChange, confirmed, onConfirm, placeholder }) {
+  const hasValue = value != null && String(value).trim() !== "";
+  const needsConfirm = hasValue && !confirmed;
+  return (
+    <div>
+      <div className="mb-1 flex items-center gap-1.5">
+        <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">{label}</label>
+        {hasValue && (confirmed ? (
+          <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-emerald-600"><Check size={10} /> confirmed</span>
+        ) : (
+          <button type="button" onClick={onConfirm} title="Confirm this is current" className="inline-flex items-center gap-0.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700 hover:bg-amber-200"><AlertCircle size={10} /> confirm</button>
+        ))}
+      </div>
+      <input value={value || ""} onChange={onChange} placeholder={placeholder} className={`${inputCls} ${needsConfirm ? "border-amber-300 bg-amber-50/40" : ""}`} />
+    </div>
+  );
+}
 
 /* ================================================================== */
 /*  Main                                                              */
@@ -1768,7 +1789,7 @@ const LOAN_PROGRAMS = [
 ];
 
 function Profile({ lead, config, templates, cadences, onClose, updateLead, removeLead, logTouch, openCompose, userEmail, comms = [], activities = [], addActivity, completeActivity, deleteActivity, sendReply, addNote }) {
-  const EDITABLE = ["name", "phone", "email", "notes", "loanProgram", "desiredAmount", "fundingPurpose", "fundingTimeline", "monthlyRevenue", "creditScore", "timeInBusiness",
+  const EDITABLE = ["name", "phone", "email", "notes", "loanProgram", "confirmedFields", "desiredAmount", "fundingPurpose", "fundingTimeline", "monthlyRevenue", "creditScore", "timeInBusiness",
     "businessName", "businessType", "einStatus", "bestTime", "nextStep", "myscoreiqUsername", "myscoreiqPassword", "ssnLast4", "fundedAmount", "commissionAmount", "declineReason"];
   const [draft, setDraft] = useState(lead);
   const [savedAt, setSavedAt] = useState(0);
@@ -1782,6 +1803,11 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
   const [declineOpen, setDeclineOpen] = useState(false);
   useEffect(() => { setDraft(lead); setGuideOpen(lead.status === "new"); setSpoke(false); setDeclineOpen(false); }, [lead.id]); // reload when switching leads
   const set = (k) => (e) => setDraft({ ...draft, [k]: e.target.value });
+  // Confirm helpers: editing a field auto-confirms it; the check confirms without editing.
+  const confirmedList = draft.confirmedFields || [];
+  const isConfirmed = (k) => confirmedList.includes(k);
+  const confirmField = (k) => { if (!confirmedList.includes(k)) setDraft({ ...draft, confirmedFields: [...confirmedList, k] }); };
+  const setC = (k) => (e) => setDraft({ ...draft, [k]: e.target.value, confirmedFields: confirmedList.includes(k) ? confirmedList : [...confirmedList, k] });
 
   // Autosave: persist changed fields shortly after you stop typing
   useEffect(() => {
@@ -2050,6 +2076,41 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
 
           {/* RIGHT COLUMN: record & pipeline */}
           <div className="space-y-5 lg:col-span-2">
+
+          {/* business & funding info: editable, confirmable */}
+          <Section icon={<Building2 size={15} />} title="Business & funding info">
+            {(() => {
+              const FIELDS = [
+                ["businessName", "Business name", ""],
+                ["businessType", "Business type / industry", ""],
+                ["fundingPurpose", "What they need funding for", "Purpose / use of funds"],
+                ["desiredAmount", "Amount they want", "$"],
+                ["monthlyRevenue", "Monthly revenue", ""],
+                ["creditScore", "Estimated credit score", ""],
+                ["timeInBusiness", "Time in business", ""],
+                ["fundingTimeline", "How soon they need it", ""],
+                ["einStatus", "EIN / entity status", "Has EIN, sole prop, etc."],
+                ["bestTime", "Best time to call", ""],
+              ];
+              const unconfirmed = FIELDS.filter(([k]) => draft[k] && String(draft[k]).trim() && !isConfirmed(k)).map(([k]) => k);
+              return (
+                <>
+                  {unconfirmed.length > 0 && (
+                    <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 ring-1 ring-inset ring-amber-200">
+                      <AlertCircle size={13} /> {unconfirmed.length} field{unconfirmed.length === 1 ? "" : "s"} from the lead form still need confirming with the client.
+                      <button onClick={() => setDraft({ ...draft, confirmedFields: [...new Set([...confirmedList, ...FIELDS.map(([k]) => k)])] })} className="ml-auto rounded-md bg-amber-600 px-2 py-1 font-semibold text-white hover:bg-amber-700">Confirm all</button>
+                    </div>
+                  )}
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {FIELDS.map(([k, label, ph]) => (
+                      <ConfirmField key={k} label={label} value={draft[k]} onChange={setC(k)} confirmed={isConfirmed(k)} onConfirm={() => confirmField(k)} placeholder={ph} />
+                    ))}
+                  </div>
+                </>
+              );
+            })()}
+          </Section>
+
           {/* stage */}
           <Section icon={<ListChecks size={15} />} title="Stage">
             <div className="flex flex-wrap gap-1.5">
@@ -2096,19 +2157,6 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
           </Section>
 
           {/* qualification + business (editable) */}
-          <Section icon={<Building2 size={15} />} title="Qualification & business" collapsible defaultOpen={true}>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Labeled label="Desired amount"><input value={draft.desiredAmount} onChange={set("desiredAmount")} className={inputCls} /></Labeled>
-              <Labeled label="Monthly revenue"><input value={draft.monthlyRevenue} onChange={set("monthlyRevenue")} className={inputCls} /></Labeled>
-              <Labeled label="Estimated credit score"><input value={draft.creditScore} onChange={set("creditScore")} className={inputCls} /></Labeled>
-              <Labeled label="Time in business"><input value={draft.timeInBusiness} onChange={set("timeInBusiness")} className={inputCls} /></Labeled>
-              <Labeled label="Business name"><input value={draft.businessName} onChange={set("businessName")} className={inputCls} /></Labeled>
-              <Labeled label="Business type / industry"><input value={draft.businessType} onChange={set("businessType")} className={inputCls} /></Labeled>
-              <Labeled label="EIN / entity status"><input value={draft.einStatus} onChange={set("einStatus")} placeholder="Has EIN, sole prop, etc." className={inputCls} /></Labeled>
-              <Labeled label="Best time to call"><input value={draft.bestTime} onChange={set("bestTime")} className={inputCls} /></Labeled>
-            </div>
-          </Section>
-
           {/* contact details editable */}
           <Section icon={<User size={15} />} title="Contact">
             <div className="grid gap-3 sm:grid-cols-2">

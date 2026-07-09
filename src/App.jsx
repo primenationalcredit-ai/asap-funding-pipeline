@@ -1244,6 +1244,17 @@ function Dashboard({ userEmail }) {
     setLeads(data.map(rowToLead));
   }, []);
 
+  // Live messages: poll every 15s so inbound texts/emails appear without a manual refresh,
+  // and refresh immediately when you switch back to the tab.
+  useEffect(() => {
+    const tick = () => { if (!document.hidden) refetchComms(); };
+    const id = setInterval(tick, 15000);
+    const onVisible = () => { if (!document.hidden) { refetchComms(); refetchLeads(); } };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    return () => { clearInterval(id); document.removeEventListener("visibilitychange", onVisible); window.removeEventListener("focus", onVisible); };
+  }, [refetchComms, refetchLeads]);
+
   // Debounce realtime reloads so a burst of changes (or our own autosaves)
   // coalesces into one refetch instead of re-rendering on every keystroke-save.
   const refetchTimers = useRef({});

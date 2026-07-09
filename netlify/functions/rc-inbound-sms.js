@@ -36,6 +36,13 @@ export const handler = async (event) => {
   catch { return { statusCode: 400, body: "Invalid JSON" }; }
 
   const msg = payload?.body;
+  // Log every delivery so we can confirm RingCentral is reaching us at all,
+  // and see exactly what it sent.
+  console.log("[rc-inbound] HIT", JSON.stringify({
+    type: msg?.type, direction: msg?.direction,
+    from: msg?.from?.phoneNumber, to: msg?.to?.[0]?.phoneNumber,
+    hasText: !!(msg?.subject), event: payload?.event,
+  }));
   if (!msg) return { statusCode: 200, body: "ignored" };
 
   // Only inbound texts. Outbound ones we already record when we send them.
@@ -49,7 +56,12 @@ export const handler = async (event) => {
   const text = msg.subject || ""; // RingCentral puts SMS text in `subject`
   const externalId = msg.id ? `rc-${msg.id}` : null;
 
-  const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!process.env.SUPABASE_URL || !serviceKey) {
+    console.error("[rc-inbound] MISSING ENV: need SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in Netlify to save inbound texts");
+    return { statusCode: 200, body: "not configured" }; // 200 so RingCentral does not disable the subscription
+  }
+  const supabase = createClient(process.env.SUPABASE_URL, serviceKey);
 
   try {
     // Match a lead by the last 10 digits of the sender's number
@@ -79,7 +91,13 @@ export const handler = async (event) => {
 
     // Bump the lead so it sorts to the top and the team sees the reply
     if (lead) {
-      await supabase.from("leads").update({ last_touch_at: new Date().toISOString() }).eq("id", lead.id);
+      const patch = { last_touch_at: new Date().toISOString() };
+      // STOP / opt-out handling: permanently stop automation for this lead
+      if (/\b(stop|stopall|unsubscribe|cancel|quit|end|optout|opt out)\b/i.test(text)) {
+        patch.opted_out = true;
+        patch.automation_paused = true;
+      }
+      await supabase.from("leads").update(patch).eq("id", lead.id);
     }
 
     console.log("[rc-inbound]", lead ? `matched lead ${lead.id}` : "no lead match", "from", fromNumber);

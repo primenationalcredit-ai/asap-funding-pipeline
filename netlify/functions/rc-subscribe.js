@@ -59,7 +59,7 @@ export const handler = async (event) => {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        eventFilters: ["/restapi/v1.0/account/~/extension/~/message-store?type=SMS&direction=Inbound"],
+        eventFilters: [`/restapi/v1.0/account/~/extension/${process.env.RC_SMS_EXTENSION_ID || "~"}/message-store?type=SMS&direction=Inbound`],
         deliveryMode: { transportType: "WebHook", address: deliveryUrl },
         expiresIn: 630720000, // ~20 years; RingCentral caps this itself
       }),

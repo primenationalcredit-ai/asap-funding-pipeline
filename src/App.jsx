@@ -24,7 +24,9 @@ const STAGES = [
   { key: "funded", label: "Funded", tone: "emerald" },
   { key: "commission_paid", label: "Commission Paid", tone: "yellow" },
   { key: "declined", label: "Declined", tone: "pink" },
-  { key: "credit_repair", label: "Credit Repair", tone: "fuchsia" },
+  { key: "offer_cr", label: "Offer Credit Repair", tone: "violet" },
+  { key: "referred_cr", label: "Referred to Credit Repair", tone: "fuchsia" },
+  { key: "credit_repair", label: "In Credit Repair", tone: "purple" },
   { key: "dead", label: "Dead", tone: "rose" },
 ];
 const TONE = {
@@ -628,6 +630,8 @@ const DEFAULT_CADENCES = {
   funded: [],
   commission_paid: [],
   declined: [],
+  offer_cr: [],
+  referred_cr: [],
   credit_repair: [],
   dead: [],
 };
@@ -856,7 +860,21 @@ const STAGE_PLAYBOOK = {
   ],
   declined: [
     "Note the decline reason.",
-    "Send them to Credit Repair to get approval-ready, or resubmit if something changed.",
+    "If it's credit, offer the credit accelerator and move to Offer Credit Repair. Otherwise revisit later.",
+  ],
+  offer_cr: [
+    "Pitch the credit accelerator using the script (top of Scripts tab).",
+    "Never say 'credit repair'. Lead with getting them approval-ready in 60 to 120 days.",
+    "When they agree, move to Referred to Credit Repair.",
+  ],
+  referred_cr: [
+    "Hand the client off to the credit repair team (live transfer or booked consult).",
+    "Confirm they connected and enrolled.",
+    "Once enrolled, move to In Credit Repair.",
+  ],
+  credit_repair: [
+    "Client is enrolled and working to get approval-ready.",
+    "Check back as their credit improves, then re-approach for funding.",
   ],
 };
 
@@ -874,8 +892,10 @@ function nextStepFor(lead) {
     case "contracts_out": return { text: "Contracts are out for signature. Once signed and funded, mark it funded.", tone: "lime" };
     case "funded": return { text: "Funded. Enter the funded amount and your commission, then mark commission paid when Torro pays you.", tone: "blue" };
     case "commission_paid": return { text: "Paid in full. This one's done.", tone: "yellow" };
-    case "declined": return { text: "Torro declined. Note the reason, then send them to Credit Repair to get approval-ready, or revisit later.", tone: "pink" };
-    case "credit_repair": return { text: "Sent to credit repair to get approval ready. Follow up once their credit improves.", tone: "fuchsia" };
+    case "declined": return { text: "Torro declined. Note the reason, then offer them Credit Repair to get approval-ready, or revisit later.", tone: "pink" };
+    case "offer_cr": return { text: "Pitch the credit accelerator (use the script). Never say credit repair, lead with getting approval-ready in 60 to 120 days. Move to Referred when they say yes.", tone: "violet" };
+    case "referred_cr": return { text: "They said yes. Hand off to the credit repair team (live transfer or booked consult). Move to In Credit Repair once they're enrolled.", tone: "fuchsia" };
+    case "credit_repair": return { text: "Enrolled in credit repair, working to get approval-ready. Check back as their credit improves, then re-approach for funding.", tone: "purple" };
     case "dead": return { text: "Closed out. Revive if they come back.", tone: "rose" };
     default: return { text: "", tone: "slate" };
   }
@@ -1568,7 +1588,7 @@ function Dashboard({ userEmail }) {
 const BOARDS = {
   outreach: { label: "Outreach", stages: ["new", "voicemail", "interested", "callback", "not_interested"] },
   funding: { label: "Funding", stages: ["report_pulled", "app_sent", "submitted", "pre_approved", "contracts_out", "funded", "commission_paid"] },
-  closed: { label: "Closed", stages: ["declined", "credit_repair", "dead"] },
+  closed: { label: "Closed", stages: ["declined", "offer_cr", "referred_cr", "credit_repair", "dead"] },
 };
 
 function Pipeline({ leads, allLeads, allCount, dueList, stats, config, query, setQuery, filter, setFilter, showAdd, setShowAdd, addLead, onOpen, logTouch, updateLead, cadences, templates, openCompose, onGoFollowups }) {

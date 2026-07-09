@@ -44,10 +44,10 @@ export const handler = async (event) => {
   }));
   if (!msg) return { statusCode: 200, body: "ignored" };
 
-  // Only inbound texts. Outbound ones we already record when we send them.
+  // Only SMS. Accept both directions now.
   const isSms = msg.type === "SMS" || msg.type === "Text";
   const dir = String(msg.direction || "").toLowerCase();
-  if (!isSms || dir !== "inbound") {
+  if (!isSms || (dir !== "inbound" && dir !== "outbound")) {
     return { statusCode: 200, body: "ignored" };
   }
 
@@ -55,53 +55,64 @@ export const handler = async (event) => {
   const toNumber = (msg.to && msg.to[0] && (msg.to[0].phoneNumber || msg.to[0].extensionNumber)) || "";
   const text = msg.subject || msg.text || ""; // instant SMS carries the body in `subject`
   const externalId = msg.id ? `rc-${msg.id}` : null;
+  const inbound = dir === "inbound";
+  // Match on the lead's number: for inbound that's the sender, for outbound the recipient.
+  const matchNumber = inbound ? fromNumber : toNumber;
 
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!process.env.SUPABASE_URL || !serviceKey) {
     console.error("[rc-inbound] MISSING ENV: need SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in Netlify to save inbound texts");
-    return { statusCode: 200, body: "not configured" }; // 200 so RingCentral does not disable the subscription
+    return { statusCode: 200, body: "not configured" };
   }
   const supabase = createClient(process.env.SUPABASE_URL, serviceKey);
 
   try {
-    // Match a lead by the last 10 digits of the sender's number
-    const target = last10(fromNumber);
-    if (!target) return { statusCode: 200, body: "no from number" };
+    const target = last10(matchNumber);
+    if (!target) return { statusCode: 200, body: "no number" };
 
     const { data: leads, error: readErr } = await supabase
       .from("leads").select("id, phone").not("phone", "is", null);
     if (readErr) throw readErr;
-
     const lead = (leads || []).find((l) => last10(l.phone) === target);
+    if (!lead) {
+      console.log("[rc-inbound] no lead match for", matchNumber);
+      return { statusCode: 200, body: "no lead match" };
+    }
+
+    // Dedupe outbound: if the CRM just sent this exact text, do not double-log it.
+    if (!inbound) {
+      const since = new Date(Date.now() - 5 * 60000).toISOString();
+      const { data: dupe } = await supabase.from("communications")
+        .select("id").eq("lead_id", lead.id).eq("direction", "out").eq("channel", "sms")
+        .eq("body", text).gte("at", since).limit(1);
+      if (dupe && dupe.length) {
+        return { statusCode: 200, body: "already logged by app" };
+      }
+    }
 
     const row = {
-      lead_id: lead ? lead.id : null,
-      direction: "in",
+      lead_id: lead.id,
+      direction: inbound ? "in" : "out",
       channel: "sms",
       body: text,
       from_addr: fromNumber,
       to_addr: toNumber,
       external_id: externalId,
+      by_user: inbound ? null : "ringcentral app",
       at: msg.creationTime || new Date().toISOString(),
     };
 
     const { error } = await supabase.from("communications").insert(row);
-    // 23505 = unique violation, meaning RingCentral retried and we already have it
-    if (error && error.code !== "23505") throw error;
+    if (error && error.code !== "23505") throw error; // 23505 = dup external_id (retry)
 
-    // Bump the lead so it sorts to the top and the team sees the reply
-    if (lead) {
-      const patch = { last_touch_at: new Date().toISOString() };
-      // STOP / opt-out handling: permanently stop automation for this lead
-      if (/\b(stop|stopall|unsubscribe|cancel|quit|end|optout|opt out)\b/i.test(text)) {
-        patch.opted_out = true;
-        patch.automation_paused = true;
-      }
-      await supabase.from("leads").update(patch).eq("id", lead.id);
+    const patch = { last_touch_at: new Date().toISOString() };
+    if (inbound && /\b(stop|stopall|unsubscribe|cancel|quit|end|optout|opt out)\b/i.test(text)) {
+      patch.opted_out = true; patch.automation_paused = true;
     }
+    await supabase.from("leads").update(patch).eq("id", lead.id);
 
-    console.log("[rc-inbound]", lead ? `matched lead ${lead.id}` : "no lead match", "from", fromNumber);
-    return { statusCode: 200, body: JSON.stringify({ ok: true, matched: !!lead }) };
+    console.log("[rc-inbound]", `matched lead ${lead.id}`, dir, "from", fromNumber, "to", toNumber);
+    return { statusCode: 200, body: JSON.stringify({ ok: true, matched: true, direction: dir }) };
   } catch (err) {
     console.error("[rc-inbound] failed:", err.message || err);
     return { statusCode: 500, body: JSON.stringify({ error: String(err.message || err) }) };

@@ -73,8 +73,8 @@ export const handler = async (event) => {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        // "instant" delivers the full message record (from, text, direction),
-        // unlike the plain message-store event which only signals a change.
+        // "instant" delivers the full message record. No direction filter, so we
+        // capture both inbound replies AND outbound texts sent from the RC app.
         eventFilters: [`/restapi/v1.0/account/~/extension/${ext}/message-store/instant?type=SMS`],
         deliveryMode: { transportType: "WebHook", address: deliveryUrl },
         expiresIn: 630720000,

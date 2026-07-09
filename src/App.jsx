@@ -1089,6 +1089,32 @@ function Labeled({ label, children }) {
   );
 }
 
+// Editable chip: looks like the blue pill, click to edit inline, saves back to a chip.
+function EditChip({ label, value, onChange, confirmed, onConfirm, placeholder }) {
+  const [editing, setEditing] = useState(false);
+  const hasValue = value != null && String(value).trim() !== "";
+  const needs = hasValue && !confirmed;
+  if (editing) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-md bg-white px-1.5 py-0.5 ring-1 ring-inset ring-blue-300">
+        <span className="text-[11px] text-blue-500">{label}</span>
+        <input autoFocus value={value || ""} onChange={onChange} onBlur={() => setEditing(false)}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") setEditing(false); }}
+          placeholder={placeholder} className="w-28 bg-transparent text-xs font-semibold text-slate-800 outline-none" />
+      </span>
+    );
+  }
+  return (
+    <button onClick={() => setEditing(true)} title="Click to edit"
+      className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium ring-1 ring-inset transition ${needs ? "bg-amber-50 text-amber-800 ring-amber-200 hover:bg-amber-100" : "bg-blue-50 text-blue-800 ring-blue-100 hover:bg-blue-100"}`}>
+      <span className={needs ? "text-amber-500" : "text-blue-500"}>{label}</span>
+      <span className="font-semibold">{hasValue ? value : <span className="font-normal italic opacity-60">add</span>}</span>
+      {needs && <AlertCircle size={9} className="text-amber-500" onClick={(e) => { e.stopPropagation(); onConfirm(); }} />}
+      {hasValue && confirmed && <Check size={9} className="text-emerald-500" />}
+    </button>
+  );
+}
+
 // Compact editable field for the top info bar. Amber flag until confirmed; editing auto-confirms.
 function TopField({ label, value, onChange, confirmed, onConfirm, placeholder }) {
   const hasValue = value != null && String(value).trim() !== "";
@@ -1903,32 +1929,31 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
           </div>
         </div>
 
-        {/* editable info bar: all key intake fields, confirm flags */}
-        <div className="border-b border-slate-100 bg-slate-50/60 px-5 py-3">
+        {/* editable info bar: chips look the same, click to edit */}
+        <div className="border-b border-slate-100 bg-white px-5 py-3">
           {(() => {
             const FIELDS = [
-              ["businessName", "Business", ""],
-              ["businessType", "Industry", ""],
-              ["fundingPurpose", "Needs it for", "use of funds"],
               ["desiredAmount", "Wants", "$"],
               ["monthlyRevenue", "Rev/mo", ""],
               ["creditScore", "Score", ""],
               ["timeInBusiness", "In biz", ""],
+              ["fundingPurpose", "Needs it for", "use of funds"],
               ["fundingTimeline", "How soon", ""],
+              ["businessType", "Industry", ""],
               ["einStatus", "EIN / entity", ""],
               ["bestTime", "Best time", ""],
             ];
             const unconfirmed = FIELDS.filter(([k]) => draft[k] && String(draft[k]).trim() && !isConfirmed(k)).map(([k]) => k);
             return (
               <>
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+                <div className="flex flex-wrap gap-1.5">
                   {FIELDS.map(([k, label, ph]) => (
-                    <TopField key={k} label={label} value={draft[k]} onChange={setC(k)} confirmed={isConfirmed(k)} onConfirm={() => confirmField(k)} placeholder={ph} />
+                    <EditChip key={k} label={label} value={draft[k]} onChange={setC(k)} confirmed={isConfirmed(k)} onConfirm={() => confirmField(k)} placeholder={ph} />
                   ))}
                 </div>
                 {unconfirmed.length > 0 && (
                   <div className="mt-2 flex items-center gap-2 text-xs text-amber-700">
-                    <AlertCircle size={13} /> {unconfirmed.length} field{unconfirmed.length === 1 ? "" : "s"} still need confirming with the client.
+                    <AlertCircle size={13} /> {unconfirmed.length} still to confirm with the client.
                     <button onClick={() => setDraft({ ...draft, confirmedFields: [...new Set([...confirmedList, ...FIELDS.map(([k]) => k)])] })} className="rounded-md bg-amber-600 px-2 py-0.5 font-semibold text-white hover:bg-amber-700">Confirm all</button>
                   </div>
                 )}

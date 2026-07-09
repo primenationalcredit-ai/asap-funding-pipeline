@@ -695,10 +695,20 @@ const FIELD_MAP = {
   fundedAmount: "funded_amount", commissionAmount: "commission_amount", declineReason: "decline_reason", loanProgram: "loan_program",
   automationPaused: "automation_paused",
 };
+// Format a US phone as xxx-xxx-xxxx. Leaves anything that isn't 10/11 digits untouched.
+function fmtPhone(v) {
+  if (v == null) return v;
+  let d = String(v).replace(/\D/g, "");
+  if (d.length === 11 && d[0] === "1") d = d.slice(1);
+  if (d.length === 10) return `${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6)}`;
+  return String(v).trim(); // unusual length: keep as-is rather than mangle
+}
+
 function leadPatchToRow(patch) {
   const row = {};
   for (const [k, v] of Object.entries(patch)) {
-    if (k in FIELD_MAP) row[FIELD_MAP[k]] = v;
+    if (k === "phone") row.phone = fmtPhone(v);
+    else if (k in FIELD_MAP) row[FIELD_MAP[k]] = v;
     else if (k === "linkSentAt") row.link_sent_at = v ? new Date(v).toISOString() : null;
     else if (k === "lastTouchAt") row.last_touch_at = v ? new Date(v).toISOString() : null;
     else if (k === "stageEnteredAt") row.stage_entered_at = v ? new Date(v).toISOString() : null;

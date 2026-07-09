@@ -57,6 +57,8 @@ const DEFAULT_CONFIG = {
   funderEmail: "slocsubmissions@torro.com",
   autoSnoozeDays: 3,
   emailSignature: "Joe Mahlow\nASAP Funding USA\nfunding@asapfundingusa.com",
+  autoSendEnabled: false,
+  autoSendStages: ["new", "report_pulled"],
 };
 
 const DEFAULT_TEMPLATES = [
@@ -358,6 +360,7 @@ function rowToLead(r) {
     commissionAmount: r.commission_amount != null ? r.commission_amount : "",
     declineReason: r.decline_reason || "",
     automationPaused: !!r.automation_paused,
+    optedOut: !!r.opted_out,
     snoozeUntil: r.snooze_until ? new Date(r.snooze_until).getTime() : null,
     fundedAt: r.funded_at ? new Date(r.funded_at).getTime() : null,
     commissionPaidAt: r.commission_paid_at ? new Date(r.commission_paid_at).getTime() : null,
@@ -1524,7 +1527,9 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
           <div className={`rounded-xl border px-4 py-3 ${lead.automationPaused ? "border-amber-200 bg-amber-50" : "border-slate-200 bg-white"}`}>
             <div className="flex flex-wrap items-center gap-2">
               <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Automated follow-ups</div>
-              {lead.automationPaused ? (
+              {lead.optedOut ? (
+                <span className="rounded-full bg-rose-200 px-2 py-0.5 text-xs font-bold text-rose-900">Opted out (STOP)</span>
+              ) : lead.automationPaused ? (
                 <span className="rounded-full bg-amber-200 px-2 py-0.5 text-xs font-bold text-amber-900">Paused</span>
               ) : nextStep ? (
                 <span className="text-xs text-slate-500">Next: <span className="font-semibold text-slate-700">{nextStep.template?.name}</span> {relativeDue(nextStep.dueAt).label.toLowerCase()}</span>
@@ -2113,6 +2118,17 @@ function Settings({ config, persistConfig }) {
           {saved && <span className="inline-flex items-center gap-1 text-sm font-medium text-blue-600"><Check size={15} /> Saved</span>}
         </div>
       </div>
+      <div className="rounded-xl border border-slate-200 bg-white p-4">
+        <h3 className="mb-1 flex items-center gap-1.5 text-sm font-bold text-slate-800"><Zap size={15} className="text-blue-600" /> Automated outreach</h3>
+        <p className="mb-3 text-sm text-slate-500">When on, the app auto-sends the next due message and auto-schedules follow-up calls for leads in New Leads and Reports, during business hours only (Mon to Fri, 8am to 5pm Central). It skips anyone who replied, opted out, is paused, or snoozed, and never stacks calls.</p>
+        <label className="flex items-center gap-3">
+          <input type="checkbox" checked={!!draft.autoSendEnabled} onChange={(e) => setDraft({ ...draft, autoSendEnabled: e.target.checked })} className="h-5 w-5 rounded border-slate-300 text-blue-600 focus:ring-blue-400" />
+          <span className="text-sm font-medium text-slate-700">Auto-send messages and schedule calls</span>
+          <span className={`ml-auto rounded-full px-2 py-0.5 text-xs font-bold ${draft.autoSendEnabled ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>{draft.autoSendEnabled ? "ON" : "OFF"}</span>
+        </label>
+        <p className="mt-3 text-xs text-slate-400">Call sequence: days 1, 2, 3, 4, 6, 8, 10, 13, 16, 19, 21 after a lead enters the stage. Moving stages restarts the sequence.</p>
+      </div>
+
       <InboundTexts />
       <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-500">
         Build your messages and per-stage follow-up sequences under the <span className="font-semibold text-slate-700">Messaging</span> tab.

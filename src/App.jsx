@@ -1883,6 +1883,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
   const [reportUrl, setReportUrl] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [callNote, setCallNote] = useState("");
+  const [noteErr, setNoteErr] = useState(false);
   const [spoke, setSpoke] = useState(false);
   const [declineOpen, setDeclineOpen] = useState(false);
   useEffect(() => { setDraft(lead); setGuideOpen(lead.status === "new"); setSpoke(false); setDeclineOpen(false); }, [lead.id]); // reload when switching leads
@@ -1915,8 +1916,9 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
   };
 
   const logOutcome = (stage, label) => {
+    if (!callNote.trim()) { setNoteErr(true); return; }
     logTouch(lead.id, "call", "call", { disposition: label, note: callNote.trim(), by: userEmail });
-    setCallNote(""); setSpoke(false);
+    setCallNote(""); setSpoke(false); setNoteErr(false);
     updateLead(lead.id, { status: stage });
   };
 
@@ -2107,8 +2109,9 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
 
           {/* what happened on this call */}
           <div className="rounded-xl border border-slate-200 bg-white p-4">
-            <div className="mb-2 flex items-center gap-1.5 text-sm font-bold text-slate-800"><Phone size={15} className="text-blue-600" /> What happened on this call?</div>
-            <textarea value={callNote} onChange={(e) => setCallNote(e.target.value)} rows={2} placeholder="Notes from the call (optional)" className={`${inputCls} mb-2`} />
+            <div className="mb-2 flex items-center gap-1.5 text-sm font-bold text-slate-800"><Phone size={15} className="text-blue-600" /> What happened on this call? <span className="text-rose-500">*</span></div>
+            <textarea value={callNote} onChange={(e) => { setCallNote(e.target.value); if (e.target.value.trim()) setNoteErr(false); }} rows={2} placeholder="Required: what did you discuss? (logged with your name and the time)" className={`${inputCls} mb-1 ${noteErr ? "border-rose-400 bg-rose-50 ring-2 ring-rose-100" : ""}`} />
+            {noteErr && <p className="mb-2 text-xs font-medium text-rose-600">Please add a call note before logging the outcome.</p>}
             {!spoke ? (
               <div className="flex flex-wrap gap-2">
                 <button onClick={() => logOutcome("voicemail", "Left voicemail")} className="rounded-lg bg-amber-100 px-3 py-2 text-sm font-semibold text-amber-800 ring-1 ring-inset ring-amber-200 hover:bg-amber-200">No answer / left voicemail</button>
@@ -2125,7 +2128,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
                 </div>
               </div>
             )}
-            <p className="mt-2 text-xs text-slate-400">Picking an outcome sets the stage and starts that campaign. Logs your note, who called, and the time.</p>
+            <p className="mt-2 text-xs text-slate-400">A call note is required. Picking an outcome sets the stage, starts that campaign, and logs your note, your name, and the time.</p>
           </div>
 
           {/* call guide */}

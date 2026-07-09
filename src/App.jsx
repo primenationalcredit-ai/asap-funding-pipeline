@@ -1468,7 +1468,7 @@ function Dashboard({ userEmail }) {
 
       {profileLead && (
         <Profile lead={profileLead} config={config} templates={templates} cadences={cadences} userEmail={userEmail}
-          comms={comms} activities={activities} addActivity={addActivity} completeActivity={completeActivity} deleteActivity={deleteActivity} sendReply={sendReply}
+          comms={comms} activities={activities} addActivity={addActivity} completeActivity={completeActivity} deleteActivity={deleteActivity} sendReply={sendReply} addNote={addNote}
           onClose={() => setProfileId(null)} updateLead={updateLead} removeLead={removeLead} logTouch={logTouch} openCompose={setCompose} />
       )}
 
@@ -1767,7 +1767,7 @@ const LOAN_PROGRAMS = [
   { label: "Line of Credit", hint: "Revolving, moderate credit" },
 ];
 
-function Profile({ lead, config, templates, cadences, onClose, updateLead, removeLead, logTouch, openCompose, userEmail, comms = [], activities = [], addActivity, completeActivity, deleteActivity, sendReply }) {
+function Profile({ lead, config, templates, cadences, onClose, updateLead, removeLead, logTouch, openCompose, userEmail, comms = [], activities = [], addActivity, completeActivity, deleteActivity, sendReply, addNote }) {
   const EDITABLE = ["name", "phone", "email", "notes", "loanProgram", "desiredAmount", "fundingPurpose", "fundingTimeline", "monthlyRevenue", "creditScore", "timeInBusiness",
     "businessName", "businessType", "einStatus", "bestTime", "nextStep", "myscoreiqUsername", "myscoreiqPassword", "ssnLast4", "fundedAmount", "commissionAmount", "declineReason"];
   const [draft, setDraft] = useState(lead);

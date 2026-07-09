@@ -175,7 +175,7 @@ Get stuck anywhere? Just reply to this and I will walk you through it, or hop on
 
   // ============ SUCCESS STORIES: text (pool story_sms) ============
   { id: "story_sms_a", pool: "story_sms", name: "Success story: text", channel: "sms", subject: "",
-    body: `{{first}}, just helped a business owner with a 600 score pull together $85,000 for their shop. Every owner's situation is different, but I would love to show you what is possible for yours. Got 5 minutes to talk?` },
+    body: `{{first}}, just helped a business owner with a 600 score get the approval they needed for their shop. Every owner's situation is different, but I would love to show you what is possible for yours. Got 5 minutes to talk?` },
   { id: "story_sms_b", pool: "story_sms", name: "Success story: text 2", channel: "sms", subject: "",
     body: `{{first}}, a lot of owners think a lower score shuts the door. It does not. We recently got someone open under a year approved when their bank passed. Worth a quick call to see your options?` },
 
@@ -277,6 +277,213 @@ To go for more funding we need a short application along with your last 4 months
 Have your bank statements, a voided check, and your driver's license handy. Reply or text me if anything comes up.
 
 {{signature}}` },
+
+  // ============ URGENCY / NUDGE: text (pool urgency_sms) ============
+  { id: "urg_sms_a", pool: "urgency_sms", name: "Urgency text: window", channel: "sms", subject: "",
+    body: `{{first}}, quick nudge from Joe at ASAP. Still want to get your business in a position to get approved? Pull your report here and I take it from there: {{link}}` },
+  { id: "urg_sms_b", pool: "urgency_sms", name: "Urgency text: not a pest", channel: "sms", subject: "",
+    body: `{{first}}, Joe with ASAP. Not trying to bug you, just do not want you to miss your window. 5 minutes here and I go to work: {{link}}` },
+  { id: "urg_sms_c", pool: "urgency_sms", name: "Urgency text: one more", channel: "sms", subject: "",
+    body: `{{first}}, it is Joe at ASAP. Circling back one more time. Ready when you are: {{link}} Reply STOP anytime and I will hold off.` },
+  { id: "urg_sms_d", pool: "urgency_sms", name: "Urgency text: things change", channel: "sms", subject: "",
+    body: `{{first}}, Joe here. A lot can change in a few weeks. If now is a better time, here is your link: {{link}}` },
+  { id: "urg_sms_e", pool: "urgency_sms", name: "Urgency text: still on desk", channel: "sms", subject: "",
+    body: `{{first}}, Joe with ASAP. Still have your file on my desk. Want me to keep going? {{link}}` },
+  { id: "urg_sms_f", pool: "urgency_sms", name: "Urgency text: yes or no", channel: "sms", subject: "",
+    body: `{{first}}, one word is all I need. Are you still trying to get your business approved this year? If yes, here is step one: {{link}}` },
+
+  // ============ VALUE / EDUCATION: email (pool value_email) ============
+  { id: "val_email_a", pool: "value_email", name: "Value email: why declined", channel: "email", subject: "Why good businesses get declined, {{first}}",
+    body: `Hey {{first}},
+
+Quick one that might save you a headache. Most owners get declined for one of three reasons: thin personal credit, not enough time showing revenue, or too many recent inquiries. None of those are dead ends. Every one of them can be worked around with the right lender or a short runway to get you ready.
+
+That is the whole reason I want to see your file. I can tell you in a few minutes which bucket you are in and what the fastest path looks like.
+
+Reply here or pull your report and I will get right on it.
+
+{{signature}}` },
+  { id: "val_email_b", pool: "value_email", name: "Value email: one review", channel: "email", subject: "The one number lenders care about, {{first}}",
+    body: `Hey {{first}},
+
+Here is something banks will not tell you. When you apply at ten banks, you get ten hard inquiries and ten chances to get told no. When you come through us, it is one review across a network of lenders. One inquiry, many options, and we point your file at the lenders most likely to say yes.
+
+That is the difference between guessing and knowing. Want me to run it for you?
+
+{{signature}}` },
+  { id: "val_email_c", pool: "value_email", name: "Value email: revenue not score", channel: "email", subject: "It is not just your score, {{first}}",
+    body: `Hey {{first}},
+
+A lot of owners assume a low score means no options. Not true. Plenty of the lenders we work with weigh your revenue and the health of your business as much as a credit number. I have seen owners with rough credit get approved because their deposits told a strong story.
+
+I cannot tell you where you land until I see your file. It is a soft pull and it takes about 5 minutes.
+
+{{signature}}` },
+  { id: "val_email_d", pool: "value_email", name: "Value email: speed", channel: "email", subject: "How fast this actually moves, {{first}}",
+    body: `Hey {{first}},
+
+People expect this to drag on for months like a bank. It does not have to. Once I have your file, I can usually come back the same day with real options, and funding can move quickly from there when your profile is ready.
+
+The only thing slowing it down right now is that I have not seen your report yet. Want to fix that?
+
+{{signature}}` },
+  { id: "val_email_e", pool: "value_email", name: "Value email: no cost", channel: "email", subject: "This part is free, {{first}}",
+    body: `Hey {{first}},
+
+Just so it is clear, seeing what you qualify for costs you nothing. No fee to look, no obligation, no hit to your score. You only move forward if the numbers make sense for you.
+
+So the only real question is whether you want to know. Reply here and I will send you the quick link.
+
+{{signature}}` },
+
+  // ============ SOCIAL PROOF: email (pool proof_email) ============
+  { id: "proof_email_a", pool: "proof_email", name: "Proof email: 580 story", channel: "email", subject: "He had a 580, {{first}}",
+    body: `Hey {{first}},
+
+Real example. An owner came to us with a 580 and less than a year in business. Three banks had already passed. We looked at his full picture, matched him to the right lender, and he walked away with the capital he needed to grow.
+
+I am not promising you the same number. I am telling you the bank's box is not the only box. Let me see your file and I will show you what is actually possible.
+
+{{signature}}` },
+  { id: "proof_email_b", pool: "proof_email", name: "Proof email: reviews", channel: "email", subject: "Why owners keep coming back, {{first}}",
+    body: `Hey {{first}},
+
+We have helped thousands of business owners get into a position to be approved, and the reason they send us their friends is simple. We do not just tell you no and hang up. We tell you exactly what is holding you back and how to fix it, then we go find the yes.
+
+That is the whole game. Want me to do it for you? It starts with a quick look at your report.
+
+{{signature}}` },
+  { id: "proof_email_c", pool: "proof_email", name: "Proof email: seen it all", channel: "email", subject: "We have seen your situation before, {{first}}",
+    body: `Hey {{first}},
+
+Whatever your credit looks like right now, I promise we have seen it and worked through it. Low score, past bankruptcy, thin file, brand new business. None of it is new to us, and none of it is automatically a no.
+
+Give me a few minutes with your report and I will tell you the truth about where you stand.
+
+{{signature}}` },
+  { id: "proof_email_d", pool: "proof_email", name: "Proof email: numbers", channel: "email", subject: "A quick track record, {{first}}",
+    body: `Hey {{first}},
+
+Since 2013 we have worked with tens of thousands of business owners. Thousands of five star reviews. A team that does this every single day. I say that not to brag but so you know your file is in experienced hands.
+
+The next move is yours. Pull your report and let me get to work.
+
+{{signature}}` },
+
+  // ============ BREAKUP / FINAL: text (pool breakup_sms) ============
+  { id: "break_sms_a", pool: "breakup_sms", name: "Breakup text: close file", channel: "sms", subject: "",
+    body: `{{first}}, Joe with ASAP. I have reached out a few times and do not want to be a pest. I will close your file for now. If you ever want to pick it back up, just text me. No hard feelings.` },
+  { id: "break_sms_b", pool: "breakup_sms", name: "Breakup text: last call", channel: "sms", subject: "",
+    body: `{{first}}, last one from me for now. If getting your business approved is still a goal, here is your link: {{link}} If not, no worries at all and I will step back.` },
+  { id: "break_sms_c", pool: "breakup_sms", name: "Breakup text: door open", channel: "sms", subject: "",
+    body: `{{first}}, Joe here. Going to give you some space. The door stays open, text me anytime and we pick right back up where we left off.` },
+
+  // ============ BREAKUP / FINAL: email (pool breakup_email) ============
+  { id: "break_email_a", pool: "breakup_email", name: "Breakup email: should I close", channel: "email", subject: "Should I close your file, {{first}}?",
+    body: `Hey {{first}},
+
+I have reached out a handful of times and I do not want to crowd your inbox. If the timing is not right, that is completely fine.
+
+If you still want to get your business into a position to be approved, just reply and I will pick it right back up. If I do not hear back, I will close your file for now and leave you be. Either way, no hard feelings.
+
+{{signature}}` },
+  { id: "break_email_b", pool: "breakup_email", name: "Breakup email: one yes", channel: "email", subject: "One yes and I am back on it, {{first}}",
+    body: `Hey {{first}},
+
+This is my last note for now. I know how busy running a business gets, so no pressure at all.
+
+If you ever want to know what you qualify for, one reply gets me back on your file the same day. I will be here when the timing is right.
+
+{{signature}}` },
+  { id: "break_email_c", pool: "breakup_email", name: "Breakup email: leaving door open", channel: "email", subject: "Leaving the door open, {{first}}",
+    body: `Hey {{first}},
+
+I am going to step back so I am not filling your inbox. Nothing changes on our end. Whenever you are ready to see your options, reply to this email and we go right back to work.
+
+Wishing you and the business well either way.
+
+{{signature}}` },
+
+  // ============ EXTRA VOICEMAIL variety ============
+  { id: "vm_sms_e", pool: "vm_sms", name: "VM text: quick", channel: "sms", subject: "",
+    body: `{{first}}, Joe at ASAP. Tried you by phone about the Facebook ad on getting your business approved. Got 2 minutes today? Text me back.` },
+  { id: "vm_sms_f", pool: "vm_sms", name: "VM text: worth it", channel: "sms", subject: "",
+    body: `{{first}}, it is Joe with ASAP. You reached out about getting your business approved and I just missed you. This is worth 5 minutes of your day, promise. Call or text back.` },
+  { id: "vm_email_d", pool: "vm_email", name: "VM email: still here", channel: "email", subject: "Still here when you are ready, {{first}}",
+    body: `Hey {{first}},
+
+You responded to our Facebook ad about getting your business approved and I have been trying to connect. No rush, but I did not want your inquiry to fall through the cracks.
+
+Whenever you have a few minutes, reply here or give me a call and I will show you what you qualify for. It is free to look and it does not touch your score.
+
+{{signature}}` },
+
+  // ============ EXTRA INTERESTED / report-link variety ============
+  { id: "int_sms_e", pool: "int_sms", name: "Interested text: curiosity 2", channel: "sms", subject: "",
+    body: `{{first}}, Joe with ASAP. I genuinely think you will be surprised by what you qualify for. Only way to know is your report: {{link}} Soft pull, no score hit.` },
+  { id: "int_sms_f", pool: "int_sms", name: "Interested text: same day", channel: "sms", subject: "",
+    body: `{{first}}, pull this and I will have real options back to you today: {{link}} 5 minutes, no hit to your score. Text me DONE when it is in.` },
+  { id: "int_email_d", pool: "int_email", name: "Interested email: no guessing", channel: "email", subject: "Let us stop guessing, {{first}}",
+    body: `Hey {{first}},
+
+I can talk all day about what might be possible, but you deserve real numbers, not guesses. The only thing standing between you and those numbers is your report.
+
+Here is the secure link. It is a soft pull, about 5 minutes, and it does not affect your score: {{link}}
+
+The moment it is in, I go to work and come back with your actual options.
+
+{{signature}}` },
+
+  // ============ EXTRA ACCOUNT-CHECK variety ============
+  { id: "acct_sms_c", pool: "acct_sms", name: "Account check text: nudge", channel: "sms", subject: "",
+    body: `{{first}}, Joe at ASAP. Were you able to get your report pulled? If the link gave you trouble, here it is again: {{link}} Happy to walk you through it.` },
+  { id: "acct_email_c", pool: "acct_email", name: "Account check email: stuck", channel: "email", subject: "Did the link give you trouble, {{first}}?",
+    body: `Hey {{first}},
+
+Checking in. I do not see your report on my end yet, so I wanted to make sure the link worked for you. Sometimes it is a quick fix.
+
+Here it is again: {{link}}
+
+If you hit a snag, just reply and tell me where you got stuck. I will get you through it in a couple minutes.
+
+{{signature}}` },
+
+  // ============ EXTRA SUCCESS STORY variety ============
+  { id: "story_sms_d", pool: "story_sms", name: "Success story text: turnaround", channel: "sms", subject: "",
+    body: `{{first}}, Joe with ASAP. Had an owner this month who was sure they would get told no everywhere. We found their yes. I would love to do the same for you: {{link}}` },
+  { id: "story_email_d", pool: "story_email", name: "Success story email: rough credit", channel: "email", subject: "Rough credit is not the end, {{first}}",
+    body: `Hey {{first}},
+
+Story for you. Owner came in convinced their credit made them un-fundable. Low score, a couple of old marks, the works. We looked past the number, matched them to the right lender, and got them approved.
+
+Your file might have a similar story hiding in it. I will not know until I see it. Soft pull, 5 minutes: {{link}}
+
+{{signature}}` },
+
+  // ============ EXTRA CALLBACK variety ============
+  { id: "cb_sms_c", pool: "cb_sms", name: "Call back text: reconnect", channel: "sms", subject: "",
+    body: `{{first}}, Joe with ASAP. You asked me to circle back, so here I am. Got a few minutes now to pick up where we left off?` },
+  { id: "cb_sms_d", pool: "cb_sms", name: "Call back text: good time", channel: "sms", subject: "",
+    body: `{{first}}, Joe at ASAP. Trying to catch you at a better time. What works today, morning or afternoon? I will make it quick.` },
+  { id: "cb_sms_e", pool: "cb_sms", name: "Call back text: ready", channel: "sms", subject: "",
+    body: `{{first}}, Joe here. Ready to pick this back up whenever you are. Text me a good time and I will call you then.` },
+  { id: "cb_email_c", pool: "cb_email", name: "Call back email: reconnect", channel: "email", subject: "Picking up where we left off, {{first}}",
+    body: `Hey {{first}},
+
+You had asked me to reach back out, so here I am. I would still love to show you what you qualify for and lay out the fastest path to getting your business approved.
+
+Reply here with a good time, or just pull your report and I will take it from there: {{link}}
+
+{{signature}}` },
+  { id: "cb_email_d", pool: "cb_email", name: "Call back email: quick", channel: "email", subject: "Two minutes, {{first}}?",
+    body: `Hey {{first}},
+
+I know the timing was off when we last connected. No problem at all. This really only takes a couple of minutes to get moving.
+
+Tell me when works and I will call you then, or start it yourself here: {{link}}
+
+{{signature}}` },
+
 ];
 
 // Per stage: ordered steps. day = days after entering that stage.
@@ -285,31 +492,83 @@ const DEFAULT_CADENCES = {
   voicemail: [
     { day: 0, pool: "vm_sms" },
     { day: 0, pool: "vm_email" },
-    { day: 2, pool: "vm_sms" },
-    { day: 5, pool: "vm_email" },
-    { day: 9, pool: "vm_sms" },
-    { day: 16, pool: "vm_email" },
+    { day: 1, pool: "vm_sms" },
+    { day: 2, pool: "vm_email" },
+    { day: 3, pool: "vm_sms" },
+    { day: 4, pool: "value_email" },
+    { day: 5, pool: "urgency_sms" },
+    { day: 6, pool: "vm_email" },
+    { day: 8, pool: "vm_sms" },
+    { day: 10, pool: "proof_email" },
+    { day: 12, pool: "urgency_sms" },
+    { day: 14, pool: "value_email" },
+    { day: 17, pool: "vm_sms" },
+    { day: 20, pool: "vm_email" },
+    { day: 23, pool: "urgency_sms" },
+    { day: 26, pool: "proof_email" },
     { day: 30, pool: "vm_sms" },
+    { day: 34, pool: "value_email" },
+    { day: 38, pool: "urgency_sms" },
+    { day: 42, pool: "vm_email" },
+    { day: 46, pool: "vm_sms" },
+    { day: 50, pool: "proof_email" },
+    { day: 54, pool: "urgency_sms" },
+    { day: 57, pool: "breakup_email" },
+    { day: 60, pool: "breakup_sms" },
   ],
   interested: [
     { day: 0, pool: "int_sms" },
     { day: 0, pool: "int_email" },
     { day: 1, pool: "acct_sms" },
-    { day: 1, pool: "acct_email" },
-    { day: 2, pool: "acct_sms" },
-    { day: 3, pool: "story_sms" },
-    { day: 5, pool: "story_email" },
-    { day: 9, pool: "story_sms" },
-    { day: 14, pool: "story_email" },
-    { day: 21, pool: "story_sms" },
-    { day: 30, pool: "int_email" },
+    { day: 2, pool: "acct_email" },
+    { day: 3, pool: "int_sms" },
+    { day: 4, pool: "story_email" },
+    { day: 5, pool: "acct_sms" },
+    { day: 6, pool: "value_email" },
+    { day: 8, pool: "urgency_sms" },
+    { day: 10, pool: "story_email" },
+    { day: 12, pool: "int_sms" },
+    { day: 14, pool: "proof_email" },
+    { day: 17, pool: "story_sms" },
+    { day: 20, pool: "value_email" },
+    { day: 23, pool: "urgency_sms" },
+    { day: 26, pool: "story_email" },
+    { day: 30, pool: "int_sms" },
+    { day: 34, pool: "proof_email" },
+    { day: 38, pool: "story_sms" },
+    { day: 42, pool: "value_email" },
+    { day: 46, pool: "urgency_sms" },
+    { day: 50, pool: "story_email" },
+    { day: 54, pool: "int_sms" },
+    { day: 57, pool: "breakup_email" },
+    { day: 60, pool: "breakup_sms" },
   ],
   callback: [
     { day: 0, pool: "cb_sms" },
+    { day: 0, pool: "cb_email" },
+    { day: 1, pool: "cb_sms" },
     { day: 2, pool: "cb_email" },
-    { day: 5, pool: "cb_sms" },
-    { day: 12, pool: "cb_email" },
-    { day: 25, pool: "cb_sms" },
+    { day: 3, pool: "cb_sms" },
+    { day: 4, pool: "value_email" },
+    { day: 5, pool: "urgency_sms" },
+    { day: 6, pool: "cb_email" },
+    { day: 8, pool: "cb_sms" },
+    { day: 10, pool: "proof_email" },
+    { day: 12, pool: "urgency_sms" },
+    { day: 14, pool: "value_email" },
+    { day: 17, pool: "cb_sms" },
+    { day: 20, pool: "cb_email" },
+    { day: 23, pool: "urgency_sms" },
+    { day: 26, pool: "proof_email" },
+    { day: 30, pool: "cb_sms" },
+    { day: 34, pool: "value_email" },
+    { day: 38, pool: "urgency_sms" },
+    { day: 42, pool: "cb_email" },
+    { day: 46, pool: "cb_sms" },
+    { day: 50, pool: "proof_email" },
+    { day: 54, pool: "urgency_sms" },
+    { day: 57, pool: "breakup_email" },
+    { day: 60, pool: "breakup_sms" },
   ],
   not_interested: [
     { day: 10, pool: "ni_email" },
@@ -2026,6 +2285,8 @@ const POOL_LABELS = {
   cb_sms: "Call back, text", cb_email: "Call back, email",
   ni_email: "Not interested, email", pulled_sms: "Report pulled, text",
   app_sms: "Application, text", app_email: "Application, email",
+  urgency_sms: "Urgency nudge, text", value_email: "Value / education, email",
+  proof_email: "Social proof, email", breakup_sms: "Breakup / final, text", breakup_email: "Breakup / final, email",
   manual: "Manual only (not auto-sent)",
 };
 

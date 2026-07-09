@@ -56,6 +56,7 @@ const DEFAULT_CONFIG = {
   funderName: "Torro",
   funderEmail: "slocsubmissions@torro.com",
   autoSnoozeDays: 3,
+  emailSignature: "Joe Mahlow\nASAP Funding USA\nfunding@asapfundingusa.com",
 };
 
 const DEFAULT_TEMPLATES = [
@@ -831,6 +832,14 @@ function Dashboard({ userEmail }) {
     setLeads(data.map(rowToLead));
   }, []);
 
+  // Debounce realtime reloads so a burst of changes (or our own autosaves)
+  // coalesces into one refetch instead of re-rendering on every keystroke-save.
+  const refetchTimers = useRef({});
+  const debouncedRefetch = useCallback((key, fn, ms = 1500) => {
+    clearTimeout(refetchTimers.current[key]);
+    refetchTimers.current[key] = setTimeout(fn, ms);
+  }, []);
+
   useEffect(() => {
     (async () => {
       try {
@@ -850,12 +859,12 @@ function Dashboard({ userEmail }) {
       finally { setLoaded(true); }
     })();
     const channel = supabase.channel("leads-stream")
-      .on("postgres_changes", { event: "*", schema: "public", table: "leads" }, () => refetchLeads())
-      .on("postgres_changes", { event: "*", schema: "public", table: "communications" }, () => refetchComms())
-      .on("postgres_changes", { event: "*", schema: "public", table: "activities" }, () => refetchActivities())
+      .on("postgres_changes", { event: "*", schema: "public", table: "leads" }, () => debouncedRefetch("leads", refetchLeads))
+      .on("postgres_changes", { event: "*", schema: "public", table: "communications" }, () => debouncedRefetch("comms", refetchComms, 800))
+      .on("postgres_changes", { event: "*", schema: "public", table: "activities" }, () => debouncedRefetch("acts", refetchActivities, 800))
       .subscribe((s) => setLive(s === "SUBSCRIBED"));
     return () => { supabase.removeChannel(channel); };
-  }, [refetchLeads, refetchComms, refetchActivities]);
+  }, [refetchLeads, refetchComms, refetchActivities, debouncedRefetch]);
 
   useEffect(() => { autoSnoozeDaysRef.current = config.autoSnoozeDays ?? 3; }, [config.autoSnoozeDays]);
 
@@ -1089,7 +1098,7 @@ function Dashboard({ userEmail }) {
               onGoFollowups={() => setTab("followups")} />
           )}
           {tab === "followups" && <Followups dueList={dueList} config={config} onOpen={setProfileId} openCompose={setCompose} updateLead={updateLead} />}
-          {tab === "inbox" && <Conversations leads={leads} comms={comms} unreadLeadIds={unreadLeadIds} onSend={sendReply} onOpen={setProfileId} />}
+          {tab === "inbox" && <Conversations leads={leads} comms={comms} unreadLeadIds={unreadLeadIds} onSend={sendReply} onOpen={setProfileId} templates={templates} config={config} />}
           {tab === "activities" && <Activities activities={activities} leads={leads} onOpen={setProfileId} completeActivity={completeActivity} deleteActivity={deleteActivity} />}
           {tab === "messaging" && <Messaging templates={templates} persistTemplates={persistTemplates} cadences={cadences} persistCadences={persistCadences} />}
           {tab === "commissions" && <Commissions leads={leads} onOpen={setProfileId} />}
@@ -1509,7 +1518,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
           <ActivityPanel lead={lead} activities={leadActivities} addActivity={addActivity} completeActivity={completeActivity} deleteActivity={deleteActivity} />
 
           {/* conversation thread with inline reply */}
-          <Conversation lead={lead} comms={comms} onSend={sendReply} compact />
+          <Conversation lead={lead} comms={comms} onSend={sendReply} templates={templates} config={config} compact />
 
           {/* automation control */}
           <div className={`rounded-xl border px-4 py-3 ${lead.automationPaused ? "border-amber-200 bg-amber-50" : "border-slate-200 bg-white"}`}>
@@ -2093,6 +2102,7 @@ function Settings({ config, persistConfig }) {
           <Labeled label="MyScoreIQ link (under $10k path)"><input value={draft.reportLink} onChange={set("reportLink")} className={`${inputCls} font-mono`} /></Labeled>
           <Labeled label="SmartCredit link (backup report tool)"><input value={draft.smartCreditLink || ""} onChange={set("smartCreditLink")} className={`${inputCls} font-mono`} /></Labeled>
           <Labeled label="Auto-snooze days after a logged call or note"><input type="number" min={0} value={draft.autoSnoozeDays ?? 3} onChange={(e) => setDraft({ ...draft, autoSnoozeDays: Number(e.target.value) })} className={inputCls} /></Labeled>
+          <Labeled label="Email signature (added to the bottom of emails you send)"><textarea value={draft.emailSignature || ""} onChange={set("emailSignature")} rows={3} className={`${inputCls} resize-none`} /></Labeled>
           <Labeled label="Application link (over $10k path)"><input value={draft.appLink || ""} onChange={set("appLink")} placeholder="https://tinyurl.com/asapfundingapp" className={`${inputCls} font-mono`} /></Labeled>
           <Labeled label="Signature / who it is from"><input value={draft.signature} onChange={set("signature")} className={inputCls} /></Labeled>
           <Labeled label="Funder name"><input value={draft.funderName || ""} onChange={set("funderName")} className={inputCls} /></Labeled>
@@ -2263,7 +2273,7 @@ function ActivityPanel({ lead, activities, addActivity, completeActivity, delete
 }
 
 
-function Conversation({ lead, comms, onSend, compact = false }) {
+function Conversation({ lead, comms, onSend, templates = [], config = {}, compact = false }) {
   const [channel, setChannel] = useState("sms");
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
@@ -2277,11 +2287,24 @@ function Conversation({ lead, comms, onSend, compact = false }) {
   );
   useEffect(() => { endRef.current?.scrollIntoView({ block: "nearest" }); }, [thread.length]);
 
+  const picks = templates.filter((t) => t.channel === channel);
+  const applyTemplate = (id) => {
+    const t = templates.find((x) => x.id === id);
+    if (!t) return;
+    if (channel === "email") setSubject(fillTokens(t.subject, lead, config));
+    setBody(fillTokens(t.body, lead, config));
+  };
+
   const canSend = channel === "sms" ? !!lead.phone : !!lead.email;
   const send = async () => {
     if (!body.trim() || !canSend) return;
     setBusy(true); setErr("");
-    try { await onSend(lead, channel, subject, body); setBody(""); setSubject(""); }
+    let outBody = body;
+    // append email signature if set and not already present
+    if (channel === "email" && config.emailSignature && !outBody.includes(config.emailSignature)) {
+      outBody = outBody + "\n\n" + config.emailSignature;
+    }
+    try { await onSend(lead, channel, subject, outBody); setBody(""); setSubject(""); }
     catch (e) { setErr(String(e.message || e)); }
     finally { setBusy(false); }
   };
@@ -2297,13 +2320,16 @@ function Conversation({ lead, comms, onSend, compact = false }) {
         {thread.length === 0 && <p className="py-6 text-center text-sm text-slate-400">No messages yet. Send a text or email below and it will show here, along with their replies.</p>}
         {thread.map((c) => {
           const inbound = c.direction === "in";
+          const chanLabel = c.channel === "sms" ? "SMS" : "Email";
           return (
             <div key={c.id} className={`flex ${inbound ? "justify-start" : "justify-end"}`}>
               <div className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm ${inbound ? "rounded-bl-sm bg-slate-100 text-slate-800" : "rounded-br-sm bg-blue-600 text-white"}`}>
-                <div className={`mb-0.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide ${inbound ? "text-slate-400" : "text-blue-200"}`}>
-                  {c.channel === "sms" ? <MessageSquare size={10} /> : <Mail size={10} />}
-                  {inbound ? "Received" : "Sent"}
-                  <span className="font-normal normal-case">{fmtDateTime(new Date(c.at).getTime())}</span>
+                <div className={`mb-0.5 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide ${inbound ? "text-slate-500" : "text-blue-100"}`}>
+                  <span className={`rounded px-1 py-px ${c.channel === "sms" ? (inbound ? "bg-blue-100 text-blue-700" : "bg-blue-500/60 text-white") : (inbound ? "bg-violet-100 text-violet-700" : "bg-violet-500/60 text-white")}`}>
+                    {c.channel === "sms" ? <MessageSquare size={9} className="mr-0.5 inline" /> : <Mail size={9} className="mr-0.5 inline" />}{chanLabel}
+                  </span>
+                  {inbound ? "In" : "Out"}
+                  <span className="font-normal normal-case opacity-80">{fmtDateTime(new Date(c.at).getTime())}</span>
                 </div>
                 {c.subject && <div className={`text-xs font-semibold ${inbound ? "text-slate-600" : "text-blue-100"}`}>{c.subject}</div>}
                 <div className="whitespace-pre-wrap">{c.body}</div>
@@ -2320,6 +2346,12 @@ function Conversation({ lead, comms, onSend, compact = false }) {
           <button onClick={() => setChannel("sms")} className={`flex-1 rounded-md py-1.5 font-medium ${channel === "sms" ? "bg-white text-blue-700 shadow-sm" : "text-slate-500"}`}><MessageSquare size={13} className="mr-1 inline" /> Text</button>
           <button onClick={() => setChannel("email")} className={`flex-1 rounded-md py-1.5 font-medium ${channel === "email" ? "bg-white text-blue-700 shadow-sm" : "text-slate-500"}`}><Mail size={13} className="mr-1 inline" /> Email</button>
         </div>
+        {picks.length > 0 && (
+          <select defaultValue="" onChange={(e) => { applyTemplate(e.target.value); e.target.value = ""; }} className="mb-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 outline-none focus:border-blue-400">
+            <option value="">Insert a template...</option>
+            {picks.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+        )}
         {channel === "email" && (
           <input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Subject" className="mb-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400" />
         )}
@@ -2337,7 +2369,7 @@ function Conversation({ lead, comms, onSend, compact = false }) {
 }
 
 // GHL-style inbox: leads with messages on the left, the thread + reply on the right
-function Conversations({ leads, comms, unreadLeadIds, onSend, onOpen }) {
+function Conversations({ leads, comms, unreadLeadIds, onSend, onOpen, templates = [], config = {} }) {
   const withMsgs = useMemo(() => {
     const latest = {};
     for (const c of comms) {
@@ -2392,7 +2424,7 @@ function Conversations({ leads, comms, unreadLeadIds, onSend, onOpen }) {
               <button onClick={() => onOpen(selected.id)} className="text-sm font-bold text-slate-800 hover:text-blue-700">{leadTitle(selected)}</button>
               <StagePill status={selected.status} />
             </div>
-            <Conversation lead={selected} comms={comms} onSend={onSend} />
+            <Conversation lead={selected} comms={comms} onSend={onSend} templates={templates} config={config} />
           </>
         )}
       </div>

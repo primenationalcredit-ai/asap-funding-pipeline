@@ -561,29 +561,50 @@ function relativeDue(ts) {
   return { label: `Due in ${days}d`, overdue: false };
 }
 
-// Build the cadence step list for a lead's current stage
+// Build the cadence step list for a lead's current stage.
+// SEQUENTIAL: each step's clock starts when the PREVIOUS step was actually sent,
+// not from absolute calendar days. So only one step is ever "due" at a time,
+// and a lead that sat idle does not show a wall of overdue steps.
 function cadenceSteps(lead, cadences, templates) {
   const steps = cadences[lead.status] || [];
   const entered = lead.stageEnteredAt || lead.createdAt;
   const snooze = lead.snoozeUntil || 0;
+  const touches = lead.touches || [];
+  // when each step index was actually sent (and whether the system sent it)
+  const sentInfo = {};
+  touches.forEach((t) => {
+    if (t.kind === "cadence" && t.stage === lead.status && t.at >= entered - 5000) {
+      sentInfo[t.step] = { at: t.at, auto: !!t.auto };
+    }
+  });
+
+  let anchor = entered; // time the next gap counts from
+  let prevDay = 0;
+  let dueAssigned = false;
+
   return steps.map((s, i) => {
     const tpl = s.pool
       ? pickFrom(poolTemplates(templates, s.pool), lead.id + ":" + s.pool + ":" + i)
       : templates.find((t) => t.id === s.templateId);
-    const scheduledAt = entered + s.day * DAY;
-    // A snooze pushes anything that would have been due before it
-    const dueAt = Math.max(scheduledAt, snooze);
-    const done = (lead.touches || []).some(
-      (t) => t.kind === "cadence" && t.stage === lead.status && t.step === i && t.at >= entered - 5000
-    );
-    return { i, day: s.day, template: tpl, channel: tpl?.channel, scheduledAt, dueAt, done };
+    const sent = sentInfo[i];
+    let state, dueAt = null;
+    if (sent) {
+      state = "sent";
+      anchor = sent.at;          // next step's gap counts from the real send time
+      prevDay = s.day;
+    } else {
+      const gap = Math.max(0, s.day - prevDay) * DAY;
+      dueAt = Math.max(anchor + gap, snooze);
+      if (!dueAssigned) { state = "due"; dueAssigned = true; }
+      else state = "waiting";    // later steps wait until the due one is sent
+    }
+    return { i, day: s.day, template: tpl, channel: tpl?.channel, dueAt, state, sent, done: !!sent };
   });
 }
 function nextDue(lead, cadences, templates) {
   if (lead.automationPaused) return null; // paused: nothing is ever due
-  const steps = cadenceSteps(lead, cadences, templates).filter((s) => !s.done && s.template);
-  if (steps.length === 0) return null;
-  return steps.sort((a, b) => a.dueAt - b.dueAt)[0];
+  const step = cadenceSteps(lead, cadences, templates).find((s) => s.state === "due" && s.template);
+  return step || null;
 }
 
 // Send through the in-app backend (RingCentral / Outlook). Requires login.
@@ -1671,23 +1692,35 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
           {/* cadence for current stage */}
           <Section icon={<CalendarClock size={15} />} title={`Follow-ups for "${STAGES.find(s=>s.key===lead.status)?.label}"`}>
             {steps.length === 0 ? <p className="text-sm text-slate-400">No automated steps for this stage. Add them under Messaging.</p> : (
-              <div className="flex flex-col gap-1.5">
-                {steps.map((st) => {
-                  const rel = relativeDue(st.dueAt);
-                  return (
-                    <div key={st.i} className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm">
-                      <span className="font-mono text-xs text-slate-400">D{st.day}</span>
-                      {st.channel === "sms" ? <MessageSquare size={14} className="text-blue-600" /> : <Mail size={14} className="text-blue-600" />}
-                      <span className="min-w-0 flex-1 truncate">{st.template?.name || "deleted template"}</span>
-                      {st.done ? <span className="inline-flex items-center gap-1 text-xs font-medium text-blue-600"><Check size={13} /> Sent</span>
-                        : <span className={`text-xs font-medium ${rel.overdue ? "text-rose-600" : "text-slate-400"}`}>{rel.label}</span>}
-                      {st.template && (
-                        <button onClick={() => openCompose({ lead, channel: st.channel, to: st.channel === "sms" ? lead.phone : lead.email, subject: fillTokens(st.template.subject, lead, config), body: fillTokens(st.template.body, lead, config), kind: "cadence", extra: { stage: lead.status, step: st.i } })} className={`rounded-md px-2 py-1 text-xs font-semibold ${st.done ? "bg-white text-slate-600 ring-1 ring-inset ring-slate-200 hover:bg-slate-50" : "bg-blue-600 text-white hover:bg-blue-700"}`}>{st.done ? "Resend" : "Send"}</button>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+              <>
+                <p className="mb-2 text-xs text-slate-400">Messages send one at a time. The next only unlocks after the current one goes out.</p>
+                <div className="flex flex-col gap-1.5">
+                  {steps.map((st) => {
+                    const rel = st.dueAt ? relativeDue(st.dueAt) : null;
+                    const isDue = st.state === "due";
+                    const isWaiting = st.state === "waiting";
+                    return (
+                      <div key={st.i} className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm ${isDue ? "bg-blue-50 ring-1 ring-inset ring-blue-200" : "bg-slate-50"} ${isWaiting ? "opacity-55" : ""}`}>
+                        <span className="font-mono text-xs text-slate-400">D{st.day}</span>
+                        {st.channel === "sms" ? <MessageSquare size={14} className="text-blue-600" /> : <Mail size={14} className="text-blue-600" />}
+                        <span className="min-w-0 flex-1 truncate">{st.template?.name || "deleted template"}</span>
+
+                        {st.state === "sent" && (
+                          st.sent?.auto
+                            ? <span className="inline-flex items-center gap-1 rounded bg-violet-100 px-1.5 py-0.5 text-[11px] font-bold text-violet-700"><Zap size={11} /> Auto-sent</span>
+                            : <span className="inline-flex items-center gap-1 text-xs font-medium text-blue-600"><Check size={13} /> Sent</span>
+                        )}
+                        {isDue && <span className={`text-xs font-semibold ${rel.overdue ? "text-rose-600" : "text-orange-500"}`}>{rel.label}</span>}
+                        {isWaiting && <span className="text-xs font-medium text-slate-400">Waiting</span>}
+
+                        {st.template && st.state !== "waiting" && (
+                          <button onClick={() => openCompose({ lead, channel: st.channel, to: st.channel === "sms" ? lead.phone : lead.email, subject: fillTokens(st.template.subject, lead, config), body: fillTokens(st.template.body, lead, config), kind: "cadence", extra: { stage: lead.status, step: st.i } })} className={`rounded-md px-2 py-1 text-xs font-semibold ${st.state === "sent" ? "bg-white text-slate-600 ring-1 ring-inset ring-slate-200 hover:bg-slate-50" : "bg-blue-600 text-white hover:bg-blue-700"}`}>{st.state === "sent" ? "Resend" : "Send"}</button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
             )}
           </Section>
 

@@ -18,6 +18,7 @@ import { createClient } from "@supabase/supabase-js";
 const DAY = 86400000;
 const CALL_DAYS = [1, 2, 3, 4, 6, 8, 10, 13, 16, 19, 21];
 const DEFAULT_STAGES = ["voicemail", "interested", "callback"];
+const MAX_SENDS_PER_RUN = 12; // stay within function time budget; rest picked up next run
 
 const hashStr = (s) => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; };
 const pickFrom = (list, seed) => (!list || !list.length ? null : list[hashStr(String(seed)) % list.length]);
@@ -103,32 +104,48 @@ async function run() {
   let rc = null;
   let sent = 0, scheduled = 0, skipped = 0;
 
+  const leadIds = (leads || []).map((l) => l.id);
+  // One query: which of these leads have ever replied, and which have an open activity.
+  const repliedSet = new Set();
+  const openActSet = new Set();
+  if (leadIds.length) {
+    const { data: ins } = await supabase.from("communications").select("lead_id").eq("direction", "in").in("lead_id", leadIds);
+    (ins || []).forEach((r) => repliedSet.add(r.lead_id));
+    const { data: acts } = await supabase.from("activities").select("lead_id").eq("done", false).in("lead_id", leadIds);
+    (acts || []).forEach((r) => openActSet.add(r.lead_id));
+  }
+
   for (const lead of leads || []) {
     if (lead.opted_out || lead.automation_paused) { skipped++; continue; }
     if (lead.snooze_until && new Date(lead.snooze_until).getTime() > now) { skipped++; continue; }
 
     // hard stop on repliers: if they ever sent us an inbound message, hands off to a human
-    const { data: inbound } = await supabase.from("communications")
-      .select("id").eq("lead_id", lead.id).eq("direction", "in").limit(1);
-    if (inbound && inbound.length) { skipped++; continue; }
+    if (repliedSet.has(lead.id)) { skipped++; continue; }
 
     const entered = lead.stage_entered_at ? new Date(lead.stage_entered_at).getTime() : new Date(lead.created_at).getTime();
     const touches = lead.touches || [];
 
-    // ---- 1. auto-send the earliest DUE cadence message (one per run) ----
-    const steps = (cadences[lead.status] || []).map((s, i) => ({ ...s, i }));
-    const due = steps
-      .map((s) => {
-        const tpl = s.pool ? pickFrom(poolTemplates(templates, s.pool), lead.id + ":" + s.pool + ":" + s.i)
-                           : templates.find((t) => t.id === s.templateId);
-        const doneAlready = touches.some((t) => t.kind === "cadence" && t.stage === lead.status && t.step === s.i && t.at >= entered - 5000);
-        return { ...s, tpl, dueAt: Math.max(entered + s.day * DAY, lead.snooze_until ? new Date(lead.snooze_until).getTime() : 0), doneAlready };
-      })
-      .filter((s) => s.tpl && !s.doneAlready && s.dueAt <= now)
-      .sort((a, b) => a.dueAt - b.dueAt);
+    // ---- 1. auto-send the ONE currently-due cadence step (sequential) ----
+    // Each step's clock starts when the previous was actually sent, so only one
+    // step is ever due and idle leads never get a backlog blast.
+    const rawSteps = (cadences[lead.status] || []).map((s, i) => ({ ...s, i }));
+    const sentInfo = {};
+    touches.forEach((t) => {
+      if (t.kind === "cadence" && t.stage === lead.status && t.at >= entered - 5000) sentInfo[t.step] = t.at;
+    });
+    let anchor = entered, prevDay = 0, dueStep = null;
+    for (const s of rawSteps) {
+      if (sentInfo[s.i] != null) { anchor = sentInfo[s.i]; prevDay = s.day; continue; }
+      const gap = Math.max(0, s.day - prevDay) * DAY;
+      const dueAt = Math.max(anchor + gap, lead.snooze_until ? new Date(lead.snooze_until).getTime() : 0);
+      const tpl = s.pool ? pickFrom(poolTemplates(templates, s.pool), lead.id + ":" + s.pool + ":" + s.i)
+                         : templates.find((t) => t.id === s.templateId);
+      dueStep = tpl && dueAt <= now ? { ...s, tpl, dueAt } : null; // the first unsent step is the only candidate
+      break; // only consider the first unsent step
+    }
 
-    if (due.length) {
-      const step = due[0];
+    if (dueStep && sent < MAX_SENDS_PER_RUN) {
+      const step = dueStep;
       const to = step.tpl.channel === "sms" ? lead.phone : lead.email;
       if (to) {
         try {
@@ -152,9 +169,7 @@ async function run() {
 
     // ---- 2. auto-schedule a follow-up CALL (never stack) ----
     // Gate: skip if any activity is still open (past-due or upcoming) for this lead.
-    const { data: openActs } = await supabase.from("activities")
-      .select("id").eq("lead_id", lead.id).eq("done", false).limit(1);
-    if (openActs && openActs.length) { continue; }
+    if (openActSet.has(lead.id)) { continue; }
 
     const daysSince = Math.floor((now - entered) / DAY);
     if (CALL_DAYS.includes(daysSince)) {

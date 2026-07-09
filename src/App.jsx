@@ -1759,8 +1759,8 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
   const leadActivities = activities.filter((a) => a.lead_id === lead.id);
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-center overflow-y-auto bg-slate-900/40 p-3 sm:p-6" onClick={onClose}>
-      <div className="my-auto w-full max-w-2xl rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex justify-center overflow-y-auto bg-slate-900/40 p-0 sm:p-4" onClick={onClose}>
+      <div className="my-0 w-full max-w-6xl rounded-none bg-white shadow-xl sm:my-4 sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
         {/* journey stepper */}
         <div className="border-b border-slate-100 px-5 py-3">
           <StageStepper status={lead.status} />
@@ -1784,7 +1784,9 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
           </div>
         </div>
 
-        <div className="space-y-5 px-5 py-4">
+        <div className="grid gap-5 px-5 py-4 lg:grid-cols-5">
+          {/* LEFT COLUMN: work this client now */}
+          <div className="space-y-5 lg:col-span-3">
           {/* what to do next */}
           {nextStepFor(lead).text && (
             <div className={`flex items-start gap-2 rounded-xl px-4 py-3 text-sm font-medium ring-1 ring-inset ${TONE[nextStepFor(lead).tone]}`}>
@@ -1947,6 +1949,10 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
             )}
           </div>
 
+          </div>{/* end left column */}
+
+          {/* RIGHT COLUMN: record & pipeline */}
+          <div className="space-y-5 lg:col-span-2">
           {/* stage */}
           <Section icon={<ListChecks size={15} />} title="Stage">
             <div className="flex flex-wrap gap-1.5">
@@ -2035,7 +2041,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
           </Section>
 
           {/* report PDF */}
-          <Section icon={<FileText size={15} />} title="Credit report">
+          <Section icon={<FileText size={15} />} title="Credit report" collapsible defaultOpen={["interested", "report_pulled", "submitted", "pre_approved"].includes(lead.status)}>
             <div className="flex flex-wrap items-center gap-2">
               <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-2 text-sm font-medium text-white hover:bg-slate-900">
                 <Upload size={15} /> {uploading ? "Uploading..." : lead.reportPath ? "Replace PDF" : "Upload PDF"}
@@ -2163,8 +2169,10 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
             </Section>
           )}
 
-          {/* footer actions */}
-          <div className="flex items-center justify-between border-t border-slate-100 pt-4">
+          </div>{/* end right column */}
+
+          {/* footer actions (full width) */}
+          <div className="flex items-center justify-between border-t border-slate-100 pt-4 lg:col-span-5">
             <button onClick={() => { if (confirm(`Remove ${lead.name || "this client"}?`)) { removeLead(lead.id); onClose(); } }} className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-rose-500 hover:bg-rose-50"><Trash2 size={13} /> Remove</button>
             <span className="text-xs text-slate-400">Changes save automatically</span>
           </div>

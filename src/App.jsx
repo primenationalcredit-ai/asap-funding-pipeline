@@ -2122,10 +2122,11 @@ function Settings({ config, persistConfig }) {
         <h3 className="mb-1 flex items-center gap-1.5 text-sm font-bold text-slate-800"><Zap size={15} className="text-blue-600" /> Automated outreach</h3>
         <p className="mb-3 text-sm text-slate-500">When on, the app auto-sends the next due message and auto-schedules follow-up calls for leads in New Leads and Reports, during business hours only (Mon to Fri, 8am to 5pm Central). It skips anyone who replied, opted out, is paused, or snoozed, and never stacks calls.</p>
         <label className="flex items-center gap-3">
-          <input type="checkbox" checked={!!draft.autoSendEnabled} onChange={(e) => setDraft({ ...draft, autoSendEnabled: e.target.checked })} className="h-5 w-5 rounded border-slate-300 text-blue-600 focus:ring-blue-400" />
+          <input type="checkbox" checked={!!draft.autoSendEnabled} onChange={(e) => { const next = { ...draft, autoSendEnabled: e.target.checked }; setDraft(next); persistConfig(next); }} className="h-5 w-5 rounded border-slate-300 text-blue-600 focus:ring-blue-400" />
           <span className="text-sm font-medium text-slate-700">Auto-send messages and schedule calls</span>
           <span className={`ml-auto rounded-full px-2 py-0.5 text-xs font-bold ${draft.autoSendEnabled ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>{draft.autoSendEnabled ? "ON" : "OFF"}</span>
         </label>
+        <p className="mt-2 text-xs text-slate-400">This toggle saves instantly, no need to hit Save.</p>
         <p className="mt-3 text-xs text-slate-400">Call sequence: days 1, 2, 3, 4, 6, 8, 10, 13, 16, 19, 21 after a lead enters the stage. Moving stages restarts the sequence.</p>
       </div>
 

@@ -1759,15 +1759,20 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
   const leadActivities = activities.filter((a) => a.lead_id === lead.id);
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-center overflow-y-auto bg-slate-900/40 p-0 sm:p-4" onClick={onClose}>
-      <div className="my-0 w-full max-w-6xl rounded-none bg-white shadow-xl sm:my-4 sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-100">
+      <div className="mx-auto min-h-full w-full max-w-6xl bg-white shadow-sm">
+        {/* back bar */}
+        <div className="sticky top-0 z-20 flex items-center gap-2 border-b border-slate-200 bg-white px-5 py-2.5">
+          <button onClick={onClose} className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-semibold text-slate-600 hover:bg-slate-100"><ChevronDown size={16} className="rotate-90" /> Back to pipeline</button>
+          {savedAt > 0 && <span className="ml-auto inline-flex items-center gap-1 text-xs font-medium text-blue-600"><Check size={13} /> Saved</span>}
+        </div>
         {/* journey stepper */}
         <div className="border-b border-slate-100 px-5 py-3">
           <StageStepper status={lead.status} />
         </div>
 
         {/* head */}
-        <div className="sticky top-0 z-10 flex items-center justify-between gap-3 rounded-t-2xl border-b border-slate-100 bg-white px-5 py-3.5">
+        <div className="flex items-center justify-between gap-3 border-b border-slate-100 bg-white px-5 py-3.5">
           <div className="min-w-0">
             <div className="flex items-center gap-2"><span className="truncate text-lg font-bold">{leadTitle(lead)}</span><StagePill status={lead.status} /></div>
             {leadSubName(lead) && (
@@ -1779,8 +1784,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
             <div className="mt-0.5"><QualChips lead={lead} /></div>
           </div>
           <div className="flex items-center gap-2">
-            {savedAt > 0 && <span className="inline-flex items-center gap-1 text-xs font-medium text-blue-600"><Check size={13} /> Saved</span>}
-            <button onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"><X size={20} /></button>
+            {lead.phone && <a href={telHref(lead.phone)} className="inline-flex items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-900"><Phone size={14} /> Call</a>}
           </div>
         </div>
 

@@ -17,6 +17,7 @@ const STAGES = [
   { key: "callback", label: "Call Back", tone: "violet" },
   { key: "not_interested", label: "Not Interested", tone: "orange" },
   { key: "report_pulled", label: "Report Pulled", tone: "teal" },
+  { key: "app_sent", label: "Application Sent", tone: "purple" },
   { key: "submitted", label: "Submitted", tone: "indigo" },
   { key: "pre_approved", label: "Approved / Offer", tone: "cyan" },
   { key: "contracts_out", label: "Contracts Out", tone: "lime" },
@@ -29,6 +30,7 @@ const STAGES = [
 const TONE = {
   slate: "bg-slate-100 text-slate-700 ring-slate-200",
   sky: "bg-sky-100 text-sky-800 ring-sky-200",
+  purple: "bg-purple-100 text-purple-800 ring-purple-200",
   amber: "bg-amber-100 text-amber-800 ring-amber-200",
   violet: "bg-violet-100 text-violet-800 ring-violet-200",
   indigo: "bg-indigo-100 text-indigo-800 ring-indigo-200",
@@ -484,6 +486,42 @@ Tell me when works and I will call you then, or start it yourself here: {{link}}
 
 {{signature}}` },
 
+
+  // ============ APPLICATION SENT / chase the signed app (pools appchase_sms, appchase_email) ============
+  { id: "appchase_sms_a", pool: "appchase_sms", name: "App chase text: nudge", channel: "sms", subject: "",
+    body: `{{first}}, Joe with ASAP. I sent over the application to get you moving. Were you able to get it filled out and sent back? Let me know if you hit any snags.` },
+  { id: "appchase_sms_b", pool: "appchase_sms", name: "App chase text: almost there", channel: "sms", subject: "",
+    body: `{{first}}, Joe here. You are one step away. Once that application is back to me I can get everything moving on my end. Need anything from me to finish it?` },
+  { id: "appchase_sms_c", pool: "appchase_sms", name: "App chase text: quick check", channel: "sms", subject: "",
+    body: `{{first}}, quick check from Joe at ASAP. Any questions on the application I sent? Happy to walk you through any part of it. Just reply here.` },
+  { id: "appchase_sms_d", pool: "appchase_sms", name: "App chase text: help", channel: "sms", subject: "",
+    body: `{{first}}, Joe with ASAP. If the application looked like a lot, do not worry, most of it is quick. Text me and I will help you knock it out in a few minutes.` },
+
+  { id: "appchase_email_a", pool: "appchase_email", name: "App chase email: nudge", channel: "email", subject: "Did you get the application, {{first}}?",
+    body: `Hey {{first}},
+
+I sent over the application to get your file moving. Just checking that it came through and seeing if you had a chance to complete it.
+
+Once I have it back, I can take it from there and get everything working for you. If any part of it is unclear, reply here and I will walk you through it.
+
+{{signature}}` },
+  { id: "appchase_email_b", pool: "appchase_email", name: "App chase email: whats needed", channel: "email", subject: "One step from moving forward, {{first}}",
+    body: `Hey {{first}},
+
+You are right at the finish line. The only thing I am waiting on is your completed application. As soon as it is back to me, I go to work.
+
+To make it easy, here is what the application typically asks for: basic business details, a few recent bank statements, and a voided check. If you have questions on any of it, just reply.
+
+{{signature}}` },
+  { id: "appchase_email_c", pool: "appchase_email", name: "App chase email: still here", channel: "email", subject: "Still holding your spot, {{first}}",
+    body: `Hey {{first}},
+
+Following up on the application I sent. No rush, I just do not want it to slip through the cracks on a busy week.
+
+Whenever you are ready, send it back and I will get everything moving. Reply here if you need me to resend it or help you through any part.
+
+{{signature}}` },
+
 ];
 
 // Per stage: ordered steps. day = days after entering that stage.
@@ -575,6 +613,15 @@ const DEFAULT_CADENCES = {
     { day: 30, pool: "ni_email" },
   ],
   report_pulled: [{ day: 0, pool: "pulled_sms" }],
+  app_sent: [
+    { day: 1, pool: "appchase_sms" },
+    { day: 2, pool: "appchase_email" },
+    { day: 4, pool: "appchase_sms" },
+    { day: 7, pool: "appchase_email" },
+    { day: 11, pool: "appchase_sms" },
+    { day: 16, pool: "appchase_email" },
+    { day: 21, pool: "appchase_sms" },
+  ],
   submitted: [],
   pre_approved: [],
   contracts_out: [],
@@ -771,7 +818,13 @@ const STAGE_PLAYBOOK = {
   ],
   report_pulled: [
     "Review the credit report.",
-    "Submit it to Torro (Submit button below).",
+    "Decide the likely loan program (top of file).",
+    "Submit to Torro, or send the client the application if they want more.",
+  ],
+  app_sent: [
+    "Application has been emailed to the client.",
+    "Chase the signed application back (auto follow-ups are running).",
+    "When it comes back, submit to Torro and move to Submitted.",
   ],
   submitted: [
     "Wait for Torro's response.",
@@ -803,7 +856,8 @@ function nextStepFor(lead) {
     case "interested": return { text: "They're in. Send the MyScoreIQ link so they can pull their report and get pre-approved.", tone: "sky" };
     case "callback": return { text: "Reconnect when you agreed. Reminder messages are running until you reach them.", tone: "violet" };
     case "not_interested": return { text: "Parked. Light check-ins go out in case their timing changes.", tone: "orange" };
-    case "report_pulled": return { text: "Report is in. Review it, then email it to Torro for a pre-approval.", tone: "teal" };
+    case "report_pulled": return { text: "Report is in. Pick the likely loan program, then submit to Torro or send the application.", tone: "teal" };
+    case "app_sent": return { text: "Application emailed. Chase the signed app back, then submit to Torro.", tone: "purple" };
     case "submitted": return { text: "Submitted to Torro. Waiting on their pre-approval.", tone: "indigo" };
     case "pre_approved": return { text: "Torro approved them. Review the offer with the client. When they accept, send contracts.", tone: "cyan" };
     case "contracts_out": return { text: "Contracts are out for signature. Once signed and funded, mark it funded.", tone: "lime" };
@@ -928,6 +982,7 @@ const JOURNEY = [
   { key: "contacted", label: "Contacted", match: ["voicemail", "callback", "not_interested"] },
   { key: "interested", label: "Interested", match: ["interested"] },
   { key: "report", label: "Report", match: ["report_pulled"] },
+  { key: "app_sent", label: "App Sent", match: ["app_sent"] },
   { key: "submitted", label: "Submitted", match: ["submitted"] },
   { key: "decision", label: "Decision", match: ["pre_approved", "contracts_out", "declined"] },
   { key: "funded", label: "Funded", match: ["funded", "commission_paid"] },
@@ -1417,7 +1472,7 @@ function Dashboard({ userEmail }) {
 /* ================================================================== */
 const BOARDS = {
   outreach: { label: "Outreach", stages: ["new", "voicemail", "interested", "callback", "not_interested"] },
-  funding: { label: "Funding", stages: ["report_pulled", "submitted", "pre_approved", "contracts_out", "funded", "commission_paid"] },
+  funding: { label: "Funding", stages: ["report_pulled", "app_sent", "submitted", "pre_approved", "contracts_out", "funded", "commission_paid"] },
   closed: { label: "Closed", stages: ["declined", "credit_repair", "dead"] },
 };
 
@@ -2090,7 +2145,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
           </Section>
 
           {/* application (after pre-approval, if they want more) */}
-          <Section icon={<FileText size={15} />} title="Application (for more funding)" collapsible defaultOpen={false}>
+          <Section icon={<FileText size={15} />} title="Application" collapsible defaultOpen={["report_pulled","app_sent","pre_approved"].includes(lead.status)}>
             {lead.status === "pre_approved" && (
               <div className="mb-2 rounded-md bg-teal-50 px-2.5 py-1.5 text-xs font-medium text-teal-700 ring-1 ring-inset ring-teal-200">
                 Pre-approved. If the client wants more than Torro offered, send the full application so they can sign and upload bank statements.
@@ -2101,7 +2156,13 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
               <button disabled={!lead.email} onClick={() => openCompose({ lead, channel: "email", to: lead.email, subject: fillTokens((templates.find(t=>t.id==="app_email")?.subject) || APP_EMAIL_SUBJECT_DEFAULT, lead, config), body: fillTokens((templates.find(t=>t.id==="app_email")?.body) || APP_EMAIL_DEFAULT, lead, config), kind: "link" })} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium ${lead.email ? "bg-white text-blue-700 ring-1 ring-blue-300 hover:bg-blue-50" : "bg-slate-100 text-slate-300 ring-1 ring-slate-200"}`}><Mail size={15} /> Email application</button>
               <CopyButton text={config.appLink || APP_LINK_DEFAULT} label="Copy app link" className="bg-slate-100 text-slate-700 hover:bg-slate-200" />
             </div>
-            <p className="mt-2 text-xs text-slate-400">Send this only after the pre-approval, if the client wants more funding. The client signs and uploads their bank statements, voided check, license, and report in the form.</p>
+            {lead.status !== "app_sent" && (
+              <button onClick={() => updateLead(lead.id, { status: "app_sent" })} className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-purple-600 px-3 py-2 text-sm font-semibold text-white hover:bg-purple-700"><Check size={15} /> Mark application sent</button>
+            )}
+            {lead.status === "app_sent" && (
+              <div className="mt-2 rounded-md bg-purple-50 px-2.5 py-1.5 text-xs font-medium text-purple-700 ring-1 ring-inset ring-purple-200">Application sent. Auto follow-ups are chasing the signed app. Submit to Torro when it's back.</div>
+            )}
+            <p className="mt-2 text-xs text-slate-400">Send the application, then mark it sent to move the client into Application Sent and start the chase sequence. The client signs and uploads their bank statements, voided check, license, and report in the form.</p>
           </Section>
 
           {/* submit to funder */}
@@ -2340,6 +2401,7 @@ const POOL_LABELS = {
   ni_email: "Not interested, email", pulled_sms: "Report pulled, text",
   app_sms: "Application, text", app_email: "Application, email",
   urgency_sms: "Urgency nudge, text", value_email: "Value / education, email",
+  appchase_sms: "Application chase, text", appchase_email: "Application chase, email",
   proof_email: "Social proof, email", breakup_sms: "Breakup / final, text", breakup_email: "Breakup / final, email",
   manual: "Manual only (not auto-sent)",
 };

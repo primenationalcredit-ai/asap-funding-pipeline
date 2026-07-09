@@ -36,24 +36,24 @@ export const handler = async (event) => {
   catch { return { statusCode: 400, body: "Invalid JSON" }; }
 
   const msg = payload?.body;
-  // Log every delivery so we can confirm RingCentral is reaching us at all,
-  // and see exactly what it sent.
+  // Log every delivery so we can confirm RingCentral is reaching us and see what it sent.
   console.log("[rc-inbound] HIT", JSON.stringify({
     type: msg?.type, direction: msg?.direction,
     from: msg?.from?.phoneNumber, to: msg?.to?.[0]?.phoneNumber,
-    hasText: !!(msg?.subject), event: payload?.event,
+    hasText: !!(msg?.subject || msg?.text), event: payload?.event,
   }));
   if (!msg) return { statusCode: 200, body: "ignored" };
 
   // Only inbound texts. Outbound ones we already record when we send them.
   const isSms = msg.type === "SMS" || msg.type === "Text";
-  if (!isSms || msg.direction !== "Inbound") {
+  const dir = String(msg.direction || "").toLowerCase();
+  if (!isSms || dir !== "inbound") {
     return { statusCode: 200, body: "ignored" };
   }
 
-  const fromNumber = msg.from?.phoneNumber || "";
-  const toNumber = msg.to?.[0]?.phoneNumber || "";
-  const text = msg.subject || ""; // RingCentral puts SMS text in `subject`
+  const fromNumber = msg.from?.phoneNumber || msg.from?.extensionNumber || "";
+  const toNumber = (msg.to && msg.to[0] && (msg.to[0].phoneNumber || msg.to[0].extensionNumber)) || "";
+  const text = msg.subject || msg.text || ""; // instant SMS carries the body in `subject`
   const externalId = msg.id ? `rc-${msg.id}` : null;
 
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;

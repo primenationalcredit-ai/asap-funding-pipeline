@@ -55,13 +55,29 @@ export const handler = async (event) => {
       return resp(200, { deliveryUrl, subscriptions: await r.json() });
     }
 
+    // Remove any existing subscriptions pointing at our inbound URL, so we
+    // do not stack the old bare-ping subscription with the new instant one.
+    try {
+      const listR = await fetch(`${server}/restapi/v1.0/subscription`, { headers: { Authorization: `Bearer ${token}` } });
+      const listJ = await listR.json();
+      for (const s of listJ.records || []) {
+        if (s.deliveryMode?.address === deliveryUrl) {
+          await fetch(`${server}/restapi/v1.0/subscription/${s.id}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
+          console.log("[rc-subscribe] removed old subscription", s.id);
+        }
+      }
+    } catch (e) { console.log("[rc-subscribe] cleanup skipped:", e.message); }
+
+    const ext = process.env.RC_SMS_EXTENSION_ID || "~";
     const r = await fetch(`${server}/restapi/v1.0/subscription`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        eventFilters: [`/restapi/v1.0/account/~/extension/${process.env.RC_SMS_EXTENSION_ID || "~"}/message-store?type=SMS&direction=Inbound`],
+        // "instant" delivers the full message record (from, text, direction),
+        // unlike the plain message-store event which only signals a change.
+        eventFilters: [`/restapi/v1.0/account/~/extension/${ext}/message-store/instant?type=SMS`],
         deliveryMode: { transportType: "WebHook", address: deliveryUrl },
-        expiresIn: 630720000, // ~20 years; RingCentral caps this itself
+        expiresIn: 630720000,
       }),
     });
     const j = await r.json();

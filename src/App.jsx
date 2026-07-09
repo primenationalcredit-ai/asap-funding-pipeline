@@ -1335,6 +1335,16 @@ function Dashboard({ userEmail }) {
     refetchComms();
   }, [userEmail, logTouch, refetchComms]);
 
+  // Add a free-text note that lands in the client's timeline
+  const addNote = useCallback(async (lead, text) => {
+    if (!text || !text.trim()) return;
+    await supabase.from("communications").insert({
+      lead_id: lead.id, direction: "out", channel: "note", body: text.trim(), by_user: userEmail,
+    });
+    logTouch(lead.id, "note", "note", { note: text.trim(), by: userEmail });
+    refetchComms();
+  }, [userEmail, logTouch, refetchComms]);
+
   const dueList = useMemo(() => (
     leads.map((l) => ({ l, step: nextDue(l, cadences, templates) }))
       .filter((x) => x.step && x.step.dueAt <= Date.now() + DAY)
@@ -1446,7 +1456,7 @@ function Dashboard({ userEmail }) {
               onGoFollowups={() => setTab("followups")} />
           )}
           {tab === "followups" && <Followups dueList={dueList} config={config} onOpen={setProfileId} openCompose={setCompose} updateLead={updateLead} />}
-          {tab === "inbox" && <Conversations leads={leads} comms={comms} unreadLeadIds={unreadLeadIds} onSend={sendReply} onOpen={setProfileId} templates={templates} config={config} />}
+          {tab === "inbox" && <Conversations leads={leads} comms={comms} unreadLeadIds={unreadLeadIds} onSend={sendReply} onAddNote={addNote} onOpen={setProfileId} templates={templates} config={config} />}
           {tab === "activities" && <Activities activities={activities} leads={leads} onOpen={setProfileId} completeActivity={completeActivity} deleteActivity={deleteActivity} />}
           {tab === "messaging" && <Messaging templates={templates} persistTemplates={persistTemplates} cadences={cadences} persistCadences={persistCadences} />}
           {tab === "commissions" && <Commissions leads={leads} onOpen={setProfileId} />}
@@ -1880,14 +1890,8 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
             )}
           </div>
 
-          {/* notes: prominent, quick to add */}
-          <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-3">
-            <label className="mb-1.5 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-amber-700"><FileText size={13} /> Notes</label>
-            <textarea value={draft.notes} onChange={set("notes")} rows={4} placeholder="What did you talk about? Where did you leave off? Next steps?" className="w-full resize-y rounded-lg border border-amber-200 bg-white px-3 py-2 text-sm outline-none focus:border-amber-400" />
-          </div>
-
           {/* conversation: where you left off */}
-          <Conversation lead={lead} comms={comms} onSend={sendReply} templates={templates} config={config} compact />
+          <Conversation lead={lead} comms={comms} onSend={sendReply} onAddNote={addNote} templates={templates} config={config} compact />
 
           {/* what to do next */}
           {STAGE_PLAYBOOK[lead.status] && (
@@ -2700,66 +2704,121 @@ function ActivityPanel({ lead, activities, addActivity, completeActivity, delete
 }
 
 
-function Conversation({ lead, comms, onSend, templates = [], config = {}, compact = false }) {
-  const [channel, setChannel] = useState("sms");
+function Conversation({ lead, comms, onSend, onAddNote, templates = [], config = {}, compact = false }) {
+  const [mode, setMode] = useState("sms"); // sms | email | note
+  const [filter, setFilter] = useState("all"); // all | note | call | sms | email
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
+  const [note, setNote] = useState("");
+  const [includeSig, setIncludeSig] = useState(true);
+  const [showPreview, setShowPreview] = useState(true);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const endRef = useRef(null);
 
-  const thread = useMemo(
-    () => comms.filter((c) => c.lead_id === lead.id).sort((a, b) => new Date(a.at) - new Date(b.at)),
-    [comms, lead.id]
-  );
-  useEffect(() => { endRef.current?.scrollIntoView({ block: "nearest" }); }, [thread.length]);
+  // Merge messages (texts/emails/notes) + logged calls into one timeline
+  const items = useMemo(() => {
+    const msgs = comms.filter((c) => c.lead_id === lead.id).map((c) => ({
+      id: c.id, kind: c.channel === "note" ? "note" : c.channel,
+      direction: c.direction, at: new Date(c.at).getTime(),
+      subject: c.subject, body: c.body, by: c.by_user,
+    }));
+    const calls = (lead.touches || []).filter((t) => t.kind === "call").map((t, i) => ({
+      id: "call-" + t.at + "-" + i, kind: "call", direction: "log", at: t.at,
+      body: t.note || "", disposition: t.disposition, by: t.by,
+    }));
+    return [...msgs, ...calls].sort((a, b) => a.at - b.at);
+  }, [comms, lead.id, lead.touches]);
 
-  const picks = templates.filter((t) => t.channel === channel);
+  const counts = useMemo(() => {
+    const c = { all: items.length, note: 0, call: 0, sms: 0, email: 0 };
+    items.forEach((i) => { if (c[i.kind] !== undefined) c[i.kind]++; });
+    return c;
+  }, [items]);
+
+  const shown = filter === "all" ? items : items.filter((i) => i.kind === filter);
+  useEffect(() => { endRef.current?.scrollIntoView({ block: "nearest" }); }, [items.length]);
+
+  const picks = templates.filter((t) => t.channel === mode);
   const applyTemplate = (id) => {
     const t = templates.find((x) => x.id === id);
     if (!t) return;
-    if (channel === "email") setSubject(fillTokens(t.subject, lead, config));
+    if (mode === "email") setSubject(fillTokens(t.subject, lead, config));
     setBody(fillTokens(t.body, lead, config));
   };
 
-  const canSend = channel === "sms" ? !!lead.phone : !!lead.email;
+  const sig = config.emailSignature || "";
+  const emailPreviewBody = body + (includeSig && sig ? "\n\n" + sig : "");
+  const canSend = mode === "sms" ? !!lead.phone : !!lead.email;
+
   const send = async () => {
     if (!body.trim() || !canSend) return;
     setBusy(true); setErr("");
-    let outBody = body;
-    // append email signature if set and not already present
-    if (channel === "email" && config.emailSignature && !outBody.includes(config.emailSignature)) {
-      outBody = outBody + "\n\n" + config.emailSignature;
-    }
-    try { await onSend(lead, channel, subject, outBody); setBody(""); setSubject(""); }
+    const outBody = mode === "email" ? emailPreviewBody : body;
+    try { await onSend(lead, mode, subject, outBody); setBody(""); setSubject(""); }
     catch (e) { setErr(String(e.message || e)); }
     finally { setBusy(false); }
   };
+  const saveNote = async () => {
+    if (!note.trim()) return;
+    setBusy(true);
+    try { await onAddNote(lead, note); setNote(""); }
+    finally { setBusy(false); }
+  };
+
+  const CHIPS = [["all", "All"], ["note", "Notes"], ["call", "Calls"], ["sms", "Texts"], ["email", "Emails"]];
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white">
-      <div className="flex items-center gap-1.5 border-b border-slate-100 px-4 py-2.5 text-xs font-bold uppercase tracking-wide text-slate-500">
-        <MessageSquare size={14} className="text-blue-600" /> Conversation
-        {thread.length > 0 && <span className="text-slate-400">({thread.length})</span>}
+      {/* header + filters */}
+      <div className="border-b border-slate-100 px-3 py-2.5">
+        <div className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-slate-500">
+          <MessageSquare size={14} className="text-blue-600" /> Activity timeline
+        </div>
+        <div className="flex flex-wrap gap-1">
+          {CHIPS.map(([k, label]) => (
+            <button key={k} onClick={() => setFilter(k)} className={`rounded-full px-2.5 py-1 text-xs font-medium ${filter === k ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>
+              {label}{counts[k] > 0 && <span className={filter === k ? "text-blue-100" : "text-slate-400"}> {counts[k]}</span>}
+            </button>
+          ))}
+        </div>
       </div>
 
-      <div className={`flex flex-col gap-2 overflow-y-auto px-4 py-3 ${compact ? "max-h-72" : "max-h-[380px]"}`}>
-        {thread.length === 0 && <p className="py-6 text-center text-sm text-slate-400">No messages yet. Send a text or email below and it will show here, along with their replies.</p>}
-        {thread.map((c) => {
-          const inbound = c.direction === "in";
-          const chanLabel = c.channel === "sms" ? "SMS" : "Email";
+      {/* timeline */}
+      <div className={`flex flex-col gap-2 overflow-y-auto px-4 py-3 ${compact ? "max-h-80" : "max-h-[420px]"}`}>
+        {shown.length === 0 && <p className="py-6 text-center text-sm text-slate-400">Nothing here yet. Send a text or email, or add a note below.</p>}
+        {shown.map((it) => {
+          if (it.kind === "note") {
+            return (
+              <div key={it.id} className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm">
+                <div className="mb-0.5 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-amber-700"><FileText size={10} /> Note <span className="font-normal normal-case text-amber-600/70">{fmtDateTime(it.at)}{it.by ? " · " + it.by : ""}</span></div>
+                <div className="whitespace-pre-wrap text-slate-700">{it.body}</div>
+              </div>
+            );
+          }
+          if (it.kind === "call") {
+            return (
+              <div key={it.id} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                <div className="mb-0.5 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-500"><Phone size={10} /> Call{it.disposition ? " · " + it.disposition : ""} <span className="font-normal normal-case text-slate-400">{fmtDateTime(it.at)}{it.by ? " · " + it.by : ""}</span></div>
+                {it.body && <div className="whitespace-pre-wrap text-slate-700">{it.body}</div>}
+              </div>
+            );
+          }
+          // sms / email bubble
+          const inbound = it.direction === "in";
+          const chanLabel = it.kind === "sms" ? "SMS" : "Email";
           return (
-            <div key={c.id} className={`flex ${inbound ? "justify-start" : "justify-end"}`}>
+            <div key={it.id} className={`flex ${inbound ? "justify-start" : "justify-end"}`}>
               <div className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm ${inbound ? "rounded-bl-sm bg-slate-100 text-slate-800" : "rounded-br-sm bg-blue-600 text-white"}`}>
                 <div className={`mb-0.5 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide ${inbound ? "text-slate-500" : "text-blue-100"}`}>
-                  <span className={`rounded px-1 py-px ${c.channel === "sms" ? (inbound ? "bg-blue-100 text-blue-700" : "bg-blue-500/60 text-white") : (inbound ? "bg-violet-100 text-violet-700" : "bg-violet-500/60 text-white")}`}>
-                    {c.channel === "sms" ? <MessageSquare size={9} className="mr-0.5 inline" /> : <Mail size={9} className="mr-0.5 inline" />}{chanLabel}
+                  <span className={`rounded px-1 py-px ${it.kind === "sms" ? (inbound ? "bg-blue-100 text-blue-700" : "bg-blue-500/60 text-white") : (inbound ? "bg-violet-100 text-violet-700" : "bg-violet-500/60 text-white")}`}>
+                    {it.kind === "sms" ? <MessageSquare size={9} className="mr-0.5 inline" /> : <Mail size={9} className="mr-0.5 inline" />}{chanLabel}
                   </span>
                   {inbound ? "In" : "Out"}
-                  <span className="font-normal normal-case opacity-80">{fmtDateTime(new Date(c.at).getTime())}</span>
+                  <span className="font-normal normal-case opacity-80">{fmtDateTime(it.at)}</span>
                 </div>
-                {c.subject && <div className={`text-xs font-semibold ${inbound ? "text-slate-600" : "text-blue-100"}`}>{c.subject}</div>}
-                <div className="whitespace-pre-wrap">{c.body}</div>
+                {it.subject && <div className={`text-xs font-semibold ${inbound ? "text-slate-600" : "text-blue-100"}`}>{it.subject}</div>}
+                <div className="whitespace-pre-wrap">{it.body}</div>
               </div>
             </div>
           );
@@ -2769,26 +2828,57 @@ function Conversation({ lead, comms, onSend, templates = [], config = {}, compac
 
       {/* composer */}
       <div className="border-t border-slate-100 p-3">
-        <div className="mb-2 flex gap-1 rounded-lg bg-slate-100 p-1 text-sm">
-          <button onClick={() => setChannel("sms")} className={`flex-1 rounded-md py-1.5 font-medium ${channel === "sms" ? "bg-white text-blue-700 shadow-sm" : "text-slate-500"}`}><MessageSquare size={13} className="mr-1 inline" /> Text</button>
-          <button onClick={() => setChannel("email")} className={`flex-1 rounded-md py-1.5 font-medium ${channel === "email" ? "bg-white text-blue-700 shadow-sm" : "text-slate-500"}`}><Mail size={13} className="mr-1 inline" /> Email</button>
+        <div className="mb-2 grid grid-cols-3 gap-1 rounded-lg bg-slate-100 p-1 text-sm">
+          <button onClick={() => setMode("sms")} className={`rounded-md py-1.5 font-medium ${mode === "sms" ? "bg-white text-blue-700 shadow-sm" : "text-slate-500"}`}><MessageSquare size={13} className="mr-1 inline" /> Text</button>
+          <button onClick={() => setMode("email")} className={`rounded-md py-1.5 font-medium ${mode === "email" ? "bg-white text-blue-700 shadow-sm" : "text-slate-500"}`}><Mail size={13} className="mr-1 inline" /> Email</button>
+          <button onClick={() => setMode("note")} className={`rounded-md py-1.5 font-medium ${mode === "note" ? "bg-white text-amber-700 shadow-sm" : "text-slate-500"}`}><FileText size={13} className="mr-1 inline" /> Note</button>
         </div>
-        {picks.length > 0 && (
-          <select defaultValue="" onChange={(e) => { applyTemplate(e.target.value); e.target.value = ""; }} className="mb-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 outline-none focus:border-blue-400">
-            <option value="">Insert a template...</option>
-            {picks.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-          </select>
+
+        {mode === "note" ? (
+          <div className="flex items-end gap-2">
+            <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="Add a note to this client's timeline..." className="flex-1 resize-none rounded-lg border border-amber-200 bg-amber-50/40 px-3 py-2 text-sm outline-none focus:border-amber-400" />
+            <button onClick={saveNote} disabled={busy || !note.trim()} className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500 px-3.5 py-2.5 text-sm font-semibold text-white hover:bg-amber-600 disabled:opacity-40"><FileText size={15} /> {busy ? "..." : "Add note"}</button>
+          </div>
+        ) : (
+          <>
+            {picks.length > 0 && (
+              <select defaultValue="" onChange={(e) => { applyTemplate(e.target.value); e.target.value = ""; }} className="mb-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 outline-none focus:border-blue-400">
+                <option value="">Insert a template...</option>
+                {picks.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+            )}
+            {mode === "email" && (
+              <input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Subject" className="mb-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400" />
+            )}
+            <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={mode === "email" ? 4 : 2} placeholder={canSend ? `Type a ${mode === "sms" ? "text" : "email"}...` : mode === "sms" ? "No phone on file" : "No email on file"} disabled={!canSend}
+              className="w-full resize-none rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400 disabled:bg-slate-50" />
+
+            {mode === "email" && (
+              <div className="mt-2">
+                <div className="mb-1 flex items-center justify-between">
+                  <label className="flex items-center gap-1.5 text-xs font-medium text-slate-500">
+                    <input type="checkbox" checked={includeSig} onChange={(e) => setIncludeSig(e.target.checked)} className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600" />
+                    Include signature
+                  </label>
+                  <button onClick={() => setShowPreview((s) => !s)} className="text-xs font-medium text-blue-600 hover:underline">{showPreview ? "Hide" : "Show"} preview</button>
+                </div>
+                {showPreview && (
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
+                    <div className="mb-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">Preview</div>
+                    {subject && <div className="mb-1 font-semibold text-slate-800">{subject}</div>}
+                    <div className="whitespace-pre-wrap text-slate-700">{emailPreviewBody || <span className="text-slate-400">Your email will appear here...</span>}</div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="mt-2 flex justify-end">
+              <button onClick={send} disabled={busy || !body.trim() || !canSend} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-40">
+                <Send size={15} /> {busy ? "Sending..." : mode === "sms" ? "Send text" : "Send email"}
+              </button>
+            </div>
+          </>
         )}
-        {channel === "email" && (
-          <input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Subject" className="mb-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400" />
-        )}
-        <div className="flex items-end gap-2">
-          <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={2} placeholder={canSend ? `Type a ${channel === "sms" ? "text" : "email"}...` : channel === "sms" ? "No phone on file" : "No email on file"} disabled={!canSend}
-            className="flex-1 resize-none rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400 disabled:bg-slate-50" />
-          <button onClick={send} disabled={busy || !body.trim() || !canSend} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 py-2.5 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-40">
-            <Send size={15} /> {busy ? "..." : "Send"}
-          </button>
-        </div>
         {err && <div className="mt-2 rounded-lg bg-rose-50 px-3 py-1.5 text-xs text-rose-700">{err}</div>}
       </div>
     </div>
@@ -2796,7 +2886,7 @@ function Conversation({ lead, comms, onSend, templates = [], config = {}, compac
 }
 
 // GHL-style inbox: leads with messages on the left, the thread + reply on the right
-function Conversations({ leads, comms, unreadLeadIds, onSend, onOpen, templates = [], config = {} }) {
+function Conversations({ leads, comms, unreadLeadIds, onSend, onAddNote, onOpen, templates = [], config = {} }) {
   const withMsgs = useMemo(() => {
     const latest = {};
     for (const c of comms) {
@@ -2851,7 +2941,7 @@ function Conversations({ leads, comms, unreadLeadIds, onSend, onOpen, templates 
               <button onClick={() => onOpen(selected.id)} className="text-sm font-bold text-slate-800 hover:text-blue-700">{leadTitle(selected)}</button>
               <StagePill status={selected.status} />
             </div>
-            <Conversation lead={selected} comms={comms} onSend={onSend} templates={templates} config={config} />
+            <Conversation lead={selected} comms={comms} onSend={onSend} onAddNote={onAddNote} templates={templates} config={config} />
           </>
         )}
       </div>

@@ -1088,6 +1088,23 @@ function Labeled({ label, children }) {
     </div>
   );
 }
+
+// Compact editable field for the top info bar. Amber flag until confirmed; editing auto-confirms.
+function TopField({ label, value, onChange, confirmed, onConfirm, placeholder }) {
+  const hasValue = value != null && String(value).trim() !== "";
+  const needs = hasValue && !confirmed;
+  return (
+    <div className={`flex flex-col rounded-lg border px-2.5 py-1.5 ${needs ? "border-amber-300 bg-amber-50/60" : "border-slate-200 bg-white"}`}>
+      <div className="flex items-center gap-1">
+        <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{label}</span>
+        {hasValue && (confirmed
+          ? <Check size={11} className="text-emerald-500" />
+          : <button type="button" onClick={onConfirm} title="Confirm this is current"><AlertCircle size={11} className="text-amber-500" /></button>)}
+      </div>
+      <input value={value || ""} onChange={onChange} placeholder={placeholder} className="w-full bg-transparent text-sm font-semibold text-slate-800 outline-none placeholder:font-normal placeholder:text-slate-300" />
+    </div>
+  );
+}
 const inputCls = "w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100";
 
 // A labeled input that shows a "confirm with client" flag until verified.
@@ -1880,11 +1897,44 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
                 {lead.phone && <a href={telHref(lead.phone)} className="font-mono text-xs text-slate-400 hover:text-blue-600">{lead.phone}</a>}
               </div>
             )}
-            <div className="mt-0.5"><QualChips lead={lead} /></div>
           </div>
           <div className="flex items-center gap-2">
             {lead.phone && <a href={telHref(lead.phone)} className="inline-flex items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-900"><Phone size={14} /> Call</a>}
           </div>
+        </div>
+
+        {/* editable info bar: all key intake fields, confirm flags */}
+        <div className="border-b border-slate-100 bg-slate-50/60 px-5 py-3">
+          {(() => {
+            const FIELDS = [
+              ["businessName", "Business", ""],
+              ["businessType", "Industry", ""],
+              ["fundingPurpose", "Needs it for", "use of funds"],
+              ["desiredAmount", "Wants", "$"],
+              ["monthlyRevenue", "Rev/mo", ""],
+              ["creditScore", "Score", ""],
+              ["timeInBusiness", "In biz", ""],
+              ["fundingTimeline", "How soon", ""],
+              ["einStatus", "EIN / entity", ""],
+              ["bestTime", "Best time", ""],
+            ];
+            const unconfirmed = FIELDS.filter(([k]) => draft[k] && String(draft[k]).trim() && !isConfirmed(k)).map(([k]) => k);
+            return (
+              <>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+                  {FIELDS.map(([k, label, ph]) => (
+                    <TopField key={k} label={label} value={draft[k]} onChange={setC(k)} confirmed={isConfirmed(k)} onConfirm={() => confirmField(k)} placeholder={ph} />
+                  ))}
+                </div>
+                {unconfirmed.length > 0 && (
+                  <div className="mt-2 flex items-center gap-2 text-xs text-amber-700">
+                    <AlertCircle size={13} /> {unconfirmed.length} field{unconfirmed.length === 1 ? "" : "s"} still need confirming with the client.
+                    <button onClick={() => setDraft({ ...draft, confirmedFields: [...new Set([...confirmedList, ...FIELDS.map(([k]) => k)])] })} className="rounded-md bg-amber-600 px-2 py-0.5 font-semibold text-white hover:bg-amber-700">Confirm all</button>
+                  </div>
+                )}
+              </>
+            );
+          })()}
         </div>
 
         <div className="grid gap-5 px-5 py-4 lg:grid-cols-5">
@@ -2076,40 +2126,6 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
 
           {/* RIGHT COLUMN: record & pipeline */}
           <div className="space-y-5 lg:col-span-2">
-
-          {/* business & funding info: editable, confirmable */}
-          <Section icon={<Building2 size={15} />} title="Business & funding info">
-            {(() => {
-              const FIELDS = [
-                ["businessName", "Business name", ""],
-                ["businessType", "Business type / industry", ""],
-                ["fundingPurpose", "What they need funding for", "Purpose / use of funds"],
-                ["desiredAmount", "Amount they want", "$"],
-                ["monthlyRevenue", "Monthly revenue", ""],
-                ["creditScore", "Estimated credit score", ""],
-                ["timeInBusiness", "Time in business", ""],
-                ["fundingTimeline", "How soon they need it", ""],
-                ["einStatus", "EIN / entity status", "Has EIN, sole prop, etc."],
-                ["bestTime", "Best time to call", ""],
-              ];
-              const unconfirmed = FIELDS.filter(([k]) => draft[k] && String(draft[k]).trim() && !isConfirmed(k)).map(([k]) => k);
-              return (
-                <>
-                  {unconfirmed.length > 0 && (
-                    <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 ring-1 ring-inset ring-amber-200">
-                      <AlertCircle size={13} /> {unconfirmed.length} field{unconfirmed.length === 1 ? "" : "s"} from the lead form still need confirming with the client.
-                      <button onClick={() => setDraft({ ...draft, confirmedFields: [...new Set([...confirmedList, ...FIELDS.map(([k]) => k)])] })} className="ml-auto rounded-md bg-amber-600 px-2 py-1 font-semibold text-white hover:bg-amber-700">Confirm all</button>
-                    </div>
-                  )}
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    {FIELDS.map(([k, label, ph]) => (
-                      <ConfirmField key={k} label={label} value={draft[k]} onChange={setC(k)} confirmed={isConfirmed(k)} onConfirm={() => confirmField(k)} placeholder={ph} />
-                    ))}
-                  </div>
-                </>
-              );
-            })()}
-          </Section>
 
           {/* stage */}
           <Section icon={<ListChecks size={15} />} title="Stage">

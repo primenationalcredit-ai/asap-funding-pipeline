@@ -31,3 +31,8 @@
   from = "/api/rc-subscribe"
   to = "/.netlify/functions/rc-subscribe"
   status = 200
+
+[[redirects]]
+  from = "/api/auto-runner"
+  to = "/.netlify/functions/auto-runner"
+  status = 200

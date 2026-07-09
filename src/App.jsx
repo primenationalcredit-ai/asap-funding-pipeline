@@ -671,6 +671,13 @@ const leadSubName = (l) => ((l.businessName && l.businessName.trim()) ? l.name :
 // Stable pseudo-random pick so a given lead+step always shows the same variant
 function hashStr(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
 function pickFrom(list, seed) { if (!list || !list.length) return null; return list[hashStr(String(seed)) % list.length]; }
+// Rotate through a pool so a lead cycles every variant before any repeat.
+// occurrence = which use of this pool it is (0,1,2...); base offsets per lead.
+function pickRotate(list, leadId, pool, occurrence) {
+  if (!list || !list.length) return null;
+  const base = hashStr(leadId + ":" + pool);
+  return list[(base + occurrence) % list.length];
+}
 function poolTemplates(templates, pool) { return (templates || []).filter((t) => t.pool === pool); }
 function callOpener(lead) {
   const calls = (lead?.touches || []).filter((t) => t.kind === "call");
@@ -840,10 +847,12 @@ function cadenceSteps(lead, cadences, templates) {
   let anchor = entered; // time the next gap counts from
   let prevDay = 0;
   let dueAssigned = false;
+  const poolOcc = {}; // how many times each pool has appeared so far
 
   return steps.map((s, i) => {
+    const occ = (poolOcc[s.pool] = (poolOcc[s.pool] ?? -1) + 1);
     const tpl = s.pool
-      ? pickFrom(poolTemplates(templates, s.pool), lead.id + ":" + s.pool + ":" + i)
+      ? pickRotate(poolTemplates(templates, s.pool), lead.id, s.pool, occ)
       : templates.find((t) => t.id === s.templateId);
     const sent = sentInfo[i];
     let state, dueAt = null;

@@ -1,4 +1,11 @@
 import { createClient } from "@supabase/supabase-js";
+const fmtPhone = (v) => {
+  if (v == null) return v;
+  let d = String(v).replace(/\D/g, "");
+  if (d.length === 11 && d[0] === "1") d = d.slice(1);
+  if (d.length === 10) return `${d.slice(0,3)}-${d.slice(3,6)}-${d.slice(6)}`;
+  return String(v).trim();
+};
 
 /*
  * GHL -> ASAP Funding Pipeline webhook receiver.
@@ -59,7 +66,7 @@ function normalize(payload) {
     ghl_contact_id: pickFrom([top, cd, con], ["contact_id", "contactId", "id"]),
     name,
     // top level phone is E.164 (+1...), prefer it over the formatted customData copy
-    phone: pickFrom([top, cd, con], ["phone", "phone_number", "phoneNumber"]),
+    phone: fmtPhone(pickFrom([top, cd, con], ["phone", "phone_number", "phoneNumber"])),
     email: pickFrom([top, cd, con], ["email", "email_address", "emailAddress"]),
     source: pickFrom([top, cd], ["contact_source", "source", "lead_source", "leadSource", "utm_source"]),
     tags: pickFrom([top, cd], ["tags"]),

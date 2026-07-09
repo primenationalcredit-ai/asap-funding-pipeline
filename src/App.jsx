@@ -618,6 +618,7 @@ function rowToLead(r) {
     fundedAmount: r.funded_amount != null ? r.funded_amount : "",
     commissionAmount: r.commission_amount != null ? r.commission_amount : "",
     declineReason: r.decline_reason || "",
+    loanProgram: r.loan_program || "",
     automationPaused: !!r.automation_paused,
     optedOut: !!r.opted_out,
     snoozeUntil: r.snooze_until ? new Date(r.snooze_until).getTime() : null,
@@ -643,7 +644,7 @@ const FIELD_MAP = {
   bestTime: "best_time", nextStep: "next_step",
   myscoreiqUsername: "myscoreiq_username", myscoreiqPassword: "myscoreiq_password", ssnLast4: "ssn_last4",
   reportPath: "report_path",
-  fundedAmount: "funded_amount", commissionAmount: "commission_amount", declineReason: "decline_reason",
+  fundedAmount: "funded_amount", commissionAmount: "commission_amount", declineReason: "decline_reason", loanProgram: "loan_program",
   automationPaused: "automation_paused",
 };
 function leadPatchToRow(patch) {
@@ -1694,8 +1695,15 @@ function ComposeModal({ compose, onClose, onSent, templates = [], config = {} })
 /* ================================================================== */
 /*  Profile (client detail)                                           */
 /* ================================================================== */
+const LOAN_PROGRAMS = [
+  { label: "SLOC", hint: "680+ credit score" },
+  { label: "MCA", hint: "Has business bank account, bad credit OK" },
+  { label: "Term Loan", hint: "Established revenue, fair credit" },
+  { label: "Line of Credit", hint: "Revolving, moderate credit" },
+];
+
 function Profile({ lead, config, templates, cadences, onClose, updateLead, removeLead, logTouch, openCompose, userEmail, comms = [], activities = [], addActivity, completeActivity, deleteActivity, sendReply }) {
-  const EDITABLE = ["name", "phone", "email", "notes", "desiredAmount", "fundingPurpose", "fundingTimeline", "monthlyRevenue", "creditScore", "timeInBusiness",
+  const EDITABLE = ["name", "phone", "email", "notes", "loanProgram", "desiredAmount", "fundingPurpose", "fundingTimeline", "monthlyRevenue", "creditScore", "timeInBusiness",
     "businessName", "businessType", "einStatus", "bestTime", "nextStep", "myscoreiqUsername", "myscoreiqPassword", "ssnLast4", "fundedAmount", "commissionAmount", "declineReason"];
   const [draft, setDraft] = useState(lead);
   const [savedAt, setSavedAt] = useState(0);
@@ -1791,13 +1799,42 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
         <div className="grid gap-5 px-5 py-4 lg:grid-cols-5">
           {/* LEFT COLUMN: work this client now */}
           <div className="space-y-5 lg:col-span-3">
-          {/* what to do next */}
-          {nextStepFor(lead).text && (
-            <div className={`flex items-start gap-2 rounded-xl px-4 py-3 text-sm font-medium ring-1 ring-inset ${TONE[nextStepFor(lead).tone]}`}>
-              <span className="mt-0.5 shrink-0 text-xs font-bold uppercase tracking-wide opacity-70">Next</span>
-              <span>{nextStepFor(lead).text}</span>
+
+          {/* command bar: move stage, tag program, see next */}
+          <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-400">Move to stage</label>
+                <select value={lead.status} onChange={(e) => updateLead(lead.id, { status: e.target.value })} className={inputCls}>
+                  {STAGES.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-400">Likely loan program</label>
+                <select value={draft.loanProgram || ""} onChange={set("loanProgram")} className={inputCls}>
+                  <option value="">Not decided yet</option>
+                  {LOAN_PROGRAMS.map((p) => <option key={p.label} value={p.label}>{p.label} ({p.hint})</option>)}
+                </select>
+              </div>
             </div>
-          )}
+            {nextStepFor(lead).text && (
+              <div className={`flex items-start gap-2 rounded-lg px-3 py-2 text-sm font-medium ${TONE[nextStepFor(lead).tone]}`}>
+                <span className="mt-0.5 shrink-0 text-[10px] font-bold uppercase tracking-wide opacity-70">Next</span>
+                <span>{nextStepFor(lead).text}</span>
+              </div>
+            )}
+          </div>
+
+          {/* notes: prominent, quick to add */}
+          <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-3">
+            <label className="mb-1.5 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-amber-700"><FileText size={13} /> Notes</label>
+            <textarea value={draft.notes} onChange={set("notes")} rows={4} placeholder="What did you talk about? Where did you leave off? Next steps?" className="w-full resize-y rounded-lg border border-amber-200 bg-white px-3 py-2 text-sm outline-none focus:border-amber-400" />
+          </div>
+
+          {/* conversation: where you left off */}
+          <Conversation lead={lead} comms={comms} onSend={sendReply} templates={templates} config={config} compact />
+
+          {/* what to do next */}
           {STAGE_PLAYBOOK[lead.status] && (
             <div className="rounded-xl border border-blue-200 bg-blue-50/50 px-4 py-3">
               <div className="mb-1.5 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-blue-700"><ListChecks size={14} /> Playbook for this stage</div>
@@ -1814,9 +1851,6 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
 
           {/* scheduled calls and tasks */}
           <ActivityPanel lead={lead} activities={leadActivities} addActivity={addActivity} completeActivity={completeActivity} deleteActivity={deleteActivity} />
-
-          {/* conversation thread with inline reply */}
-          <Conversation lead={lead} comms={comms} onSend={sendReply} templates={templates} config={config} compact />
 
           {/* automation control */}
           <div className={`rounded-xl border px-4 py-3 ${lead.automationPaused ? "border-amber-200 bg-amber-50" : "border-slate-200 bg-white"}`}>
@@ -2003,7 +2037,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
           </Section>
 
           {/* qualification + business (editable) */}
-          <Section icon={<Building2 size={15} />} title="Qualification & business" collapsible defaultOpen={false}>
+          <Section icon={<Building2 size={15} />} title="Qualification & business" collapsible defaultOpen={true}>
             <div className="grid gap-3 sm:grid-cols-2">
               <Labeled label="Desired amount"><input value={draft.desiredAmount} onChange={set("desiredAmount")} className={inputCls} /></Labeled>
               <Labeled label="Monthly revenue"><input value={draft.monthlyRevenue} onChange={set("monthlyRevenue")} className={inputCls} /></Labeled>
@@ -2024,7 +2058,6 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
               <Labeled label="Email"><input value={draft.email} onChange={set("email")} className={`${inputCls} font-mono`} /></Labeled>
               <Labeled label="Next step"><input value={draft.nextStep} onChange={set("nextStep")} className={inputCls} /></Labeled>
             </div>
-            <div className="mt-3"><Labeled label="Call notes"><textarea value={draft.notes} onChange={set("notes")} rows={3} className={inputCls} /></Labeled></div>
           </Section>
 
           {/* MyScoreIQ credentials (sensitive) */}

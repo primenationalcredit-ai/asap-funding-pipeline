@@ -409,6 +409,8 @@ Wishing you and the business well either way.
 {{signature}}` },
 
   // ============ EXTRA VOICEMAIL variety ============
+  { id: "vm_first_sms", pool: "vm_first_sms", name: "VM text: first touch (pre-approval)", channel: "sms", subject: "",
+    body: `{{first}}, Joe with ASAP. We got the info you submitted and I want to get your pre-approval sent out, possibly as early as today. I just missed you by phone. Call or text me back and we will get moving.` },
   { id: "vm_sms_e", pool: "vm_sms", name: "VM text: quick", channel: "sms", subject: "",
     body: `{{first}}, Joe at ASAP. Tried you by phone about the Facebook ad on getting your business approved. Got 2 minutes today? Text me back.` },
   { id: "vm_sms_f", pool: "vm_sms", name: "VM text: worth it", channel: "sms", subject: "",
@@ -530,7 +532,7 @@ Whenever you are ready, send it back and I will get everything moving. Reply her
 const DEFAULT_CADENCES = {
   new: [],
   voicemail: [
-    { day: 0, pool: "vm_sms" },
+    { day: 0, pool: "vm_first_sms" },
     { day: 0, pool: "vm_email" },
     { day: 1, pool: "vm_sms" },
     { day: 2, pool: "vm_email" },
@@ -2615,7 +2617,7 @@ const POOL_LABELS = {
   cb_sms: "Call back, text", cb_email: "Call back, email",
   ni_email: "Not interested, email", pulled_sms: "Report pulled, text",
   app_sms: "Application, text", app_email: "Application, email",
-  urgency_sms: "Urgency nudge, text", value_email: "Value / education, email",
+  vm_first_sms: "Voicemail first touch, text", urgency_sms: "Urgency nudge, text", value_email: "Value / education, email",
   appchase_sms: "Application chase, text", appchase_email: "Application chase, email",
   proof_email: "Social proof, email", breakup_sms: "Breakup / final, text", breakup_email: "Breakup / final, email",
   manual: "Manual only (not auto-sent)",

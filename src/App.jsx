@@ -683,6 +683,7 @@ function rowToLead(r) {
     touches: Array.isArray(r.touches) ? r.touches : [],
     raw: r.raw || null,
     confirmedFields: Array.isArray(r.confirmed_fields) ? r.confirmed_fields : [],
+    readAt: r.read_at ? new Date(r.read_at).getTime() : 0,
   };
 }
 const FIELD_MAP = {
@@ -719,6 +720,7 @@ function leadPatchToRow(patch) {
     else if (k === "reportUploadedAt") row.report_uploaded_at = v ? new Date(v).toISOString() : null;
     else if (k === "fundedAt") row.funded_at = v ? new Date(v).toISOString() : null;
     else if (k === "commissionPaidAt") row.commission_paid_at = v ? new Date(v).toISOString() : null;
+    else if (k === "readAt") row.read_at = v ? new Date(v).toISOString() : null;
     else if (k === "snoozeUntil") row.snooze_until = v ? new Date(v).toISOString() : null;
   }
   return row;
@@ -1485,15 +1487,25 @@ function Dashboard({ userEmail }) {
 
   const actAlerts = useMemo(() => activities.filter((a) => !a.done && ["overdue", "today"].includes(actBucket(a))).length, [activities]);
 
-  // A lead is "unread" when the most recent message is inbound (they texted last).
+  // A lead is "unread" when they sent us a message more recently than we last read it.
   const unreadLeadIds = useMemo(() => {
-    const latest = {};
+    const lastIn = {};
     for (const c of comms) {
+      if (c.direction !== "in") continue;
       const t = new Date(c.at).getTime();
-      if (!latest[c.lead_id] || t > latest[c.lead_id].t) latest[c.lead_id] = { t, dir: c.direction };
+      if (!lastIn[c.lead_id] || t > lastIn[c.lead_id]) lastIn[c.lead_id] = t;
     }
-    return new Set(Object.entries(latest).filter(([, v]) => v.dir === "in").map(([id]) => id));
-  }, [comms]);
+    const readMap = {};
+    leads.forEach((l) => { readMap[l.id] = l.readAt || 0; });
+    return new Set(Object.entries(lastIn).filter(([id, t]) => t > (readMap[id] || 0)).map(([id]) => id));
+  }, [comms, leads]);
+
+  const markRead = useCallback((id) => {
+    updateLead(id, { readAt: Date.now() });
+  }, [updateLead]);
+  const markAllRead = useCallback(() => {
+    unreadLeadIds.forEach((id) => updateLead(id, { readAt: Date.now() }));
+  }, [unreadLeadIds, updateLead]);
 
   if (!loaded) return <div className="flex min-h-96 items-center justify-center font-sans text-slate-400">Loading your pipeline...</div>;
 
@@ -1570,7 +1582,7 @@ function Dashboard({ userEmail }) {
               onGoFollowups={() => setTab("followups")} />
           )}
           {tab === "followups" && <Followups dueList={dueList} config={config} onOpen={setProfileId} openCompose={setCompose} updateLead={updateLead} />}
-          {tab === "inbox" && <Conversations leads={leads} comms={comms} unreadLeadIds={unreadLeadIds} onSend={sendReply} onAddNote={addNote} onOpen={setProfileId} templates={templates} config={config} />}
+          {tab === "inbox" && <Conversations leads={leads} comms={comms} unreadLeadIds={unreadLeadIds} onSend={sendReply} onAddNote={addNote} onOpen={setProfileId} markRead={markRead} markAllRead={markAllRead} templates={templates} config={config} />}
           {tab === "activities" && <Activities activities={activities} leads={leads} onOpen={setProfileId} completeActivity={completeActivity} deleteActivity={deleteActivity} />}
           {tab === "messaging" && <Messaging templates={templates} persistTemplates={persistTemplates} cadences={cadences} persistCadences={persistCadences} />}
           {tab === "commissions" && <Commissions leads={leads} onOpen={setProfileId} />}
@@ -1582,7 +1594,7 @@ function Dashboard({ userEmail }) {
 
       {profileLead && (
         <Profile lead={profileLead} config={config} templates={templates} cadences={cadences} userEmail={userEmail}
-          comms={comms} activities={activities} addActivity={addActivity} completeActivity={completeActivity} deleteActivity={deleteActivity} sendReply={sendReply} addNote={addNote}
+          comms={comms} activities={activities} addActivity={addActivity} completeActivity={completeActivity} deleteActivity={deleteActivity} sendReply={sendReply} addNote={addNote} markRead={markRead}
           onClose={() => setProfileId(null)} updateLead={updateLead} removeLead={removeLead} logTouch={logTouch} openCompose={setCompose} />
       )}
 
@@ -1881,7 +1893,7 @@ const LOAN_PROGRAMS = [
   { label: "Line of Credit", hint: "Revolving, moderate credit" },
 ];
 
-function Profile({ lead, config, templates, cadences, onClose, updateLead, removeLead, logTouch, openCompose, userEmail, comms = [], activities = [], addActivity, completeActivity, deleteActivity, sendReply, addNote }) {
+function Profile({ lead, config, templates, cadences, onClose, updateLead, removeLead, logTouch, openCompose, userEmail, comms = [], activities = [], addActivity, completeActivity, deleteActivity, sendReply, addNote, markRead }) {
   const EDITABLE = ["name", "phone", "email", "notes", "loanProgram", "confirmedFields", "desiredAmount", "fundingPurpose", "fundingTimeline", "monthlyRevenue", "creditScore", "timeInBusiness",
     "businessName", "businessType", "einStatus", "bestTime", "nextStep", "myscoreiqUsername", "myscoreiqPassword", "ssnLast4", "fundedAmount", "commissionAmount", "declineReason"];
   const [draft, setDraft] = useState(lead);
@@ -1895,7 +1907,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
   const [noteErr, setNoteErr] = useState(false);
   const [spoke, setSpoke] = useState(false);
   const [declineOpen, setDeclineOpen] = useState(false);
-  useEffect(() => { setDraft(lead); setGuideOpen(lead.status === "new"); setSpoke(false); setDeclineOpen(false); }, [lead.id]); // reload when switching leads
+  useEffect(() => { setDraft(lead); setGuideOpen(lead.status === "new"); setSpoke(false); setDeclineOpen(false); markRead && markRead(lead.id); }, [lead.id]); // reload + mark read when switching leads
   const set = (k) => (e) => setDraft({ ...draft, [k]: e.target.value });
   // Confirm helpers: editing a field auto-confirms it; the check confirms without editing.
   const confirmedList = draft.confirmedFields || [];
@@ -3113,7 +3125,7 @@ function Conversation({ lead, comms, onSend, onAddNote, templates = [], config =
 }
 
 // GHL-style inbox: leads with messages on the left, the thread + reply on the right
-function Conversations({ leads, comms, unreadLeadIds, onSend, onAddNote, onOpen, templates = [], config = {} }) {
+function Conversations({ leads, comms, unreadLeadIds, onSend, onAddNote, onOpen, markRead, markAllRead, templates = [], config = {} }) {
   const withMsgs = useMemo(() => {
     const latest = {};
     for (const c of comms) {
@@ -3128,6 +3140,8 @@ function Conversations({ leads, comms, unreadLeadIds, onSend, onAddNote, onOpen,
 
   const [selId, setSelId] = useState(withMsgs[0]?.lead.id || null);
   const selected = leads.find((l) => l.id === selId) || withMsgs[0]?.lead || null;
+  const openThread = (id) => { setSelId(id); markRead && markRead(id); };
+  const unreadCount = unreadLeadIds.size;
 
   if (withMsgs.length === 0) {
     return (
@@ -3142,14 +3156,20 @@ function Conversations({ leads, comms, unreadLeadIds, onSend, onAddNote, onOpen,
   return (
     <div className="mt-4 grid gap-3 md:grid-cols-[320px_1fr]">
       <div className="flex max-h-[560px] flex-col overflow-y-auto rounded-xl border border-slate-200 bg-white">
+        {unreadCount > 0 && (
+          <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2">
+            <span className="text-xs font-semibold text-blue-700">{unreadCount} unread</span>
+            <button onClick={markAllRead} className="rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-200">Mark all read</button>
+          </div>
+        )}
         {withMsgs.map(({ lead, last }) => {
           const unread = unreadLeadIds.has(lead.id);
           const active = selected?.id === lead.id;
           return (
-            <button key={lead.id} onClick={() => setSelId(lead.id)}
+            <button key={lead.id} onClick={() => openThread(lead.id)}
               className={`flex flex-col gap-0.5 border-b border-slate-50 px-3 py-2.5 text-left last:border-0 ${active ? "bg-blue-50" : "hover:bg-slate-50"}`}>
               <div className="flex items-center gap-2">
-                {unread && <span className="h-2 w-2 shrink-0 rounded-full bg-blue-600" />}
+                {unread ? <span onClick={(e) => { e.stopPropagation(); markRead && markRead(lead.id); }} title="Mark read" className="h-2.5 w-2.5 shrink-0 cursor-pointer rounded-full bg-blue-600 hover:ring-2 hover:ring-blue-200" /> : <span className="h-2.5 w-2.5 shrink-0" />}
                 <span className={`truncate text-sm ${unread ? "font-bold text-slate-900" : "font-medium text-slate-700"}`}>{leadTitle(lead)}</span>
                 <span className="ml-auto shrink-0 text-[10px] text-slate-400">{fmtDateTime(new Date(last.at).getTime()).split(",")[0]}</span>
               </div>

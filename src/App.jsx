@@ -1940,16 +1940,20 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
     finally { setUploading(false); }
   };
 
-  const uploadDoc = async (file) => {
-    if (!file) return;
+  const uploadDoc = async (fileList) => {
+    const files = Array.from(fileList || []).filter(Boolean);
+    if (!files.length) return;
     setDocBusy(true);
     try {
-      const safe = file.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
-      const path = `${lead.id}/doc-${Date.now()}-${safe}`;
-      const { error } = await supabase.storage.from("reports").upload(path, file, { upsert: true });
-      if (error) throw error;
-      const doc = { name: file.name, path, label: docLabel, uploadedAt: Date.now(), by: userEmail };
-      await updateLead(lead.id, { documents: [...(lead.documents || []), doc], lastTouchAt: Date.now() });
+      const added = [];
+      for (const file of files) {
+        const safe = file.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
+        const path = `${lead.id}/doc-${Date.now()}-${Math.random().toString(36).slice(2, 7)}-${safe}`;
+        const { error } = await supabase.storage.from("reports").upload(path, file, { upsert: true });
+        if (error) throw error;
+        added.push({ name: file.name, path, label: docLabel, uploadedAt: Date.now(), by: userEmail });
+      }
+      await updateLead(lead.id, { documents: [...(lead.documents || []), ...added], lastTouchAt: Date.now() });
     } catch (e) { alert("Upload failed: " + (e.message || e)); }
     finally { setDocBusy(false); }
   };
@@ -2323,7 +2327,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
               </div>
               <label className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-white ${docBusy ? "bg-slate-400" : "bg-blue-600 hover:bg-blue-700"}`}>
                 <FileText size={15} /> {docBusy ? "Uploading..." : "Upload file"}
-                <input type="file" className="hidden" disabled={docBusy} onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadDoc(f); e.target.value = ""; }} />
+                <input type="file" multiple className="hidden" disabled={docBusy} onChange={(e) => { if (e.target.files?.length) uploadDoc(e.target.files); e.target.value = ""; }} />
               </label>
             </div>
             {(lead.documents || []).length === 0 ? (

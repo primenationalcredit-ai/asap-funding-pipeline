@@ -67,6 +67,8 @@ export const handler = async (event) => {
     const body = topReply(fields.text || fields.html || "");
     if (!fromEmail) return { statusCode: 200, body: "no from" };
 
+    const optOut = /\b(stop|unsubscribe|opt\s?out|remove me|stop emailing|stop contacting|take me off|do not (email|contact))\b/i.test(subject + " " + body);
+
     const { data: leads } = await supabase.from("leads").select("id,email").not("email", "is", null).limit(5000);
     const lead = (leads || []).find((l) => (l.email || "").toLowerCase() === fromEmail);
     if (!lead) { console.log("[inbound-email] no lead match for", fromEmail); return { statusCode: 200, body: "no lead" }; }
@@ -86,8 +88,11 @@ export const handler = async (event) => {
       lead_id: lead.id, direction: "in", channel: "email",
       subject: subject || null, body, from_addr: fromEmail, by_user: "client", attachments: atts,
     });
-    await supabase.from("leads").update({ last_touch_at: new Date().toISOString() }).eq("id", lead.id);
-    return { statusCode: 200, body: "ok" };
+    const leadPatch = { last_touch_at: new Date().toISOString() };
+    if (optOut) { leadPatch.opted_out = true; leadPatch.automation_paused = true; console.log("[inbound-email] opt-out from", fromEmail); }
+    await supabase.from("leads").update(leadPatch).eq("id", lead.id);
+
+    return { statusCode: 200, body: optOut ? "opted-out" : "ok" };
   } catch (e) {
     console.log("[inbound-email] error", e.message);
     return { statusCode: 200, body: "err" };

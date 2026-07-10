@@ -684,6 +684,7 @@ function rowToLead(r) {
     raw: r.raw || null,
     confirmedFields: Array.isArray(r.confirmed_fields) ? r.confirmed_fields : [],
     readAt: r.read_at ? new Date(r.read_at).getTime() : 0,
+    documents: Array.isArray(r.documents) ? r.documents : [],
   };
 }
 const FIELD_MAP = {
@@ -1906,6 +1907,8 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
   const [uploading, setUploading] = useState(false);
   const [callNote, setCallNote] = useState("");
   const [noteErr, setNoteErr] = useState(false);
+  const [docLabel, setDocLabel] = useState("Bank statements");
+  const [docBusy, setDocBusy] = useState(false);
   const [spoke, setSpoke] = useState(false);
   const [declineOpen, setDeclineOpen] = useState(false);
   useEffect(() => { setDraft(lead); setGuideOpen(lead.status === "new"); setSpoke(false); setDeclineOpen(false); markRead && markRead(lead.id); }, [lead.id]); // reload + mark read when switching leads
@@ -1935,6 +1938,29 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
       await updateLead(lead.id, { reportPath: path, reportUploadedAt: Date.now(), status: lead.status === "submitted" || lead.status === "funded" ? lead.status : "report_pulled" });
     } catch (e) { alert("Upload failed: " + (e.message || e)); }
     finally { setUploading(false); }
+  };
+
+  const uploadDoc = async (file) => {
+    if (!file) return;
+    setDocBusy(true);
+    try {
+      const safe = file.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
+      const path = `${lead.id}/doc-${Date.now()}-${safe}`;
+      const { error } = await supabase.storage.from("reports").upload(path, file, { upsert: true });
+      if (error) throw error;
+      const doc = { name: file.name, path, label: docLabel, uploadedAt: Date.now(), by: userEmail };
+      await updateLead(lead.id, { documents: [...(lead.documents || []), doc], lastTouchAt: Date.now() });
+    } catch (e) { alert("Upload failed: " + (e.message || e)); }
+    finally { setDocBusy(false); }
+  };
+  const downloadDoc = async (path) => {
+    try { const { data } = await supabase.storage.from("reports").createSignedUrl(path, 3600); if (data?.signedUrl) window.open(data.signedUrl, "_blank"); else alert("Could not open file."); }
+    catch { alert("Could not open file."); }
+  };
+  const deleteDoc = async (path) => {
+    if (!confirm("Remove this document?")) return;
+    try { await supabase.storage.from("reports").remove([path]); } catch {}
+    await updateLead(lead.id, { documents: (lead.documents || []).filter((d) => d.path !== path) });
   };
 
   const logOutcome = (stage, label) => {
@@ -2284,6 +2310,37 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
               </Labeled>
               <Labeled label="Last 4 of SSN"><input value={draft.ssnLast4} onChange={set("ssnLast4")} maxLength={4} inputMode="numeric" name="msq_s4" autoComplete="off" data-lpignore="true" data-1p-ignore className={`${inputCls} font-mono`} /></Labeled>
             </div>
+          </Section>
+
+          {/* labeled documents */}
+          <Section icon={<FileText size={15} />} title={`Documents${(lead.documents || []).length ? ` (${lead.documents.length})` : ""}`} collapsible defaultOpen={true}>
+            <div className="mb-3 flex flex-wrap items-end gap-2">
+              <div className="flex-1 min-w-[140px]">
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400">Label</label>
+                <select value={docLabel} onChange={(e) => setDocLabel(e.target.value)} className={inputCls}>
+                  {["Bank statements", "Voided check", "Driver's license", "Application", "Business formation / EIN", "Tax return", "Proof of ownership", "Signed agreement", "Other"].map((l) => <option key={l} value={l}>{l}</option>)}
+                </select>
+              </div>
+              <label className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-white ${docBusy ? "bg-slate-400" : "bg-blue-600 hover:bg-blue-700"}`}>
+                <FileText size={15} /> {docBusy ? "Uploading..." : "Upload file"}
+                <input type="file" className="hidden" disabled={docBusy} onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadDoc(f); e.target.value = ""; }} />
+              </label>
+            </div>
+            {(lead.documents || []).length === 0 ? (
+              <p className="text-sm text-slate-400">No documents yet. Pick a label and upload bank statements, a voided check, ID, etc.</p>
+            ) : (
+              <div className="flex flex-col gap-1.5">
+                {[...(lead.documents || [])].sort((a, b) => (b.uploadedAt || 0) - (a.uploadedAt || 0)).map((d) => (
+                  <div key={d.path} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
+                    <span className="rounded-md bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">{d.label || "Other"}</span>
+                    <button onClick={() => downloadDoc(d.path)} className="min-w-0 flex-1 truncate text-left font-medium text-slate-700 hover:text-blue-700">{d.name}</button>
+                    <span className="hidden shrink-0 text-xs text-slate-400 sm:inline">{d.uploadedAt ? fmtDateTime(d.uploadedAt).split(",")[0] : ""}</span>
+                    <button onClick={() => downloadDoc(d.path)} title="Download" className="shrink-0 rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-blue-600"><ChevronDown size={15} className="rotate-0" /></button>
+                    <button onClick={() => deleteDoc(d.path)} title="Remove" className="shrink-0 rounded-md p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-500"><Trash2 size={14} /></button>
+                  </div>
+                ))}
+              </div>
+            )}
           </Section>
 
           {/* report PDF */}

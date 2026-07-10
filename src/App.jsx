@@ -1450,11 +1450,20 @@ function Dashboard({ userEmail }) {
     refetchComms();
   }, [userEmail, logTouch, refetchComms]);
 
+  // Leads that replied are handled by a human (in the Inbox), not the auto-cadence.
+  const repliedIds = useMemo(() => {
+    const s = new Set();
+    comms.forEach((c) => { if (c.direction === "in") s.add(c.lead_id); });
+    return s;
+  }, [comms]);
+
   const dueList = useMemo(() => (
-    leads.map((l) => ({ l, step: nextDue(l, cadences, templates) }))
+    leads
+      .filter((l) => !l.optedOut && !l.automationPaused && !repliedIds.has(l.id) && !(l.snoozeUntil && l.snoozeUntil > Date.now()))
+      .map((l) => ({ l, step: nextDue(l, cadences, templates) }))
       .filter((x) => x.step && x.step.dueAt <= Date.now() + DAY)
       .sort((a, b) => a.step.dueAt - b.step.dueAt)
-  ), [leads, cadences, templates]);
+  ), [leads, cadences, templates, repliedIds]);
 
   const filtered = useMemo(() => {
     const q = query.toLowerCase();
@@ -2131,6 +2140,9 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
             <p className="mt-2 text-xs text-slate-400">A call note is required. Picking an outcome sets the stage, starts that campaign, and logs your note, your name, and the time.</p>
           </div>
 
+          {/* stage-aware scripts */}
+          <ProfileScripts lead={lead} userEmail={userEmail} />
+
           {/* call guide */}
           <div className="rounded-xl border border-blue-200 bg-blue-50/40">
             <button onClick={() => setGuideOpen((o) => !o)} className="flex w-full items-center justify-between px-4 py-3 text-left">
@@ -2619,6 +2631,63 @@ What works better, should I check back with you this afternoon or first thing to
 
 I will call you back today with where you stand and your best funding options. If anything needs tightening up first to land a stronger offer, I will lay out exactly what, and how fast we can move.` },
 ];
+// Which scripts matter at each stage (by title), plus objections always on hand.
+const OBJECTIONS = ["Objection: why do you need my credit?", "Objection: is this safe?", "Objection: I am busy right now"];
+const STAGE_SCRIPTS = {
+  new: { lead: ["Cold call open", "Warm / inbound", "Voicemail"], hint: "First contact. Open, then drive to the report link." },
+  voicemail: { lead: ["Voicemail", "Cold call open"], hint: "Left a voicemail. Keep trying; use the opener when they pick up." },
+  interested: { lead: ["Warm / inbound", "After they pull it"], hint: "They engaged. Get the report pulled, then walk options." },
+  callback: { lead: ["Warm / inbound", "Cold call open"], hint: "They asked you to call back. Reconnect and move to the report." },
+  report_pulled: { lead: ["After they pull it"], hint: "Report is in. Walk their options and decide the loan program." },
+  app_sent: { lead: ["After they pull it"], hint: "Application sent. Chase the signed app back." },
+};
+
+function ProfileScripts({ lead, userEmail }) {
+  const [open, setOpen] = useState(false);
+  const cfg = STAGE_SCRIPTS[lead.status];
+  const isCreditPivot = ["declined", "offer_cr", "referred_cr"].includes(lead.status) || /credit|score/i.test(lead.declineReason || "");
+  if (!cfg && !isCreditPivot) return null;
+  const fill = (t) => (t || "").replace(/\{NAME\}/g, firstName(lead.name)).replace(/\{YOUR NAME\}/g, (userEmail || "").split("@")[0] || "me");
+  const picks = cfg ? SCRIPTS.filter((s) => cfg.lead.includes(s.title)) : [];
+
+  return (
+    <div className="rounded-xl border border-emerald-200 bg-emerald-50/40">
+      <button onClick={() => setOpen((o) => !o)} className="flex w-full items-center justify-between px-4 py-3 text-left">
+        <span className="flex items-center gap-1.5 text-sm font-bold text-emerald-900"><FileText size={15} /> Scripts for this stage</span>
+        <ChevronDown size={16} className={`text-emerald-700 transition ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div className="space-y-3 border-t border-emerald-100 px-4 py-3">
+          {cfg && <p className="text-xs font-medium text-emerald-700">{cfg.hint}</p>}
+          {isCreditPivot && (
+            <div className="rounded-lg border border-fuchsia-200 bg-fuchsia-50 p-3">
+              <div className="mb-1 text-xs font-bold uppercase tracking-wide text-fuchsia-700">Credit accelerator pivot</div>
+              <AcceleratorScript defaultOpen />
+            </div>
+          )}
+          {picks.map((s) => (
+            <details key={s.title} className="rounded-lg border border-slate-200 bg-white">
+              <summary className="cursor-pointer px-3 py-2 text-sm font-semibold text-slate-700">{s.title}</summary>
+              <div className="whitespace-pre-wrap border-t border-slate-100 px-3 py-2 text-sm text-slate-600">{fill(s.body)}</div>
+            </details>
+          ))}
+          <div>
+            <div className="mb-1 text-xs font-bold uppercase tracking-wide text-slate-400">Objection handling</div>
+            <div className="space-y-1.5">
+              {SCRIPTS.filter((s) => OBJECTIONS.includes(s.title)).map((s) => (
+                <details key={s.title} className="rounded-lg border border-slate-200 bg-white">
+                  <summary className="cursor-pointer px-3 py-2 text-sm font-semibold text-slate-700">{s.title.replace("Objection: ", "")}</summary>
+                  <div className="whitespace-pre-wrap border-t border-slate-100 px-3 py-2 text-sm text-slate-600">{fill(s.body)}</div>
+                </details>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Scripts() {
   return (
     <div className="mt-4 flex flex-col gap-3">
@@ -2852,6 +2921,7 @@ function Conversation({ lead, comms, onSend, onAddNote, templates = [], config =
   const [showPreview, setShowPreview] = useState(true);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [okMsg, setOkMsg] = useState("");
   const endRef = useRef(null);
 
   // Merge messages (texts/emails/notes) + logged calls into one timeline
@@ -2893,14 +2963,15 @@ function Conversation({ lead, comms, onSend, onAddNote, templates = [], config =
     if (!body.trim() || !canSend) return;
     setBusy(true); setErr("");
     const outBody = mode === "email" ? emailPreviewBody : body;
-    try { await onSend(lead, mode, subject, outBody); setBody(""); setSubject(""); }
+    const label = mode === "sms" ? "Text sent" : "Email sent";
+    try { await onSend(lead, mode, subject, outBody); setBody(""); setSubject(""); setOkMsg(label); setTimeout(() => setOkMsg(""), 3000); }
     catch (e) { setErr(String(e.message || e)); }
     finally { setBusy(false); }
   };
   const saveNote = async () => {
     if (!note.trim()) return;
     setBusy(true);
-    try { await onAddNote(lead, note); setNote(""); }
+    try { await onAddNote(lead, note); setNote(""); setOkMsg("Note added"); setTimeout(() => setOkMsg(""), 3000); }
     finally { setBusy(false); }
   };
 
@@ -3018,6 +3089,7 @@ function Conversation({ lead, comms, onSend, onAddNote, templates = [], config =
           </>
         )}
         {err && <div className="mt-2 rounded-lg bg-rose-50 px-3 py-1.5 text-xs text-rose-700">{err}</div>}
+        {okMsg && <div className="mt-2 inline-flex items-center gap-1 rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700"><Check size={13} /> {okMsg}</div>}
       </div>
     </div>
   );
@@ -3252,22 +3324,36 @@ function Followups({ dueList, config, onOpen, openCompose, updateLead }) {
 }
 
 function Team({ leads, onOpen }) {
-  const [day, setDay] = useState(() => new Date().toISOString().slice(0, 10));
-  // flatten all touches with lead context
-  const acts = [];
-  for (const l of leads) {
-    for (const t of (l.touches || [])) {
-      acts.push({ ...t, leadId: l.id, leadName: leadTitle(l) });
+  const [range, setRange] = useState("today"); // today | yesterday | week | month | custom
+  const [from, setFrom] = useState(() => new Date().toISOString().slice(0, 10));
+  const [to, setTo] = useState(() => new Date().toISOString().slice(0, 10));
+  const [repFilter, setRepFilter] = useState("all");
+
+  // Resolve the active window [start, end)
+  const { start, end, label } = useMemo(() => {
+    const startOfDay = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x.getTime(); };
+    const now = new Date();
+    if (range === "today") { const s = startOfDay(now); return { start: s, end: s + 86400000, label: "Today" }; }
+    if (range === "yesterday") { const s = startOfDay(now) - 86400000; return { start: s, end: s + 86400000, label: "Yesterday" }; }
+    if (range === "week") { const s = startOfDay(now) - 6 * 86400000; return { start: s, end: startOfDay(now) + 86400000, label: "Last 7 days" }; }
+    if (range === "month") { const d = new Date(now.getFullYear(), now.getMonth(), 1); return { start: d.getTime(), end: startOfDay(now) + 86400000, label: "This month" }; }
+    return { start: startOfDay(from + "T00:00:00"), end: startOfDay(to + "T00:00:00") + 86400000, label: `${from} to ${to}` };
+  }, [range, from, to]);
+
+  // Flatten all touches with lead context, within the window
+  const acts = useMemo(() => {
+    const out = [];
+    for (const l of leads) for (const t of (l.touches || [])) {
+      if (t.at >= start && t.at < end) out.push({ ...t, leadId: l.id, leadName: leadTitle(l), rep: t.by || (t.auto ? "automation" : "(unassigned)") });
     }
-  }
-  const dayStart = new Date(day + "T00:00:00").getTime();
-  const dayEnd = dayStart + 86400000;
-  const todays = acts.filter((a) => a.at >= dayStart && a.at < dayEnd);
-  const reps = [...new Set(acts.map((a) => a.by).filter(Boolean))];
-  if (reps.length === 0) reps.push("(unassigned)");
+    return out;
+  }, [leads, start, end]);
+
+  const reps = useMemo(() => [...new Set(acts.map((a) => a.rep))].sort(), [acts]);
+  const shownReps = repFilter === "all" ? reps : reps.filter((r) => r === repFilter);
 
   const statsFor = (rep) => {
-    const mine = todays.filter((a) => (a.by || "(unassigned)") === rep);
+    const mine = acts.filter((a) => a.rep === rep);
     const calls = mine.filter((a) => a.kind === "call");
     return {
       calls: calls.length,
@@ -3275,46 +3361,85 @@ function Team({ leads, onOpen }) {
       spoke: calls.filter((a) => /spoke/i.test(a.disposition || "")).length,
       texts: mine.filter((a) => a.channel === "sms").length,
       emails: mine.filter((a) => a.channel === "email").length,
-      notes: calls.filter((a) => a.note).length,
+      notes: mine.filter((a) => a.kind === "note" || (a.kind === "call" && a.note)).length,
+      total: mine.length,
     };
   };
 
-  const recent = [...todays].sort((a, b) => b.at - a.at).slice(0, 40);
+  // Combined totals across the humans (exclude automation from the "team" totals)
+  const humanReps = reps.filter((r) => r !== "automation");
+  const totals = humanReps.reduce((acc, r) => { const s = statsFor(r); Object.keys(s).forEach((k) => acc[k] = (acc[k] || 0) + s[k]); return acc; }, {});
+
+  const recent = useMemo(() => [...acts].filter((a) => repFilter === "all" || a.rep === repFilter).sort((a, b) => b.at - a.at).slice(0, 120), [acts, repFilter]);
+
+  const RANGES = [["today", "Today"], ["yesterday", "Yesterday"], ["week", "Last 7 days"], ["month", "This month"], ["custom", "Custom"]];
+  const cellsOf = (s) => [["Calls", s.calls], ["Voicemails", s.voicemails], ["Spoke to", s.spoke], ["Texts", s.texts], ["Emails", s.emails], ["Notes", s.notes]];
 
   return (
     <div className="mt-4 flex flex-col gap-4">
-      <div className="flex items-center gap-2">
-        <label className="text-sm font-medium text-slate-500">Day</label>
-        <input type="date" value={day} onChange={(e) => setDay(e.target.value)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm outline-none focus:border-blue-400" />
+      {/* controls */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap gap-1 rounded-lg bg-slate-100 p-1">
+          {RANGES.map(([k, lbl]) => (
+            <button key={k} onClick={() => setRange(k)} className={`rounded-md px-3 py-1.5 text-sm font-medium ${range === k ? "bg-white text-blue-700 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>{lbl}</button>
+          ))}
+        </div>
+        {range === "custom" && (
+          <div className="flex items-center gap-1.5 text-sm">
+            <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="rounded-lg border border-slate-200 px-2 py-1.5 outline-none focus:border-blue-400" />
+            <span className="text-slate-400">to</span>
+            <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="rounded-lg border border-slate-200 px-2 py-1.5 outline-none focus:border-blue-400" />
+          </div>
+        )}
+        <select value={repFilter} onChange={(e) => setRepFilter(e.target.value)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm outline-none focus:border-blue-400">
+          <option value="all">All employees</option>
+          {reps.map((r) => <option key={r} value={r}>{r}</option>)}
+        </select>
       </div>
-      {reps.map((rep) => {
+
+      {/* team totals */}
+      {repFilter === "all" && humanReps.length > 0 && (
+        <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
+          <div className="mb-3 flex items-center gap-2 text-sm font-bold text-blue-900"><User size={15} /> All employees · {label} <span className="font-normal text-blue-500">({humanReps.length} active)</span></div>
+          <div className="grid grid-cols-3 gap-3 sm:grid-cols-6">
+            {cellsOf(totals).map(([lbl, val]) => (
+              <div key={lbl} className="rounded-lg bg-white p-3 text-center"><div className="text-2xl font-bold text-blue-800">{val || 0}</div><div className="text-xs text-slate-400">{lbl}</div></div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* per-employee */}
+      {shownReps.length === 0 && <div className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-400">No activity logged for {label}.</div>}
+      {shownReps.map((rep) => {
         const s = statsFor(rep);
-        const cells = [["Calls", s.calls], ["Voicemails", s.voicemails], ["Spoke to", s.spoke], ["Texts", s.texts], ["Emails", s.emails], ["Notes", s.notes]];
         return (
           <div key={rep} className="rounded-xl border border-slate-200 bg-white p-4">
-            <div className="mb-3 flex items-center gap-2 text-sm font-bold text-slate-800"><User size={15} className="text-blue-600" /> {rep}</div>
+            <div className="mb-3 flex items-center gap-2 text-sm font-bold text-slate-800">
+              {rep === "automation" ? <Zap size={15} className="text-violet-500" /> : <User size={15} className="text-blue-600" />} {rep}
+              <span className="ml-auto text-xs font-medium text-slate-400">{s.total} actions</span>
+            </div>
             <div className="grid grid-cols-3 gap-3 sm:grid-cols-6">
-              {cells.map(([label, val]) => (
-                <div key={label} className="rounded-lg bg-slate-50 p-3 text-center">
-                  <div className="text-2xl font-bold text-slate-800">{val}</div>
-                  <div className="text-xs text-slate-400">{label}</div>
-                </div>
+              {cellsOf(s).map(([lbl, val]) => (
+                <div key={lbl} className="rounded-lg bg-slate-50 p-3 text-center"><div className="text-2xl font-bold text-slate-800">{val}</div><div className="text-xs text-slate-400">{lbl}</div></div>
               ))}
             </div>
           </div>
         );
       })}
+
+      {/* activity log */}
       <div className="rounded-xl border border-slate-200 bg-white p-1">
-        <div className="px-3 py-2 text-sm font-bold text-slate-800">Activity for {day} ({recent.length})</div>
-        {recent.length === 0 ? <p className="px-3 py-6 text-center text-sm text-slate-400">No activity logged this day.</p> : (
+        <div className="px-3 py-2 text-sm font-bold text-slate-800">Activity · {label} ({recent.length})</div>
+        {recent.length === 0 ? <p className="px-3 py-6 text-center text-sm text-slate-400">No activity in this range.</p> : (
           <div className="flex flex-col">
             {recent.map((a, i) => (
               <div key={i} className="flex flex-wrap items-center gap-2 border-b border-slate-50 px-3 py-2 text-sm last:border-0">
-                <span className="text-xs text-slate-400">{fmtDateTime(a.at).split(", ").pop()}</span>
+                <span className="text-xs text-slate-400">{fmtDateTime(a.at)}</span>
                 <button onClick={() => onOpen(a.leadId)} className="font-semibold text-slate-700 hover:text-blue-700">{a.leadName}</button>
                 <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">{a.kind === "call" ? (a.disposition || "call") : (a.channel === "sms" ? "text" : a.channel === "email" ? "email" : a.kind)}</span>
                 {a.note && <span className="text-slate-500">{a.note}</span>}
-                <span className="ml-auto text-xs text-slate-400">{a.by || ""}</span>
+                <span className="ml-auto text-xs font-medium text-slate-400">{a.rep}</span>
               </div>
             ))}
           </div>

@@ -19,6 +19,9 @@ const DAY = 86400000;
 const CALL_DAYS = [0, 1, 2, 3, 4, 6, 8, 10, 17, 24, 31, 45, 66, 90];
 const DEFAULT_STAGES = ["voicemail", "interested", "callback", "report_pulled", "app_sent"];
 const MAX_SENDS_PER_RUN = 30; // clear the day's due items across the morning runs
+const MAX_EMAILS_PER_RUN = 8; // throttle EMAIL specifically so we don't trip spam filters (~16/hour with the 30-min schedule)
+const SEND_SPACING_MS = 400; // small gap between sends so we never burst all at once
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const hashStr = (s) => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; };
 const pickFrom = (list, seed) => (!list || !list.length ? null : list[hashStr(String(seed)) % list.length]);
@@ -107,7 +110,7 @@ async function run() {
 
   const now = Date.now();
   let rc = null;
-  let sent = 0, scheduled = 0, skipped = 0, waiting = 0, noContact = 0, noCadence = 0, capped = 0;
+  let sent = 0, scheduled = 0, skipped = 0, waiting = 0, noContact = 0, noCadence = 0, capped = 0, emailsSent = 0;
   const stageCounts = {};
 
   const leadIds = (leads || []).map((l) => l.id);
@@ -166,50 +169,58 @@ async function run() {
     if (dueStep && sent >= MAX_SENDS_PER_RUN) { capped++; }
     if (dueStep && sent < MAX_SENDS_PER_RUN) {
       const step = dueStep;
-      const to = step.tpl.channel === "sms" ? lead.phone : lead.email;
+      const isEmail = step.tpl.channel === "email";
+      const to = isEmail ? lead.email : lead.phone;
       if (!to) { noContact++; }
-      if (to) {
+      // Email throttle: only a few emails per run so they spread out and stay off spam lists.
+      else if (isEmail && emailsSent >= MAX_EMAILS_PER_RUN) { capped++; }
+      else {
         try {
+          await sleep(SEND_SPACING_MS); // space sends so we never fire a burst
           const bodyText = fillTokens(step.tpl.body, lead, config)
-            + (step.tpl.channel === "email" && config.emailSignature ? "\n\n" + config.emailSignature : "");
+            + (isEmail && config.emailSignature ? "\n\n" + config.emailSignature : "");
           const subject = fillTokens(step.tpl.subject, lead, config);
-          if (step.tpl.channel === "sms") { rc = rc || await rcToken(); await sendSms(rc, to, bodyText); }
+          if (!isEmail) { rc = rc || await rcToken(); await sendSms(rc, to, bodyText); }
           else await sendEmail(to, subject, bodyText);
 
           const newTouch = { at: now, channel: step.tpl.channel, kind: "cadence", stage: lead.status, step: step.i, auto: true };
           await supabase.from("leads").update({ touches: [...touches, newTouch], last_touch_at: new Date().toISOString() }).eq("id", lead.id);
           await supabase.from("communications").insert({
             lead_id: lead.id, direction: "out", channel: step.tpl.channel,
-            subject: step.tpl.channel === "email" ? subject : null, body: bodyText, to_addr: to, by_user: "automation",
+            subject: isEmail ? subject : null, body: bodyText, to_addr: to, by_user: "automation",
           });
           sent++;
+          if (isEmail) emailsSent++;
           log.push(`sent ${step.tpl.channel} to ${lead.id}`);
         } catch (e) { log.push(`send failed ${lead.id}: ${e.message}`); }
       }
     }
 
-    // ---- 2. auto-schedule a follow-up CALL (never stack) ----
-    // Gate: skip if any activity is still open (past-due or upcoming) for this lead.
-    if (openActSet.has(lead.id)) { continue; }
-
-    const daysSince = Math.floor((now - entered) / DAY);
-    if (CALL_DAYS.includes(daysSince)) {
-      const title = `Auto follow-up call (day ${daysSince})`;
-      const { data: existing } = await supabase.from("activities")
-        .select("id").eq("lead_id", lead.id).eq("title", title).limit(1);
-      if (!existing || !existing.length) {
-        await supabase.from("activities").insert({
-          lead_id: lead.id, type: "call", title,
-          notes: "Auto-created follow-up. Call this lead.",
-          due_at: new Date().toISOString(), created_by: "automation", assigned_to: config.autoAssignTo || null,
-        });
-        scheduled++;
-        log.push(`scheduled call day ${daysSince} for ${lead.id}`);
+    // ---- 2. auto-schedule a follow-up CALL ----
+    // DISABLED: these auto-created call tasks piled up as overdue activities faster than
+    // they could be worked. The text/email cadence already drives follow-up. Set
+    // config.autoScheduleCalls = true to turn this back on.
+    if (config.autoScheduleCalls) {
+      if (openActSet.has(lead.id)) { continue; }
+      const daysSince = Math.floor((now - entered) / DAY);
+      if (CALL_DAYS.includes(daysSince)) {
+        const title = `Auto follow-up call (day ${daysSince})`;
+        const { data: existing } = await supabase.from("activities")
+          .select("id").eq("lead_id", lead.id).eq("title", title).limit(1);
+        if (!existing || !existing.length) {
+          await supabase.from("activities").insert({
+            lead_id: lead.id, type: "call", title,
+            notes: "Auto-created follow-up. Call this lead.",
+            due_at: new Date().toISOString(), created_by: "automation", assigned_to: config.autoAssignTo || null,
+          });
+          scheduled++;
+          log.push(`scheduled call day ${daysSince} for ${lead.id}`);
+        }
       }
     }
   }
 
-  return { ok: true, sent, scheduled, skipped, waiting, noContact, noCadence, capped, leads: (leads || []).length, stageCounts, log: log.slice(0, 40) };
+  return { ok: true, sent, scheduled, skipped, waiting, noContact, noCadence, capped, emailsSent, leads: (leads || []).length, stageCounts, log: log.slice(0, 40) };
 }
 
 export const handler = async (event) => {

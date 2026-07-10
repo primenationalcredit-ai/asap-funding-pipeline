@@ -3311,12 +3311,20 @@ function Activities({ activities, leads, onOpen, completeActivity, deleteActivit
   const counts = { overdue: 0, today: 0 };
   open.forEach((a) => { const b = actBucket(a); if (counts[b] !== undefined) counts[b]++; });
 
+  const clearAllOverdue = () => {
+    const overdue = open.filter((a) => actBucket(a) === "overdue");
+    if (!overdue.length) return;
+    if (!confirm(`Mark all ${overdue.length} overdue tasks as done?`)) return;
+    overdue.forEach((a) => completeActivity(a.id, true));
+  };
+
   return (
     <div className="mt-4 flex flex-col gap-4">
       <div className="grid gap-3 sm:grid-cols-3">
         <div className="rounded-xl border border-rose-200 bg-rose-50 p-4">
           <div className="text-xs font-semibold uppercase tracking-wide text-rose-500">Overdue</div>
           <div className="mt-1 text-2xl font-bold text-rose-800">{counts.overdue}</div>
+          {counts.overdue > 0 && <button onClick={clearAllOverdue} className="mt-2 rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-700">Clear all overdue</button>}
         </div>
         <div className="rounded-xl border border-orange-200 bg-orange-50 p-4">
           <div className="text-xs font-semibold uppercase tracking-wide text-orange-500">Today</div>

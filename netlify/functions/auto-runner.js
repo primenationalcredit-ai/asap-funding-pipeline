@@ -107,7 +107,8 @@ async function run() {
 
   const now = Date.now();
   let rc = null;
-  let sent = 0, scheduled = 0, skipped = 0;
+  let sent = 0, scheduled = 0, skipped = 0, waiting = 0, noContact = 0, noCadence = 0, capped = 0;
+  const stageCounts = {};
 
   const leadIds = (leads || []).map((l) => l.id);
   // One query: which of these leads have ever replied, and which have an open activity.
@@ -121,6 +122,7 @@ async function run() {
   }
 
   for (const lead of leads || []) {
+    stageCounts[lead.status] = (stageCounts[lead.status] || 0) + 1;
     if (lead.opted_out || lead.automation_paused) { skipped++; continue; }
     if (lead.snooze_until && new Date(lead.snooze_until).getTime() > now) { skipped++; continue; }
 
@@ -158,9 +160,14 @@ async function run() {
       break; // only consider the first unsent step
     }
 
+    if (!rawSteps.length) noCadence++;
+    else if (!dueStep) waiting++;
+
+    if (dueStep && sent >= MAX_SENDS_PER_RUN) { capped++; }
     if (dueStep && sent < MAX_SENDS_PER_RUN) {
       const step = dueStep;
       const to = step.tpl.channel === "sms" ? lead.phone : lead.email;
+      if (!to) { noContact++; }
       if (to) {
         try {
           const bodyText = fillTokens(step.tpl.body, lead, config)
@@ -202,7 +209,7 @@ async function run() {
     }
   }
 
-  return { ok: true, sent, scheduled, skipped, leads: (leads || []).length, log };
+  return { ok: true, sent, scheduled, skipped, waiting, noContact, noCadence, capped, leads: (leads || []).length, stageCounts, log: log.slice(0, 40) };
 }
 
 export const handler = async (event) => {

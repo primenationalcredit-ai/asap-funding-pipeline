@@ -55,7 +55,7 @@ const DAY = 86400000;
 const DEFAULT_CONFIG = {
   reportLink: "https://www.myscoreiq.com/industry-score-preferred.aspx?offercode=432143MH",
   smartCreditLink: "https://www.smartcredit.com/?PID=52188",
-  appLink: "https://tinyurl.com/asapfundingapp",
+  appLink: "https://form.jotform.com/261793820000146",
   signature: "Joe at ASAP Funding USA",
   funderName: "Torro",
   funderEmail: "slocsubmissions@torro.com",
@@ -775,7 +775,7 @@ function parseMoney(s) {
   if (m[2] === "m") n *= 1000000;
   return n;
 }
-const APP_LINK_DEFAULT = "https://tinyurl.com/asapfundingapp";
+const APP_LINK_DEFAULT = "https://form.jotform.com/261793820000146";
 const APP_SMS_DEFAULT = `Hi {{first}}, {{opener}}to move forward on funding we need a quick application with your last few bank statements. You can do it all in one place, about 10 minutes: {{applink}}`;
 const APP_EMAIL_SUBJECT_DEFAULT = `Your funding application, {{first}}`;
 const APP_EMAIL_DEFAULT = `Hi {{first}},
@@ -2729,7 +2729,7 @@ function Settings({ config, persistConfig }) {
           <Labeled label="SmartCredit link (backup report tool)"><input value={draft.smartCreditLink || ""} onChange={set("smartCreditLink")} className={`${inputCls} font-mono`} /></Labeled>
           <Labeled label="Auto-snooze days after a logged call or note"><input type="number" min={0} value={draft.autoSnoozeDays ?? 3} onChange={(e) => setDraft({ ...draft, autoSnoozeDays: Number(e.target.value) })} className={inputCls} /></Labeled>
           <Labeled label="Email signature (added to the bottom of emails you send)"><textarea value={draft.emailSignature || ""} onChange={set("emailSignature")} rows={3} className={`${inputCls} resize-none`} /></Labeled>
-          <Labeled label="Application link (over $10k path)"><input value={draft.appLink || ""} onChange={set("appLink")} placeholder="https://tinyurl.com/asapfundingapp" className={`${inputCls} font-mono`} /></Labeled>
+          <Labeled label="Application link (over $10k path)"><input value={draft.appLink || ""} onChange={set("appLink")} placeholder="https://form.jotform.com/261793820000146" className={`${inputCls} font-mono`} /></Labeled>
           <Labeled label="Signature / who it is from"><input value={draft.signature} onChange={set("signature")} className={inputCls} /></Labeled>
           <Labeled label="Funder name"><input value={draft.funderName || ""} onChange={set("funderName")} className={inputCls} /></Labeled>
           <Labeled label="Funder submission email"><input value={draft.funderEmail || ""} onChange={set("funderEmail")} className={`${inputCls} font-mono`} /></Labeled>

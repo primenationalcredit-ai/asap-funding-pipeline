@@ -18,7 +18,7 @@ import { createClient } from "@supabase/supabase-js";
 const DAY = 86400000;
 const CALL_DAYS = [0, 1, 2, 3, 4, 6, 8, 10, 17, 24, 31, 45, 66, 90];
 const DEFAULT_STAGES = ["voicemail", "interested", "callback", "app_sent"];
-const MAX_SENDS_PER_RUN = 12; // stay within function time budget; rest picked up next run
+const MAX_SENDS_PER_RUN = 30; // clear the day's due items across the morning runs
 
 const hashStr = (s) => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; };
 const pickFrom = (list, seed) => (!list || !list.length ? null : list[hashStr(String(seed)) % list.length]);
@@ -44,6 +44,10 @@ function inBusinessHours(now = new Date()) {
   const hr = Number(parts.find((p) => p.type === "hour").value);
   const isWeekday = !["Sat", "Sun"].includes(wd);
   return isWeekday && hr >= 8 && hr < 17;
+}
+// Central-time calendar date as YYYY-MM-DD (sortable/comparable as a string)
+function cDay(ms) {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(ms));
 }
 
 async function rcToken() {
@@ -135,15 +139,22 @@ async function run() {
       if (t.kind === "cadence" && t.stage === lead.status && t.at >= entered - 5000) sentInfo[t.step] = t.at;
     });
     let anchor = entered, prevDay = 0, dueStep = null;
+    // Any recent interaction (manual text/email, note, call, edit) pushes the next
+    // auto follow-up out, so nothing fires while you're actively working the lead.
+    const lastTouch = lead.last_touch_at ? new Date(lead.last_touch_at).getTime() : 0;
     const poolOcc = {};
     for (const s of rawSteps) {
       const occ = (poolOcc[s.pool] = (poolOcc[s.pool] ?? -1) + 1);
       if (sentInfo[s.i] != null) { anchor = sentInfo[s.i]; prevDay = s.day; continue; }
       const gap = Math.max(0, s.day - prevDay) * DAY;
-      const dueAt = Math.max(anchor + gap, lead.snooze_until ? new Date(lead.snooze_until).getTime() : 0);
+      const base = Math.max(anchor, lastTouch); // reset on interaction
+      const dueAt = Math.max(base + gap, lead.snooze_until ? new Date(lead.snooze_until).getTime() : 0);
       const tpl = s.pool ? pickRotate(poolTemplates(templates, s.pool), lead.id, s.pool, occ)
                          : templates.find((t) => t.id === s.templateId);
-      dueStep = tpl && dueAt <= now ? { ...s, tpl, dueAt } : null; // the first unsent step is the only candidate
+      // Due if its calendar day (Central) has arrived, so the morning run clears anything due today
+      // rather than waiting for the exact time of day it came due.
+      const isDue = cDay(dueAt) <= cDay(now);
+      dueStep = tpl && isDue ? { ...s, tpl, dueAt } : null; // the first unsent step is the only candidate
       break; // only consider the first unsent step
     }
 

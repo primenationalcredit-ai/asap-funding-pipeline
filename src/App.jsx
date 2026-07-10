@@ -936,6 +936,7 @@ function cadenceSteps(lead, cadences, templates) {
   let prevDay = 0;
   let dueAssigned = false;
   const poolOcc = {}; // how many times each pool has appeared so far
+  const lastTouch = lead.lastTouchAt || 0; // any recent interaction pushes the next step out
 
   return steps.map((s, i) => {
     const occ = (poolOcc[s.pool] = (poolOcc[s.pool] ?? -1) + 1);
@@ -950,7 +951,7 @@ function cadenceSteps(lead, cadences, templates) {
       prevDay = s.day;
     } else {
       const gap = Math.max(0, s.day - prevDay) * DAY;
-      dueAt = Math.max(anchor + gap, snooze);
+      dueAt = Math.max(Math.max(anchor, lastTouch) + gap, snooze);
       if (!dueAssigned) { state = "due"; dueAssigned = true; }
       else state = "waiting";    // later steps wait until the due one is sent
     }
@@ -1920,7 +1921,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
     const patch = {};
     EDITABLE.forEach((k) => { if (draft[k] !== lead[k]) patch[k] = draft[k]; });
     if (Object.keys(patch).length === 0) return;
-    const t = setTimeout(() => { updateLead(lead.id, patch); setSavedAt(Date.now()); setTimeout(() => setSavedAt(0), 1500); }, 700);
+    const t = setTimeout(() => { updateLead(lead.id, { ...patch, lastTouchAt: Date.now() }); setSavedAt(Date.now()); setTimeout(() => setSavedAt(0), 1500); }, 700);
     return () => clearTimeout(t);
   }, [draft]); // eslint-disable-line
 
@@ -2060,23 +2061,77 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
             )}
           </div>
 
+          {/* call guide (top, above the composer) */}
+          {/* call guide */}
+          <div className="rounded-xl border border-blue-200 bg-blue-50/40">
+            <button onClick={() => setGuideOpen((o) => !o)} className="flex w-full items-center justify-between px-4 py-3 text-left">
+              <span className="flex items-center gap-1.5 text-sm font-bold text-blue-900"><FileText size={15} /> Call guide</span>
+              <ChevronDown size={16} className={`text-blue-700 transition ${guideOpen ? "rotate-180" : ""}`} />
+            </button>
+            {guideOpen && (
+              <div className="space-y-4 border-t border-blue-100 px-4 py-3">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-blue-700">Opener</div>
+                  <p className="mt-1 text-sm text-slate-700">
+                    Hi {firstName(draft.name)}, this is {config.signature}.{" "}
+                    {(() => {
+                      const bn = (draft.businessName || "").trim();
+                      const dupe = bn && bn.toLowerCase() === (draft.name || "").trim().toLowerCase();
+                      const bits = [
+                        draft.desiredAmount && `From what you sent over I see you're looking for ${draft.desiredAmount}`,
+                        draft.fundingPurpose && `to put toward ${draft.fundingPurpose}`,
+                        (bn && !dupe) && `for ${bn}`,
+                        draft.fundingTimeline && `and you need it ${draft.fundingTimeline}`,
+                      ].filter(Boolean);
+                      return bits.length ? bits.join(", ") + ". " : "";
+                    })()}
+                    My job is to get you funding as fast as possible and, just as important, the best options for your situation, not just the quickest yes. Let me confirm a couple of things.
+                  </p>
+                </div>
+                <div className="space-y-3">
+                  {[
+                    { ask: "What are you looking to get funding for?", say: (v) => `You want it for ${v}. Still the plan?`, k: "fundingPurpose", ph: "Purpose / use of funds" },
+                    { ask: "What is the business name?", say: (v) => `Business: ${v}.`, k: "businessName", ph: "Business name" },
+                    { ask: "Ballpark, where is your personal credit right now?", say: (v) => `You estimated credit around ${v}.`, k: "creditScore", ph: "Credit score range" },
+                    { ask: "How much are you looking to get?", say: (v) => `You're after ${v}. Is that still the goal?`, k: "desiredAmount", ph: "Amount" },
+                    { ask: "How soon do you need it?", say: (v) => `Timeline: ${v}.`, k: "fundingTimeline", ph: "How soon" },
+                  ].map(({ ask, say, k, ph }) => {
+                    const have = !!(draft[k] && String(draft[k]).trim());
+                    return (
+                      <div key={k}>
+                        <div className={`flex items-start gap-1.5 text-sm font-medium ${have ? "text-blue-700" : "text-slate-700"}`}>
+                          {have && <Check size={15} className="mt-0.5 shrink-0" />}
+                          <span>{have ? say(draft[k]) : ask}</span>
+                        </div>
+                        <input value={draft[k]} onChange={set(k)} placeholder={ph} className={`${inputCls} mt-1 ${have ? "border-blue-200 bg-blue-50/40" : ""}`} />
+                      </div>
+                    );
+                  })}
+                </div>
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-blue-700">The soft pull (lead into the link)</div>
+                  <p className="mt-1 text-sm text-slate-700">To see exactly what we can do for you, the next step is a quick soft pull through My Score IQ. That shows us where your FICO scores sit across all three bureaus. It takes about 5 minutes, it does not hurt your score, and it lets me match you to the funders you actually qualify for instead of guessing. I will text and email you the secure link right now while we are on the phone. Use the Text link or Email link buttons above.</p>
+                </div>
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-blue-700">Why us over a bank</div>
+                  <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-slate-700">
+                    <li>Banks decline most small businesses and can take weeks to months. We move as fast as your file allows and often fund quickly.</li>
+                    <li>We are not stuck inside one bank's box. We shop your profile across a network of funders to land the best offer, not just the first yes.</li>
+                    <li>One review with us, not ten separate bank applications that each add a hard inquiry to your report.</li>
+                    <li>We look at your revenue and the whole picture, not just a single credit score cutoff.</li>
+                    <li>The goal is the best amount and terms for your situation, then getting it funded as fast as possible.</li>
+                  </ul>
+                </div>
+                <p className="text-xs text-slate-400">Answers save automatically as you type.</p>
+              </div>
+            )}
+          </div>
+
+          {/* stage-aware scripts */}
+          <ProfileScripts lead={lead} userEmail={userEmail} />
+
           {/* conversation: where you left off */}
           <Conversation lead={lead} comms={comms} onSend={sendReply} onAddNote={addNote} templates={templates} config={config} compact />
-
-          {/* what to do next */}
-          {STAGE_PLAYBOOK[lead.status] && (
-            <div className="rounded-xl border border-blue-200 bg-blue-50/50 px-4 py-3">
-              <div className="mb-1.5 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-blue-700"><ListChecks size={14} /> Playbook for this stage</div>
-              <ol className="ml-1 flex flex-col gap-1">
-                {STAGE_PLAYBOOK[lead.status].map((step, i) => (
-                  <li key={i} className="flex items-start gap-2 text-sm text-slate-700">
-                    <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white">{i + 1}</span>
-                    <span>{step}</span>
-                  </li>
-                ))}
-              </ol>
-            </div>
-          )}
 
           {/* scheduled calls and tasks */}
           <ActivityPanel lead={lead} activities={leadActivities} addActivity={addActivity} completeActivity={completeActivity} deleteActivity={deleteActivity} />
@@ -2152,73 +2207,6 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
             <p className="mt-2 text-xs text-slate-400">A call note is required. Picking an outcome sets the stage, starts that campaign, and logs your note, your name, and the time.</p>
           </div>
 
-          {/* stage-aware scripts */}
-          <ProfileScripts lead={lead} userEmail={userEmail} />
-
-          {/* call guide */}
-          <div className="rounded-xl border border-blue-200 bg-blue-50/40">
-            <button onClick={() => setGuideOpen((o) => !o)} className="flex w-full items-center justify-between px-4 py-3 text-left">
-              <span className="flex items-center gap-1.5 text-sm font-bold text-blue-900"><FileText size={15} /> Call guide</span>
-              <ChevronDown size={16} className={`text-blue-700 transition ${guideOpen ? "rotate-180" : ""}`} />
-            </button>
-            {guideOpen && (
-              <div className="space-y-4 border-t border-blue-100 px-4 py-3">
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-wide text-blue-700">Opener</div>
-                  <p className="mt-1 text-sm text-slate-700">
-                    Hi {firstName(draft.name)}, this is {config.signature}.{" "}
-                    {(() => {
-                      const bn = (draft.businessName || "").trim();
-                      const dupe = bn && bn.toLowerCase() === (draft.name || "").trim().toLowerCase();
-                      const bits = [
-                        draft.desiredAmount && `From what you sent over I see you're looking for ${draft.desiredAmount}`,
-                        draft.fundingPurpose && `to put toward ${draft.fundingPurpose}`,
-                        (bn && !dupe) && `for ${bn}`,
-                        draft.fundingTimeline && `and you need it ${draft.fundingTimeline}`,
-                      ].filter(Boolean);
-                      return bits.length ? bits.join(", ") + ". " : "";
-                    })()}
-                    My job is to get you funding as fast as possible and, just as important, the best options for your situation, not just the quickest yes. Let me confirm a couple of things.
-                  </p>
-                </div>
-                <div className="space-y-3">
-                  {[
-                    { ask: "What are you looking to get funding for?", say: (v) => `You want it for ${v}. Still the plan?`, k: "fundingPurpose", ph: "Purpose / use of funds" },
-                    { ask: "What is the business name?", say: (v) => `Business: ${v}.`, k: "businessName", ph: "Business name" },
-                    { ask: "Ballpark, where is your personal credit right now?", say: (v) => `You estimated credit around ${v}.`, k: "creditScore", ph: "Credit score range" },
-                    { ask: "How much are you looking to get?", say: (v) => `You're after ${v}. Is that still the goal?`, k: "desiredAmount", ph: "Amount" },
-                    { ask: "How soon do you need it?", say: (v) => `Timeline: ${v}.`, k: "fundingTimeline", ph: "How soon" },
-                  ].map(({ ask, say, k, ph }) => {
-                    const have = !!(draft[k] && String(draft[k]).trim());
-                    return (
-                      <div key={k}>
-                        <div className={`flex items-start gap-1.5 text-sm font-medium ${have ? "text-blue-700" : "text-slate-700"}`}>
-                          {have && <Check size={15} className="mt-0.5 shrink-0" />}
-                          <span>{have ? say(draft[k]) : ask}</span>
-                        </div>
-                        <input value={draft[k]} onChange={set(k)} placeholder={ph} className={`${inputCls} mt-1 ${have ? "border-blue-200 bg-blue-50/40" : ""}`} />
-                      </div>
-                    );
-                  })}
-                </div>
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-wide text-blue-700">The soft pull (lead into the link)</div>
-                  <p className="mt-1 text-sm text-slate-700">To see exactly what we can do for you, the next step is a quick soft pull through My Score IQ. That shows us where your FICO scores sit across all three bureaus. It takes about 5 minutes, it does not hurt your score, and it lets me match you to the funders you actually qualify for instead of guessing. I will text and email you the secure link right now while we are on the phone. Use the Text link or Email link buttons above.</p>
-                </div>
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-wide text-blue-700">Why us over a bank</div>
-                  <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-slate-700">
-                    <li>Banks decline most small businesses and can take weeks to months. We move as fast as your file allows and often fund quickly.</li>
-                    <li>We are not stuck inside one bank's box. We shop your profile across a network of funders to land the best offer, not just the first yes.</li>
-                    <li>One review with us, not ten separate bank applications that each add a hard inquiry to your report.</li>
-                    <li>We look at your revenue and the whole picture, not just a single credit score cutoff.</li>
-                    <li>The goal is the best amount and terms for your situation, then getting it funded as fast as possible.</li>
-                  </ul>
-                </div>
-                <p className="text-xs text-slate-400">Answers save automatically as you type.</p>
-              </div>
-            )}
-          </div>
 
           </div>{/* end left column */}
 

@@ -17,7 +17,7 @@ import { createClient } from "@supabase/supabase-js";
 
 const DAY = 86400000;
 const CALL_DAYS = [0, 1, 2, 3, 4, 6, 8, 10, 17, 24, 31, 45, 66, 90];
-const DEFAULT_STAGES = ["voicemail", "interested", "callback", "app_sent"];
+const DEFAULT_STAGES = ["voicemail", "interested", "callback", "report_pulled", "app_sent"];
 const MAX_SENDS_PER_RUN = 30; // clear the day's due items across the morning runs
 
 const hashStr = (s) => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; };

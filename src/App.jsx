@@ -1973,8 +1973,35 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
     if (!callNote.trim()) { setNoteErr(true); return; }
     logTouch(lead.id, "call", "call", { disposition: label, note: callNote.trim(), by: userEmail });
     setCallNote(""); setSpoke(false); setNoteErr(false);
-    updateLead(lead.id, { status: stage });
+    if (stage) updateLead(lead.id, { status: stage }); // stage null = just log the call, keep current stage
   };
+
+  // Call outcomes change with where the client is in the pipeline.
+  const OUTCOME_BTN = { sky:"bg-sky-600 hover:bg-sky-700", violet:"bg-violet-600 hover:bg-violet-700", orange:"bg-orange-500 hover:bg-orange-600", emerald:"bg-emerald-600 hover:bg-emerald-700", fuchsia:"bg-fuchsia-600 hover:bg-fuchsia-700", rose:"bg-rose-500 hover:bg-rose-600" };
+  const spokeOutcomes = (() => {
+    const s = lead.status;
+    if (["report_pulled", "app_sent", "submitted", "pre_approved", "contracts_out"].includes(s)) return [
+      { label: "Moving forward", disp: "Spoke, moving forward", stage: null, c: "emerald" },
+      { label: "Offer credit repair", disp: "Spoke, offered credit repair", stage: "offer_cr", c: "fuchsia" },
+      { label: "Call back later", disp: "Spoke, call back", stage: null, c: "violet" },
+      { label: "Not interested", disp: "Spoke, not interested", stage: "dead", c: "orange" },
+    ];
+    if (["declined", "offer_cr", "referred_cr", "credit_repair"].includes(s)) return [
+      { label: "Offered credit repair", disp: "Spoke, offered credit repair", stage: "offer_cr", c: "fuchsia" },
+      { label: "Referred to credit team", disp: "Spoke, referred to credit", stage: "referred_cr", c: "fuchsia" },
+      { label: "Funding path (680 / co-signer)", disp: "Spoke, funding path", stage: null, c: "sky" },
+      { label: "Call back later", disp: "Spoke, call back", stage: null, c: "violet" },
+      { label: "Not interested", disp: "Spoke, not interested", stage: "dead", c: "orange" },
+    ];
+    return [ // outreach default
+      { label: "Interested", disp: "Spoke, interested", stage: "interested", c: "sky" },
+      { label: "Call back later", disp: "Spoke, call back", stage: "callback", c: "violet" },
+      { label: "Not interested", disp: "Spoke, not interested", stage: "not_interested", c: "orange" },
+    ];
+  })();
+  // Leaving a voicemail only sends outreach leads into the voicemail cadence; deeper in the
+  // pipeline it just logs the call so the client is not yanked back to an outreach stage.
+  const lvmStage = ["new", "voicemail", "interested", "callback", "not_interested", ""].includes(lead.status) ? "voicemail" : null;
 
   const submitToFunder = async () => {
     let link = "";
@@ -2222,21 +2249,21 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
             {noteErr && <p className="mb-2 text-xs font-medium text-rose-600">Please add a call note before logging the outcome.</p>}
             {!spoke ? (
               <div className="flex flex-wrap gap-2">
-                <button onClick={() => logOutcome("voicemail", "Left voicemail")} className="rounded-lg bg-amber-100 px-3 py-2 text-sm font-semibold text-amber-800 ring-1 ring-inset ring-amber-200 hover:bg-amber-200">No answer / left voicemail</button>
+                <button onClick={() => logOutcome(lvmStage, "Left voicemail")} className="rounded-lg bg-amber-100 px-3 py-2 text-sm font-semibold text-amber-800 ring-1 ring-inset ring-amber-200 hover:bg-amber-200">No answer / left voicemail</button>
                 <button onClick={() => setSpoke(true)} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700">Spoke to them</button>
               </div>
             ) : (
               <div>
                 <div className="mb-1.5 text-xs font-medium text-slate-500">How did it go?</div>
                 <div className="flex flex-wrap gap-2">
-                  <button onClick={() => logOutcome("interested", "Spoke, interested")} className="rounded-lg bg-sky-600 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-700">Interested</button>
-                  <button onClick={() => logOutcome("callback", "Spoke, call back")} className="rounded-lg bg-violet-600 px-3 py-2 text-sm font-semibold text-white hover:bg-violet-700">Call back later</button>
-                  <button onClick={() => logOutcome("not_interested", "Spoke, not interested")} className="rounded-lg bg-orange-500 px-3 py-2 text-sm font-semibold text-white hover:bg-orange-600">Not interested</button>
+                  {spokeOutcomes.map((o) => (
+                    <button key={o.label} onClick={() => logOutcome(o.stage, o.disp)} className={`rounded-lg px-3 py-2 text-sm font-semibold text-white ${OUTCOME_BTN[o.c]}`}>{o.label}</button>
+                  ))}
                   <button onClick={() => setSpoke(false)} className="rounded-lg px-3 py-2 text-sm font-medium text-slate-500 hover:bg-slate-100">Back</button>
                 </div>
               </div>
             )}
-            <p className="mt-2 text-xs text-slate-400">A call note is required. Picking an outcome sets the stage, starts that campaign, and logs your note, your name, and the time.</p>
+            <p className="mt-2 text-xs text-slate-400">A call note is required. Outcomes match where this client is in the pipeline. "Moving forward," "Call back," and "Funding path" log the call without changing the stage.</p>
           </div>
 
 

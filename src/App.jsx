@@ -2929,7 +2929,7 @@ function Conversation({ lead, comms, onSend, onAddNote, templates = [], config =
     const msgs = comms.filter((c) => c.lead_id === lead.id).map((c) => ({
       id: c.id, kind: c.channel === "note" ? "note" : c.channel,
       direction: c.direction, at: new Date(c.at).getTime(),
-      subject: c.subject, body: c.body, by: c.by_user,
+      subject: c.subject, body: c.body, by: c.by_user, attachments: Array.isArray(c.attachments) ? c.attachments : [],
     }));
     const calls = (lead.touches || []).filter((t) => t.kind === "call").map((t, i) => ({
       id: "call-" + t.at + "-" + i, kind: "call", direction: "log", at: t.at,
@@ -2976,6 +2976,14 @@ function Conversation({ lead, comms, onSend, onAddNote, templates = [], config =
   };
 
   const CHIPS = [["all", "All"], ["note", "Notes"], ["call", "Calls"], ["sms", "Texts"], ["email", "Emails"]];
+
+  const downloadAttachment = async (path) => {
+    try {
+      const { data, error } = await supabase.storage.from("reports").createSignedUrl(path, 3600);
+      if (error || !data?.signedUrl) { alert("Could not open file."); return; }
+      window.open(data.signedUrl, "_blank");
+    } catch { alert("Could not open file."); }
+  };
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white">
@@ -3028,6 +3036,15 @@ function Conversation({ lead, comms, onSend, onAddNote, templates = [], config =
                 </div>
                 {it.subject && <div className={`text-xs font-semibold ${inbound ? "text-slate-600" : "text-blue-100"}`}>{it.subject}</div>}
                 <div className="whitespace-pre-wrap">{it.body}</div>
+                {it.attachments && it.attachments.length > 0 && (
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {it.attachments.map((a, ai) => (
+                      <button key={ai} onClick={() => downloadAttachment(a.path)} className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium ${inbound ? "bg-white text-blue-700 ring-1 ring-inset ring-slate-200 hover:bg-slate-50" : "bg-blue-500/60 text-white hover:bg-blue-500/80"}`}>
+                        <FileText size={11} /> {a.name || "attachment"}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           );

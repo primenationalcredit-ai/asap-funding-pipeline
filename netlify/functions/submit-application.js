@@ -1,13 +1,14 @@
-import { createClient } from "@supabase/supabase-js";
+﻿import { createClient } from "@supabase/supabase-js";
 
-/*
- * Receives a completed universal funding application from /apply.html,
- * emails the whole package (application PDF + uploaded docs) to the team so it
- * can be forwarded to Torro and any other lender, and files it on the lead if matched.
- *
- * Env: SENDGRID_API_KEY, EMAIL_FROM, EMAIL_FROM_NAME, and optionally
- *      APPLICATION_TO (defaults to EMAIL_FROM). SUPABASE_* for filing on the lead.
- */
+function guessLabel(name) {
+  const s = (name || "").toLowerCase();
+  if (/bank|statement/.test(s)) return "Bank statements";
+  if (/void|check/.test(s)) return "Voided check";
+  if (/licen|dl|id\b|driver/.test(s)) return "Driver's license";
+  if (/tax|return/.test(s)) return "Tax return";
+  if (/ein|formation|articles/.test(s)) return "Business formation / EIN";
+  return "Other";
+}
 
 async function sendEmailWithAttachments(to, subject, text, attachments) {
   const body = {
@@ -34,7 +35,6 @@ export const handler = async (event) => {
     const owner = p.owner || "";
     const f = p.fields || {};
 
-    // Assemble attachments: the generated application PDF first, then the client's uploads
     const attachments = [];
     const safe = (biz || "application").replace(/[^a-zA-Z0-9]+/g, "-").slice(0, 40);
     if (p.applicationPdf) attachments.push({ name: `Application-${safe}.pdf`, type: "application/pdf", data: p.applicationPdf });
@@ -71,7 +71,6 @@ The full application PDF and all uploaded documents are attached. Forward this p
 
     await sendEmailWithAttachments(to, `Funding Application — ${biz}${owner ? " (" + owner + ")" : ""}`, summary, attachments);
 
-    // Best-effort: file it on the matching lead (by email or phone) so it shows in their record
     try {
       if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
         const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
@@ -79,18 +78,25 @@ The full application PDF and all uploaded documents are attached. Forward this p
         let lead = null;
         if (email) { const { data } = await supabase.from("leads").select("id,documents,status").ilike("email", email).maybeSingle(); lead = data; }
         if (lead) {
-          // store the application PDF in the reports bucket and link it on the lead
-          const path = `${lead.id}/application-${Date.now()}.pdf`;
-          if (p.applicationPdf) {
-            const bytes = Buffer.from(p.applicationPdf, "base64");
-            await supabase.storage.from("reports").upload(path, bytes, { contentType: "application/pdf", upsert: true });
-          }
           const docs = Array.isArray(lead.documents) ? lead.documents : [];
-          docs.push({ name: `Application-${safe}.pdf`, path, label: "Application", uploadedAt: Date.now(), by: "application form" });
+          if (p.applicationPdf) {
+            const path = `${lead.id}/application-${Date.now()}.pdf`;
+            await supabase.storage.from("reports").upload(path, Buffer.from(p.applicationPdf, "base64"), { contentType: "application/pdf", upsert: true });
+            docs.push({ name: `Application-${safe}.pdf`, path, label: "Application", uploadedAt: Date.now(), by: "application form" });
+          }
+          for (const a of (p.attachments || [])) {
+            if (!a || !a.data) continue;
+            const clean = (a.name || "document").replace(/[^a-zA-Z0-9.\-_]/g, "_").slice(0, 80);
+            const path = `${lead.id}/appdoc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}-${clean}`;
+            try {
+              await supabase.storage.from("reports").upload(path, Buffer.from(a.data, "base64"), { contentType: a.type || "application/octet-stream", upsert: true });
+              docs.push({ name: a.name || clean, path, label: guessLabel(a.name), uploadedAt: Date.now(), by: "application form" });
+            } catch (e) { console.log("[submit-application] doc store failed", e.message); }
+          }
           const patch = { documents: docs, last_touch_at: new Date().toISOString() };
           if (["new", "voicemail", "interested", "callback", "check_back"].includes(lead.status)) patch.status = "app_sent";
           await supabase.from("leads").update(patch).eq("id", lead.id);
-          await supabase.from("communications").insert({ lead_id: lead.id, direction: "in", channel: "note", body: "Client submitted the funding application.", by_user: "application form" });
+          await supabase.from("communications").insert({ lead_id: lead.id, direction: "in", channel: "note", body: "Client submitted the funding application with documents.", by_user: "application form" });
         }
       }
     } catch (e) { console.log("[submit-application] file-on-lead failed", e.message); }

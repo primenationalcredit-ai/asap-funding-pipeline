@@ -1,8 +1,11 @@
 ﻿import { createClient } from "@supabase/supabase-js";
 
-async function sendEmail(to, subject, text, attachments) {
+async function sendEmail(to, cc, subject, text, attachments) {
+  const personalization = { to: [{ email: to }] };
+  const ccList = (cc || "").split(",").map((s) => s.trim()).filter(Boolean).map((email) => ({ email }));
+  if (ccList.length) personalization.cc = ccList;
   const body = {
-    personalizations: [{ to: [{ email: to }] }],
+    personalizations: [personalization],
     from: { email: process.env.EMAIL_FROM, name: process.env.EMAIL_FROM_NAME || "ASAP Funding USA" },
     subject,
     content: [{ type: "text/plain", value: text }],
@@ -18,11 +21,11 @@ async function sendEmail(to, subject, text, attachments) {
 export const handler = async (event) => {
   if (event.httpMethod !== "POST") return { statusCode: 405, body: "Method not allowed" };
   try {
-    const { leadId, toEmail, note, paths } = JSON.parse(event.body || "{}");
+    const { leadId, toEmail, cc, lenderName, note, paths } = JSON.parse(event.body || "{}");
     if (!leadId || !toEmail) return { statusCode: 400, body: JSON.stringify({ error: "leadId and toEmail required" }) };
     const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
-    const { data: lead } = await supabase.from("leads").select("id,name,business_name,documents,phone,email").eq("id", leadId).maybeSingle();
+    const { data: lead } = await supabase.from("leads").select("id,name,business_name,documents,submissions,phone,email").eq("id", leadId).maybeSingle();
     if (!lead) return { statusCode: 404, body: JSON.stringify({ error: "lead not found" }) };
 
     const docs = Array.isArray(lead.documents) ? lead.documents : [];
@@ -44,12 +47,15 @@ export const handler = async (event) => {
     const biz = lead.business_name || lead.name || "Applicant";
     const text = `${note ? note + "\n\n" : ""}Please find attached the funding application and supporting documents for ${biz}.\n\nContact: ${lead.name || ""}${lead.phone ? " · " + lead.phone : ""}${lead.email ? " · " + lead.email : ""}\n\nThank you,\nASAP Funding USA`;
 
-    await sendEmail(toEmail, `Funding submission — ${biz}`, text, attachments);
+    await sendEmail(toEmail, cc, `Funding submission — ${biz}`, text, attachments);
 
-    await supabase.from("communications").insert({ lead_id: lead.id, direction: "out", channel: "note", body: `Sent document package (${attachments.length} files) to lender: ${toEmail}`, by_user: "system" });
-    await supabase.from("leads").update({ last_touch_at: new Date().toISOString() }).eq("id", lead.id);
+    const submissions = Array.isArray(lead.submissions) ? lead.submissions : [];
+    const submission = { id: Date.now().toString(36), lender: lenderName || toEmail, email: toEmail, cc: cc || "", files: attachments.length, sentAt: Date.now(), status: "Submitted", note: "", amount: "" };
+    submissions.unshift(submission);
+    await supabase.from("leads").update({ submissions, last_touch_at: new Date().toISOString() }).eq("id", lead.id);
+    await supabase.from("communications").insert({ lead_id: lead.id, direction: "out", channel: "note", body: `Submitted application package (${attachments.length} files) to ${lenderName || toEmail}${cc ? " (cc: " + cc + ")" : ""}`, by_user: "system" });
 
-    return { statusCode: 200, body: JSON.stringify({ ok: true, sent: attachments.length, to: toEmail }) };
+    return { statusCode: 200, body: JSON.stringify({ ok: true, sent: attachments.length, to: toEmail, submission }) };
   } catch (e) {
     console.log("[send-to-lender] error", e.message);
     return { statusCode: 500, body: JSON.stringify({ error: e.message }) };

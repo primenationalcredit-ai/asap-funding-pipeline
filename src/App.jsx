@@ -56,7 +56,7 @@ const DAY = 86400000;
 const DEFAULT_CONFIG = {
   reportLink: "https://www.myscoreiq.com/industry-score-preferred.aspx?offercode=432143MH",
   smartCreditLink: "https://www.smartcredit.com/?PID=52188",
-  appLink: "https://form.jotform.com/261793820000146",
+  appLink: "https://tranquil-muffin-691d4e.netlify.app/apply.html",
   signature: "Joe at ASAP Funding USA",
   funderName: "Torro",
   funderEmail: "slocsubmissions@torro.com",
@@ -784,7 +784,7 @@ function parseMoney(s) {
   if (m[2] === "m") n *= 1000000;
   return n;
 }
-const APP_LINK_DEFAULT = "https://form.jotform.com/261793820000146";
+const APP_LINK_DEFAULT = "https://tranquil-muffin-691d4e.netlify.app/apply.html";
 const APP_SMS_DEFAULT = `Hi {{first}}, {{opener}}to move forward on funding we need a quick application with your last few bank statements. You can do it all in one place, about 10 minutes: {{applink}}`;
 const APP_EMAIL_SUBJECT_DEFAULT = `Your funding application, {{first}}`;
 const APP_EMAIL_DEFAULT = `Hi {{first}},
@@ -1918,6 +1918,11 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
   const [noteErr, setNoteErr] = useState(false);
   const [docLabel, setDocLabel] = useState("Bank statements");
   const [docBusy, setDocBusy] = useState(false);
+  const [lenderOpen, setLenderOpen] = useState(false);
+  const [lenderEmail, setLenderEmail] = useState("");
+  const [lenderNote, setLenderNote] = useState("");
+  const [lenderBusy, setLenderBusy] = useState(false);
+  const [lenderMsg, setLenderMsg] = useState("");
   const [spoke, setSpoke] = useState(false);
   const [declineOpen, setDeclineOpen] = useState(false);
   useEffect(() => { setDraft(lead); setGuideOpen(lead.status === "new"); setSpoke(false); setDeclineOpen(false); markRead && markRead(lead.id); }, [lead.id]); // reload + mark read when switching leads
@@ -1974,6 +1979,22 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
     if (!confirm("Remove this document?")) return;
     try { await supabase.storage.from("reports").remove([path]); } catch {}
     await updateLead(lead.id, { documents: (lead.documents || []).filter((d) => d.path !== path) });
+  };
+  const sendToLender = async () => {
+    if (!lenderEmail.trim()) return;
+    setLenderBusy(true); setLenderMsg("");
+    try {
+      const res = await fetch("/.netlify/functions/send-to-lender", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ leadId: lead.id, toEmail: lenderEmail.trim(), note: lenderNote.trim() }),
+      });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error || "Failed to send");
+      setLenderMsg(`Sent ${j.sent} files to ${j.to}`);
+      setLenderEmail(""); setLenderNote("");
+      setTimeout(() => { setLenderOpen(false); setLenderMsg(""); }, 2500);
+    } catch (e) { setLenderMsg(String(e.message || e)); }
+    finally { setLenderBusy(false); }
   };
 
   const logOutcome = (stage, label) => {
@@ -2382,6 +2403,25 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
                     <button onClick={() => deleteDoc(d.path)} title="Remove" className="shrink-0 rounded-md p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-500"><Trash2 size={14} /></button>
                   </div>
                 ))}
+              </div>
+            )}
+            {(lead.documents || []).length > 0 && (
+              <div className="mt-3 border-t border-slate-100 pt-3">
+                {!lenderOpen ? (
+                  <button onClick={() => setLenderOpen(true)} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700"><Send size={14} /> Send package to lender</button>
+                ) : (
+                  <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-3">
+                    <div className="mb-1.5 text-xs font-bold uppercase tracking-wide text-emerald-700">Email application + all documents</div>
+                    <input value={lenderEmail} onChange={(e) => setLenderEmail(e.target.value)} placeholder="Lender email address" className={`${inputCls} mb-2`} />
+                    <textarea value={lenderNote} onChange={(e) => setLenderNote(e.target.value)} rows={2} placeholder="Optional note to the lender..." className={`${inputCls} mb-2`} />
+                    {lenderMsg && <div className={`mb-2 text-xs font-medium ${lenderMsg.startsWith("Sent") ? "text-emerald-700" : "text-rose-600"}`}>{lenderMsg}</div>}
+                    <div className="flex gap-2">
+                      <button disabled={lenderBusy || !lenderEmail.trim()} onClick={sendToLender} className={`rounded-lg px-3 py-2 text-sm font-semibold text-white ${lenderBusy || !lenderEmail.trim() ? "bg-slate-400" : "bg-emerald-600 hover:bg-emerald-700"}`}>{lenderBusy ? "Sending..." : `Send ${(lead.documents || []).length} files`}</button>
+                      <button onClick={() => { setLenderOpen(false); setLenderMsg(""); }} className="rounded-lg px-3 py-2 text-sm font-medium text-slate-500 hover:bg-slate-100">Cancel</button>
+                    </div>
+                    <p className="mt-1.5 text-xs text-slate-400">Emails the full package straight to the lender from your funding inbox.</p>
+                  </div>
+                )}
               </div>
             )}
           </Section>
@@ -2829,7 +2869,7 @@ function Settings({ config, persistConfig }) {
           <Labeled label="SmartCredit link (backup report tool)"><input value={draft.smartCreditLink || ""} onChange={set("smartCreditLink")} className={`${inputCls} font-mono`} /></Labeled>
           <Labeled label="Auto-snooze days after a logged call or note"><input type="number" min={0} value={draft.autoSnoozeDays ?? 3} onChange={(e) => setDraft({ ...draft, autoSnoozeDays: Number(e.target.value) })} className={inputCls} /></Labeled>
           <Labeled label="Email signature (added to the bottom of emails you send)"><textarea value={draft.emailSignature || ""} onChange={set("emailSignature")} rows={3} className={`${inputCls} resize-none`} /></Labeled>
-          <Labeled label="Application link (over $10k path)"><input value={draft.appLink || ""} onChange={set("appLink")} placeholder="https://form.jotform.com/261793820000146" className={`${inputCls} font-mono`} /></Labeled>
+          <Labeled label="Application link (over $10k path)"><input value={draft.appLink || ""} onChange={set("appLink")} placeholder="https://tranquil-muffin-691d4e.netlify.app/apply.html" className={`${inputCls} font-mono`} /></Labeled>
           <Labeled label="Signature / who it is from"><input value={draft.signature} onChange={set("signature")} className={inputCls} /></Labeled>
           <Labeled label="Funder name"><input value={draft.funderName || ""} onChange={set("funderName")} className={inputCls} /></Labeled>
           <Labeled label="Funder submission email"><input value={draft.funderEmail || ""} onChange={set("funderEmail")} className={`${inputCls} font-mono`} /></Labeled>

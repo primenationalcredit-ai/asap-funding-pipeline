@@ -693,6 +693,7 @@ function rowToLead(r) {
     confirmedFields: Array.isArray(r.confirmed_fields) ? r.confirmed_fields : [],
     readAt: r.read_at ? new Date(r.read_at).getTime() : 0,
     documents: Array.isArray(r.documents) ? r.documents : [],
+    submissions: Array.isArray(r.submissions) ? r.submissions : [],
   };
 }
 const FIELD_MAP = {
@@ -1256,6 +1257,7 @@ function Dashboard({ userEmail }) {
   const [tab, setTab] = useState("pipeline");
   const [leads, setLeads] = useState([]);
   const [config, setConfig] = useState(DEFAULT_CONFIG);
+  const [lenders, setLenders] = useState([]);
   const [templates, setTemplates] = useState(DEFAULT_TEMPLATES);
   const [cadences, setCadences] = useState(DEFAULT_CADENCES);
   const [loaded, setLoaded] = useState(false);
@@ -1309,7 +1311,7 @@ function Dashboard({ userEmail }) {
   useEffect(() => {
     (async () => {
       try {
-        const keys = ["config", "templates", "cadences"];
+        const keys = ["config", "templates", "cadences", "lenders"];
         const { data } = await supabase.from("app_config").select("key,value").in("key", keys);
         const map = Object.fromEntries((data || []).map((r) => [r.key, r.value]));
         if (map.config) setConfig({ ...DEFAULT_CONFIG, ...map.config });
@@ -1318,6 +1320,7 @@ function Dashboard({ userEmail }) {
         else await supabase.from("app_config").upsert({ key: "templates", value: DEFAULT_TEMPLATES });
         if (map.cadences) setCadences(map.cadences);
         else await supabase.from("app_config").upsert({ key: "cadences", value: DEFAULT_CADENCES });
+        if (map.lenders) setLenders(map.lenders);
         await refetchLeads();
         // these tables are optional: if the migration has not run yet, ignore
         try { await refetchComms(); await refetchActivities(); } catch { /* not migrated yet */ }
@@ -1340,6 +1343,7 @@ function Dashboard({ userEmail }) {
   const persistConfig = useCallback(async (next) => { setConfig(next); await saveConfigKey("config", next); }, [saveConfigKey]);
   const persistTemplates = useCallback(async (next) => { setTemplates(next); await saveConfigKey("templates", next); }, [saveConfigKey]);
   const persistCadences = useCallback(async (next) => { setCadences(next); await saveConfigKey("cadences", next); }, [saveConfigKey]);
+  const persistLenders = useCallback(async (next) => { setLenders(next); await saveConfigKey("lenders", next); }, [saveConfigKey]);
 
   const updateLead = useCallback(async (id, patch) => {
     let finalPatch = patch;
@@ -1599,12 +1603,12 @@ function Dashboard({ userEmail }) {
           {tab === "commissions" && <Commissions leads={leads} onOpen={setProfileId} />}
           {tab === "team" && <Team leads={leads} onOpen={setProfileId} />}
           {tab === "scripts" && <Scripts />}
-          {tab === "settings" && <Settings config={config} persistConfig={persistConfig} />}
+          {tab === "settings" && <Settings config={config} persistConfig={persistConfig} lenders={lenders} persistLenders={persistLenders} />}
         </div>
       </main>
 
       {profileLead && (
-        <Profile lead={profileLead} config={config} templates={templates} cadences={cadences} userEmail={userEmail}
+        <Profile lead={profileLead} config={config} templates={templates} cadences={cadences} userEmail={userEmail} lenders={lenders}
           comms={comms} activities={activities} addActivity={addActivity} completeActivity={completeActivity} deleteActivity={deleteActivity} sendReply={sendReply} addNote={addNote} markRead={markRead}
           onClose={() => setProfileId(null)} updateLead={updateLead} removeLead={removeLead} logTouch={logTouch} openCompose={setCompose} />
       )}
@@ -1904,7 +1908,7 @@ const LOAN_PROGRAMS = [
   { label: "Line of Credit", hint: "Revolving, moderate credit" },
 ];
 
-function Profile({ lead, config, templates, cadences, onClose, updateLead, removeLead, logTouch, openCompose, userEmail, comms = [], activities = [], addActivity, completeActivity, deleteActivity, sendReply, addNote, markRead }) {
+function Profile({ lead, config, templates, cadences, onClose, updateLead, removeLead, logTouch, openCompose, userEmail, lenders = [], comms = [], activities = [], addActivity, completeActivity, deleteActivity, sendReply, addNote, markRead }) {
   const EDITABLE = ["name", "phone", "email", "notes", "loanProgram", "confirmedFields", "desiredAmount", "fundingPurpose", "fundingTimeline", "monthlyRevenue", "creditScore", "timeInBusiness",
     "businessName", "businessType", "einStatus", "bestTime", "nextStep", "myscoreiqUsername", "myscoreiqPassword", "ssnLast4", "fundedAmount", "commissionAmount", "declineReason"];
   const [draft, setDraft] = useState(lead);
@@ -1920,6 +1924,8 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
   const [docBusy, setDocBusy] = useState(false);
   const [lenderOpen, setLenderOpen] = useState(false);
   const [lenderEmail, setLenderEmail] = useState("");
+  const [lenderCc, setLenderCc] = useState("");
+  const [lenderName, setLenderName] = useState("");
   const [lenderNote, setLenderNote] = useState("");
   const [lenderBusy, setLenderBusy] = useState(false);
   const [lenderMsg, setLenderMsg] = useState("");
@@ -1986,12 +1992,12 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
     try {
       const res = await fetch("/.netlify/functions/send-to-lender", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ leadId: lead.id, toEmail: lenderEmail.trim(), note: lenderNote.trim() }),
+        body: JSON.stringify({ leadId: lead.id, toEmail: lenderEmail.trim(), cc: lenderCc.trim(), lenderName: (lenderName || lenderEmail).trim(), note: lenderNote.trim() }),
       });
       const j = await res.json();
       if (!res.ok) throw new Error(j.error || "Failed to send");
       setLenderMsg(`Sent ${j.sent} files to ${j.to}`);
-      setLenderEmail(""); setLenderNote("");
+      setLenderEmail(""); setLenderNote(""); setLenderCc(""); setLenderName("");
       setTimeout(() => { setLenderOpen(false); setLenderMsg(""); }, 2500);
     } catch (e) { setLenderMsg(String(e.message || e)); }
     finally { setLenderBusy(false); }
@@ -2412,21 +2418,55 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
                 ) : (
                   <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-3">
                     <div className="mb-1.5 text-xs font-bold uppercase tracking-wide text-emerald-700">Email application + all documents</div>
-                    <input value={lenderEmail} onChange={(e) => setLenderEmail(e.target.value)} placeholder="Lender email address" className={`${inputCls} mb-2`} />
+                    {lenders.length > 0 && (
+                      <select value="" onChange={(e) => { const l = lenders.find((x) => x.id === e.target.value); if (l) { setLenderEmail(l.email); setLenderCc(l.cc || ""); setLenderName(l.name); } }} className={`${inputCls} mb-2`}>
+                        <option value="">Pick a saved lender...</option>
+                        {lenders.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+                      </select>
+                    )}
+                    <input value={lenderName} onChange={(e) => setLenderName(e.target.value)} placeholder="Lender name" className={`${inputCls} mb-2`} />
+                    <input value={lenderEmail} onChange={(e) => setLenderEmail(e.target.value)} placeholder="Lender email address" className={`${inputCls} mb-2 font-mono`} />
+                    <input value={lenderCc} onChange={(e) => setLenderCc(e.target.value)} placeholder="CC (optional, comma-separated)" className={`${inputCls} mb-2 font-mono`} />
                     <textarea value={lenderNote} onChange={(e) => setLenderNote(e.target.value)} rows={2} placeholder="Optional note to the lender..." className={`${inputCls} mb-2`} />
                     {lenderMsg && <div className={`mb-2 text-xs font-medium ${lenderMsg.startsWith("Sent") ? "text-emerald-700" : "text-rose-600"}`}>{lenderMsg}</div>}
                     <div className="flex gap-2">
                       <button disabled={lenderBusy || !lenderEmail.trim()} onClick={sendToLender} className={`rounded-lg px-3 py-2 text-sm font-semibold text-white ${lenderBusy || !lenderEmail.trim() ? "bg-slate-400" : "bg-emerald-600 hover:bg-emerald-700"}`}>{lenderBusy ? "Sending..." : `Send ${(lead.documents || []).length} files`}</button>
                       <button onClick={() => { setLenderOpen(false); setLenderMsg(""); }} className="rounded-lg px-3 py-2 text-sm font-medium text-slate-500 hover:bg-slate-100">Cancel</button>
                     </div>
-                    <p className="mt-1.5 text-xs text-slate-400">Emails the full package straight to the lender from your funding inbox.</p>
+                    <p className="mt-1.5 text-xs text-slate-400">Emails the full package straight to the lender from your funding inbox. Add lenders under Settings.</p>
                   </div>
                 )}
               </div>
             )}
           </Section>
 
-          {/* report PDF */}
+          {/* lender submissions + responses */}
+          {(lead.submissions || []).length > 0 && (
+            <Section icon={<Send size={15} />} title={`Lender submissions (${lead.submissions.length})`} collapsible defaultOpen={true}>
+              <div className="flex flex-col gap-2">
+                {lead.submissions.map((s) => {
+                  const setSub = (patch) => updateLead(lead.id, { submissions: lead.submissions.map((x) => x.id === s.id ? { ...x, ...patch } : x) });
+                  const statusColor = { "Submitted": "bg-slate-100 text-slate-700", "Pre-approved": "bg-amber-100 text-amber-800", "Approved": "bg-emerald-100 text-emerald-800", "Declined": "bg-rose-100 text-rose-700", "Funded": "bg-blue-100 text-blue-800" }[s.status] || "bg-slate-100 text-slate-700";
+                  return (
+                    <div key={s.id} className="rounded-lg border border-slate-200 bg-white p-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-semibold text-slate-800">{s.lender}</span>
+                        <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${statusColor}`}>{s.status}</span>
+                        <span className="ml-auto text-xs text-slate-400">{s.sentAt ? fmtDateTime(s.sentAt).split(",")[0] : ""} · {s.files} files</span>
+                      </div>
+                      <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr]">
+                        <select value={s.status} onChange={(e) => setSub({ status: e.target.value, respondedAt: Date.now() })} className={inputCls}>
+                          {["Submitted", "Pre-approved", "Approved", "Declined", "Funded"].map((o) => <option key={o}>{o}</option>)}
+                        </select>
+                        <input value={s.amount || ""} onChange={(e) => setSub({ amount: e.target.value })} placeholder="Offer / approved amount" className={inputCls} />
+                      </div>
+                      <input value={s.note || ""} onChange={(e) => setSub({ note: e.target.value })} placeholder="Lender response notes (rate, terms, decline reason...)" className={`${inputCls} mt-2`} />
+                    </div>
+                  );
+                })}
+              </div>
+            </Section>
+          )}
           <Section icon={<FileText size={15} />} title="Credit report" collapsible defaultOpen={["interested", "report_pulled", "submitted", "pre_approved"].includes(lead.status)}>
             <div className="flex flex-wrap items-center gap-2">
               <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-2 text-sm font-medium text-white hover:bg-slate-900">
@@ -2855,11 +2895,21 @@ function Scripts() {
 /* ================================================================== */
 /*  Settings                                                          */
 /* ================================================================== */
-function Settings({ config, persistConfig }) {
+function Settings({ config, persistConfig, lenders = [], persistLenders }) {
   const [draft, setDraft] = useState(config);
   const [saved, setSaved] = useState(false);
   const set = (k) => (e) => setDraft({ ...draft, [k]: e.target.value });
   const save = async () => { await persistConfig(draft); setSaved(true); setTimeout(() => setSaved(false), 1600); };
+
+  const [newLender, setNewLender] = useState({ name: "", email: "", cc: "" });
+  const addLender = async () => {
+    if (!newLender.name.trim() || !newLender.email.trim()) return;
+    await persistLenders([...(lenders || []), { id: Date.now().toString(36), name: newLender.name.trim(), email: newLender.email.trim(), cc: newLender.cc.trim() }]);
+    setNewLender({ name: "", email: "", cc: "" });
+  };
+  const updateLender = async (id, patch) => { await persistLenders((lenders || []).map((l) => l.id === id ? { ...l, ...patch } : l)); };
+  const removeLender = async (id) => { if (confirm("Remove this lender?")) await persistLenders((lenders || []).filter((l) => l.id !== id)); };
+
   return (
     <div className="mt-4 flex flex-col gap-4">
       <div className="rounded-xl border border-slate-200 bg-white p-4">
@@ -2877,6 +2927,28 @@ function Settings({ config, persistConfig }) {
         <div className="mt-4 flex items-center gap-3">
           <button onClick={save} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"><Send size={15} /> Save</button>
           {saved && <span className="inline-flex items-center gap-1 text-sm font-medium text-blue-600"><Check size={15} /> Saved</span>}
+        </div>
+      </div>
+
+      {/* Lenders directory */}
+      <div className="rounded-xl border border-slate-200 bg-white p-4">
+        <h3 className="mb-1 flex items-center gap-1.5 text-sm font-bold text-slate-800"><Send size={15} className="text-emerald-600" /> Lenders</h3>
+        <p className="mb-3 text-sm text-slate-500">Save the lenders you submit to. From any client file you can forward the full application package to any of these in one click. CC is optional (comma-separate multiple addresses).</p>
+        <div className="flex flex-col gap-2">
+          {(lenders || []).map((l) => (
+            <div key={l.id} className="grid grid-cols-1 gap-2 rounded-lg border border-slate-100 bg-slate-50 p-2 sm:grid-cols-[1fr_1.3fr_1.3fr_auto]">
+              <input value={l.name} onChange={(e) => updateLender(l.id, { name: e.target.value })} placeholder="Lender name" className={inputCls} />
+              <input value={l.email} onChange={(e) => updateLender(l.id, { email: e.target.value })} placeholder="Submission email" className={`${inputCls} font-mono`} />
+              <input value={l.cc || ""} onChange={(e) => updateLender(l.id, { cc: e.target.value })} placeholder="CC (optional)" className={`${inputCls} font-mono`} />
+              <button onClick={() => removeLender(l.id)} className="rounded-lg px-2 text-slate-400 hover:bg-rose-50 hover:text-rose-500"><Trash2 size={15} /></button>
+            </div>
+          ))}
+          <div className="grid grid-cols-1 gap-2 rounded-lg border border-dashed border-emerald-200 bg-emerald-50/40 p-2 sm:grid-cols-[1fr_1.3fr_1.3fr_auto]">
+            <input value={newLender.name} onChange={(e) => setNewLender({ ...newLender, name: e.target.value })} placeholder="New lender name" className={inputCls} />
+            <input value={newLender.email} onChange={(e) => setNewLender({ ...newLender, email: e.target.value })} placeholder="Submission email" className={`${inputCls} font-mono`} />
+            <input value={newLender.cc} onChange={(e) => setNewLender({ ...newLender, cc: e.target.value })} placeholder="CC (optional)" className={`${inputCls} font-mono`} />
+            <button onClick={addLender} className="rounded-lg bg-emerald-600 px-3 text-sm font-semibold text-white hover:bg-emerald-700">Add</button>
+          </div>
         </div>
       </div>
       <div className="rounded-xl border border-slate-200 bg-white p-4">

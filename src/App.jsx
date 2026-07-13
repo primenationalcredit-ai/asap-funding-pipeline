@@ -16,6 +16,7 @@ const STAGES = [
   { key: "interested", label: "Interested", tone: "sky" },
   { key: "callback", label: "Call Back", tone: "violet" },
   { key: "not_interested", label: "Not Interested", tone: "orange" },
+  { key: "check_back", label: "Check Back Later", tone: "blue" },
   { key: "report_pulled", label: "Report Pulled", tone: "teal" },
   { key: "app_sent", label: "Application Sent", tone: "purple" },
   { key: "submitted", label: "Submitted", tone: "indigo" },
@@ -616,6 +617,11 @@ const DEFAULT_CADENCES = {
     { day: 10, pool: "ni_email" },
     { day: 30, pool: "ni_email" },
   ],
+  check_back: [
+    { day: 30, pool: "ni_email" },
+    { day: 60, pool: "ni_email" },
+    { day: 90, pool: "ni_email" },
+  ],
   report_pulled: [{ day: 0, pool: "pulled_sms" }],
   app_sent: [
     { day: 1, pool: "appchase_sms" },
@@ -890,6 +896,7 @@ function nextStepFor(lead) {
     case "interested": return { text: "They're in. Send the MyScoreIQ link so they can pull their report and get pre-approved.", tone: "sky" };
     case "callback": return { text: "Reconnect when you agreed. Reminder messages are running until you reach them.", tone: "violet" };
     case "not_interested": return { text: "Parked. Light check-ins go out in case their timing changes.", tone: "orange" };
+    case "check_back": return { text: "Needs funding but wants to pause. Gentle check-ins go out every 30 days. Snooze or set a reminder for when they said to circle back.", tone: "blue" };
     case "report_pulled": return { text: "Report is in. Pick the likely loan program, then submit to Torro or send the application.", tone: "teal" };
     case "app_sent": return { text: "Application emailed. Chase the signed app back, then submit to Torro.", tone: "purple" };
     case "submitted": return { text: "Submitted to Torro. Waiting on their pre-approval.", tone: "indigo" };
@@ -1611,7 +1618,7 @@ function Dashboard({ userEmail }) {
 /*  Pipeline                                                          */
 /* ================================================================== */
 const BOARDS = {
-  outreach: { label: "Outreach", stages: ["new", "voicemail", "interested", "callback", "not_interested"] },
+  outreach: { label: "Outreach", stages: ["new", "voicemail", "interested", "callback", "not_interested", "check_back"] },
   funding: { label: "Funding", stages: ["report_pulled", "app_sent", "submitted", "pre_approved", "contracts_out", "funded", "commission_paid"] },
   closed: { label: "Closed", stages: ["declined", "offer_cr", "referred_cr", "credit_repair", "dead"] },
 };
@@ -1984,6 +1991,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
       { label: "Moving forward", disp: "Spoke, moving forward", stage: null, c: "emerald" },
       { label: "Offer credit repair", disp: "Spoke, offered credit repair", stage: "offer_cr", c: "fuchsia" },
       { label: "Call back later", disp: "Spoke, call back", stage: null, c: "violet" },
+      { label: "Check back later", disp: "Spoke, check back later", stage: "check_back", c: "sky" },
       { label: "Not interested", disp: "Spoke, not interested", stage: "dead", c: "orange" },
     ];
     if (["declined", "offer_cr", "referred_cr", "credit_repair"].includes(s)) return [
@@ -1991,11 +1999,13 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
       { label: "Referred to credit team", disp: "Spoke, referred to credit", stage: "referred_cr", c: "fuchsia" },
       { label: "Funding path (680 / co-signer)", disp: "Spoke, funding path", stage: null, c: "sky" },
       { label: "Call back later", disp: "Spoke, call back", stage: null, c: "violet" },
+      { label: "Check back later", disp: "Spoke, check back later", stage: "check_back", c: "sky" },
       { label: "Not interested", disp: "Spoke, not interested", stage: "dead", c: "orange" },
     ];
     return [ // outreach default
       { label: "Interested", disp: "Spoke, interested", stage: "interested", c: "sky" },
       { label: "Call back later", disp: "Spoke, call back", stage: "callback", c: "violet" },
+      { label: "Check back later", disp: "Spoke, check back later", stage: "check_back", c: "sky" },
       { label: "Not interested", disp: "Spoke, not interested", stage: "not_interested", c: "orange" },
     ];
   })();

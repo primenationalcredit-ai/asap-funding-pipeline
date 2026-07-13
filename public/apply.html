@@ -164,37 +164,72 @@
   function buildPdf(data){
     var jsPDF = window.jspdf.jsPDF;
     var doc = new jsPDF({ unit:'pt', format:'letter' });
-    var L=54, y=54, W=504;
-    doc.setFont('helvetica','bold'); doc.setFontSize(16); doc.setTextColor(0,45,97);
-    doc.text('Business Funding Application', L, y); y+=6;
-    doc.setDrawColor(254,116,2); doc.setLineWidth(2); doc.line(L, y+4, L+W, y+4); y+=24;
-    doc.setTextColor(30,41,59);
-    function section(t){ doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(0,45,97); if(y>720){doc.addPage();y=54;} doc.text(t, L, y); y+=16; doc.setTextColor(30,41,59); }
-    function row(label,val){ if(y>740){doc.addPage();y=54;} doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.text(label+':', L, y); doc.setFont('helvetica','normal'); doc.text(String(val||'—'), L+150, y, {maxWidth:W-150}); y+=15; }
-    section('Business Information');
-    row('Legal Name', data.legal_name); row('DBA', data.dba_name); row('Type of Business', data.business_type); row('Entity Type', data.entity_type);
-    row('Address', [data.biz_address, data.biz_city, data.biz_state, data.biz_zip].filter(Boolean).join(', '));
-    row('Phone', data.biz_phone); row('Web', data.biz_web); row('W-2 Employees', data.employees);
-    row('Federal Tax ID', data.ein); row('Organized', (data.org_date||'')+' in '+(data.org_state||'')); row('Time Owned', (data.owned_years||'0')+' yrs '+(data.owned_months||'0')+' mo');
-    row('Annual Sales', data.annual_sales); row('Landlord', (data.landlord_name||'—')+'  '+(data.landlord_phone||''));
-    row('Funding Requested', data.amount_requested); y+=8;
-    section('Principal Owner / Guarantor');
-    row('Name', data.owner_name); row('Title', data.owner_title); row('Ownership %', data.owner_pct);
-    row('Date of Birth', data.owner_dob); row('SSN', data.owner_ssn);
-    row('Driver\u2019s License', (data.dl_number||'')+'  ('+(data.dl_state||'')+')'); row('Email', data.owner_email);
-    row('Home Address', [data.home_address, data.home_city, data.home_state, data.home_zip].filter(Boolean).join(', '));
-    row('Home Phone', data.home_phone); row('Cell Phone', data.cell_phone);
-    row('US Citizen', data.citizen); row('Permanent Resident', data.resident); row('Own or Rent', data.own_rent); y+=8;
-    section('Credit Authorization & Consent');
-    doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(71,85,105);
+    var L=40, R=572, W=R-L, y=44;
+    var NAVY=[0,45,97], ORANGE=[254,116,2], INK=[30,41,59], GRAY=[110,120,135];
+
+    // header
+    doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(ORANGE[0],ORANGE[1],ORANGE[2]);
+    doc.text('ASAP FUNDING USA', L, y);
+    doc.setTextColor(NAVY[0],NAVY[1],NAVY[2]); doc.setFontSize(15);
+    doc.text('UNIVERSAL MERCHANT CREDIT APPLICATION', L, y+16);
+    doc.setDrawColor(ORANGE[0],ORANGE[1],ORANGE[2]); doc.setLineWidth(2); doc.line(L, y+22, R, y+22);
+    y+=38;
+
+    function bar(t){ if(y>720){doc.addPage();y=44;} doc.setFillColor(NAVY[0],NAVY[1],NAVY[2]); doc.rect(L, y, W, 16, 'F'); doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(255,255,255); doc.text(t.toUpperCase(), L+6, y+11); y+=16; }
+    // a labeled field cell
+    function cell(x, w, h, label, value){
+      doc.setDrawColor(203,213,225); doc.setLineWidth(0.6); doc.rect(x, y, w, h);
+      doc.setFont('helvetica','normal'); doc.setFontSize(6); doc.setTextColor(GRAY[0],GRAY[1],GRAY[2]);
+      doc.text(String(label||'').toUpperCase(), x+4, y+7);
+      doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(INK[0],INK[1],INK[2]);
+      var v = String(value===undefined||value===null?'':value);
+      doc.text(doc.splitTextToSize(v, w-8), x+4, y+18);
+    }
+    // a row of cells: specs = [[label,value,widthFraction], ...]
+    function row(specs, h){
+      h = h||30; if(y+h>750){doc.addPage();y=44;}
+      var x=L;
+      specs.forEach(function(s){ var w=W*s[2]; cell(x, w, h, s[0], s[1]); x+=w; });
+      y+=h;
+    }
+
+    bar('Merchant Information');
+    row([['Legal Business Name', data.legal_name, 0.6],['Type of Business', data.business_type, 0.4]]);
+    row([['DBA Name', data.dba_name, 0.6],['Legal Entity Type', data.entity_type, 0.4]]);
+    row([['Business Address', data.biz_address, 1.0]]);
+    row([['City', data.biz_city, 0.4],['State', data.biz_state, 0.15],['Zip', data.biz_zip, 0.2],['Business Phone', data.biz_phone, 0.25]]);
+    row([['Web Address', data.biz_web, 0.4],['# W-2 Employees', data.employees, 0.2],['Federal Tax ID (EIN)', data.ein, 0.4]]);
+    row([['Date of Organization', data.org_date, 0.33],['State of Organization', data.org_state, 0.33],['Time Owned', (data.owned_years||'0')+' yrs '+(data.owned_months||'0')+' mo', 0.34]]);
+    row([['Total Annual Sales', data.annual_sales, 0.33],['Total Funding Requested', data.amount_requested, 0.33],['Ownership %', data.owner_pct, 0.34]]);
+    row([['Landlord Name', data.landlord_name, 0.5],['Landlord Phone', data.landlord_phone, 0.5]]);
+    y+=8;
+
+    bar('Principal Owner / Guarantor');
+    row([['Full Name', data.owner_name, 0.5],['Title', data.owner_title, 0.25],['Date of Birth', data.owner_dob, 0.25]]);
+    row([['Social Security #', data.owner_ssn, 0.33],["Driver's License #", data.dl_number, 0.33],['DL State', data.dl_state, 0.34]]);
+    row([['Email Address', data.owner_email, 0.5],['Cell Phone', data.cell_phone, 0.25],['Home Phone', data.home_phone, 0.25]]);
+    row([['Home Address', data.home_address, 1.0]]);
+    row([['City', data.home_city, 0.4],['State', data.home_state, 0.15],['Zip', data.home_zip, 0.2],['US Citizen', data.citizen, 0.12],['Own/Rent', data.own_rent, 0.13]]);
+    y+=8;
+
+    bar('Credit Authorization & Consent');
+    doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(GRAY[0],GRAY[1],GRAY[2]);
     var auth = document.getElementById('authText').textContent.trim().replace(/\s+/g,' ');
-    var lines = doc.splitTextToSize(auth, W); if(y+lines.length*10>740){doc.addPage();y=54;} doc.text(lines, L, y); y+=lines.length*10+10;
-    doc.setTextColor(30,41,59);
-    section('Signature');
-    if(data.sigImg){ try { doc.addImage(data.sigImg, 'PNG', L, y, 200, 60); } catch(e){} }
-    y+=70; doc.setFont('helvetica','normal'); doc.setFontSize(9);
-    doc.text('Signed by: '+(data.consent_name||''), L, y); y+=14;
-    doc.text('Title: '+(data.sign_title||'')+'      Date: '+(data.sign_date||''), L, y);
+    var lines = doc.splitTextToSize(auth, W-8); if(y+lines.length*9+8>750){doc.addPage();y=44;} doc.text(lines, L+4, y+10); y+=lines.length*9+14;
+
+    bar('Signature');
+    if(y+90>750){doc.addPage();y=44;}
+    doc.setDrawColor(203,213,225); doc.setLineWidth(0.6); doc.rect(L, y, W, 84);
+    if(data.sigImg){ try { doc.addImage(data.sigImg, 'PNG', L+8, y+8, 190, 50); } catch(e){} }
+    doc.setDrawColor(150,160,175); doc.line(L+8, y+62, L+210, y+62);
+    doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(GRAY[0],GRAY[1],GRAY[2]);
+    doc.text('Authorized Signature', L+8, y+72);
+    doc.setFontSize(9); doc.setTextColor(INK[0],INK[1],INK[2]); doc.setFont('helvetica','bold');
+    doc.text('Signed by: '+(data.consent_name||''), L+230, y+24);
+    doc.text('Title: '+(data.sign_title||''), L+230, y+44);
+    doc.text('Date: '+(data.sign_date||''), L+230, y+64);
+    y+=84;
+
     return doc.output('datauristring').split(',')[1];
   }
 

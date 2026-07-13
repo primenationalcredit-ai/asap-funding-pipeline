@@ -22,6 +22,78 @@ const json = (statusCode, obj) => ({
   body: JSON.stringify(obj),
 });
 
+// ---- instant welcome send helpers ----
+function e164(phone) {
+  const d = String(phone || "").replace(/\D/g, "");
+  if (d.length === 10) return "+1" + d;
+  if (d.length === 11 && d[0] === "1") return "+" + d;
+  return d ? "+" + d : "";
+}
+function centralParts(now = new Date()) {
+  const p = new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", weekday: "short", hour: "numeric", hour12: false }).formatToParts(now);
+  return { wd: p.find((x) => x.type === "weekday").value, hr: Number(p.find((x) => x.type === "hour").value) };
+}
+async function rcToken() {
+  const server = process.env.RC_SERVER || "https://platform.ringcentral.com";
+  const basic = Buffer.from(`${process.env.RC_CLIENT_ID}:${process.env.RC_CLIENT_SECRET}`).toString("base64");
+  const params = new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion: process.env.RC_JWT });
+  const r = await fetch(`${server}/restapi/oauth/token`, { method: "POST", headers: { Authorization: `Basic ${basic}`, "Content-Type": "application/x-www-form-urlencoded" }, body: params });
+  const j = await r.json();
+  if (!j.access_token) throw new Error(j.error_description || j.message || "RC auth failed");
+  return { server, token: j.access_token };
+}
+async function sendSms(rc, to, text) {
+  const r = await fetch(`${rc.server}/restapi/v1.0/account/~/extension/~/sms`, {
+    method: "POST", headers: { Authorization: `Bearer ${rc.token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ from: { phoneNumber: process.env.RC_FROM }, to: [{ phoneNumber: e164(to) }], text }),
+  });
+  if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.message || `SMS failed ${r.status}`); }
+}
+async function sendEmail(to, subject, text) {
+  const body = { personalizations: [{ to: [{ email: to }] }], from: { email: process.env.EMAIL_FROM, name: process.env.EMAIL_FROM_NAME || undefined }, subject: subject || "", content: [{ type: "text/plain", value: text }] };
+  if (process.env.EMAIL_REPLY_TO) body.reply_to = { email: process.env.EMAIL_REPLY_TO };
+  const r = await fetch("https://api.sendgrid.com/v3/mail/send", {
+    method: "POST", headers: { Authorization: `Bearer ${process.env.SENDGRID_API_KEY}`, "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (r.status !== 202) { const t = await r.text(); throw new Error(`Email failed ${r.status}: ${t}`); }
+}
+
+// Fire an instant welcome text + email the moment a new lead lands.
+async function sendInstantWelcome(supabase, leadRow, leadId) {
+  const first = (leadRow.name || "").trim().split(/\s+/)[0] || "there";
+  const { wd, hr } = centralParts();
+  const isWeekend = wd === "Sat" || wd === "Sun";
+  const when = isWeekend ? "Monday" : "today";
+  const comms = [];
+
+  // SMS, compliance-safe (branded ASAP, no funding/loan/lender/$). Only during 8am-9pm Central (quiet hours).
+  if (leadRow.phone && hr >= 8 && hr < 21) {
+    const smsText = isWeekend
+      ? `${first}, it is Joe with ASAP. I got your business info and I want to get your pre-approval offer over to you. What time works Monday for a quick call? Reply here and we will set it up.`
+      : `${first}, it is Joe with ASAP. I got your business info and I want to send over your pre-approval offer today. What time works for a quick call? Reply here and we will lock it in.`;
+    try { const rc = await rcToken(); await sendSms(rc, leadRow.phone, smsText); comms.push({ lead_id: leadId, direction: "out", channel: "sms", body: smsText, to_addr: leadRow.phone, by_user: "automation" }); }
+    catch (e) { console.log("[welcome] sms failed", e.message); }
+  }
+
+  // Email, always (no quiet-hour restriction on email)
+  if (leadRow.email) {
+    const subject = `Your pre-approval offer, ${first}`;
+    const emailText = isWeekend
+      ? `Hi ${first},\n\nGreat news, I received your business information and I want to get a pre-approval offer over to you.\n\nMy team is back first thing Monday, so what time Monday works for a quick call? Just reply with a time that works and I will get you on the calendar.\n\nTalk soon,\nJoe\nASAP Funding USA`
+      : `Hi ${first},\n\nGreat news, I received your business information and I want to send over a pre-approval offer today.\n\nWhat time works for a quick call so I can get you the details? Just reply with a time that works and I will make it happen.\n\nTalk soon,\nJoe\nASAP Funding USA`;
+    try { await sendEmail(leadRow.email, subject, emailText); comms.push({ lead_id: leadId, direction: "out", channel: "email", subject, body: emailText, to_addr: leadRow.email, by_user: "automation" }); }
+    catch (e) { console.log("[welcome] email failed", e.message); }
+  }
+
+  if (comms.length) {
+    try {
+      await supabase.from("communications").insert(comms);
+      // mark the touch so the cadence clock counts from this first contact
+      await supabase.from("leads").update({ last_touch_at: new Date().toISOString(), touches: [{ at: Date.now(), kind: "cadence", channel: "welcome", stage: "new", auto: true }] }).eq("id", leadId);
+    } catch (e) { console.log("[welcome] log failed", e.message); }
+  }
+}
+
 // First non-empty value across a list of objects, trying each key in order
 function pickFrom(objs, keys) {
   for (const o of objs) {
@@ -140,6 +212,8 @@ export const handler = async (event) => {
 
     const { data, error } = await supabase.from("leads").insert(row).select().single();
     if (error) throw error;
+    // Instant welcome: text + email with the pre-approval hook (weekend-aware). Never blocks the response.
+    try { await sendInstantWelcome(supabase, row, data.id); } catch (e) { console.log("[welcome] error", e.message); }
     return json(200, { ok: true, action: "inserted", id: data.id });
   } catch (err) {
     return json(500, { error: "Database write failed", detail: String(err.message || err) });

@@ -1472,6 +1472,15 @@ function Dashboard({ userEmail }) {
           }).then(({ error }) => { if (!error) refetchComms(); });
         }
         if (c.afterSent) c.afterSent();
+        // If this message contained the application link, advance the lead to Application Sent.
+        const appUrl = (config.appLink || APP_LINK_DEFAULT || "").toLowerCase();
+        const bodyLc = String((sent && sent.body) || c.body || "").toLowerCase();
+        const sentApp = (appUrl && bodyLc.includes(appUrl)) || bodyLc.includes("apply.html");
+        const early = ["new", "voicemail", "interested", "callback", "check_back", "report_pulled"];
+        if (sentApp && early.includes(c.lead.status)) {
+          supabase.from("leads").update({ status: "app_sent" }).eq("id", c.lead.id).then(() => {});
+          setLeads((prev) => prev.map((l) => l.id === c.lead.id ? { ...l, status: "app_sent" } : l));
+        }
       }
       return null;
     });

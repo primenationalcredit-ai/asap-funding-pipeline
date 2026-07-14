@@ -1420,8 +1420,8 @@ function Dashboard({ userEmail }) {
       if ("status" in patch && patch.status !== l.status) {
         p.stageEnteredAt = Date.now();
         p.lastTouchAt = Date.now();
-        // Whoever moves the lead becomes its owner, so messages go out under their name.
-        if (userEmail) p.ownerEmail = userEmail;
+        // Whoever first works the lead owns it (sticky: do not steal an existing owner).
+        if (userEmail && !l.ownerEmail) p.ownerEmail = userEmail;
       }
       finalPatch = p;
       return { ...l, ...p };
@@ -1450,6 +1450,9 @@ function Dashboard({ userEmail }) {
         const days = Number(autoSnoozeDaysRef.current) || 0;
         if (days > 0) patch.snoozeUntil = now + days * DAY;
       }
+      // First person to work the lead (call, message, or note) becomes the owner.
+      // Sticky: once set, a later touch by someone else does not steal it.
+      if (!l.ownerEmail && userEmail) patch.ownerEmail = userEmail;
       computed = patch;
       return { ...l, ...patch };
     }));
@@ -1457,7 +1460,7 @@ function Dashboard({ userEmail }) {
       const { error } = await supabase.from("leads").update(leadPatchToRow(computed)).eq("id", id);
       if (error) setErr(error.message);
     }
-  }, []);
+  }, [userEmail]);
 
   const addLead = useCallback(async (data) => {
     const row = { name: data.name.trim(), phone: data.phone.trim(), email: data.email.trim(), notes: data.notes.trim(), status: "new", touches: [] };
@@ -2403,6 +2406,16 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
                   <button onClick={() => updateLead(lead.id, { automationPaused: true })} className="rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50">Pause</button>
                 )}
               </div>
+            </div>
+            <div className="mt-2 flex items-center gap-2 border-t border-slate-100 pt-2 text-xs">
+              <span className="font-semibold uppercase tracking-wide text-slate-400">Owner</span>
+              <span className="font-semibold text-slate-700">{repInfo(lead, config).first}{lead.ownerEmail ? "" : " (default)"}</span>
+              {(config.team || []).length > 0 && (
+                <select value={lead.ownerEmail || ""} onChange={(e) => updateLead(lead.id, { ownerEmail: e.target.value })} className="ml-auto rounded border border-slate-200 px-1.5 py-1 text-xs">
+                  <option value="">Unassigned (default)</option>
+                  {(config.team || []).map((m) => <option key={m.email} value={m.email}>{m.first}</option>)}
+                </select>
+              )}
             </div>
             {!lead.automationPaused && (
               <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">

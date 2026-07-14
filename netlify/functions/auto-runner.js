@@ -28,14 +28,25 @@ const pickFrom = (list, seed) => (!list || !list.length ? null : list[hashStr(St
 const pickRotate = (list, leadId, pool, occurrence) => (!list || !list.length ? null : list[(hashStr(leadId + ":" + pool) + occurrence) % list.length]);
 const poolTemplates = (templates, pool) => (templates || []).filter((t) => t.pool === pool);
 
+function repInfo(lead, config) {
+  const team = (config && config.team) || [];
+  const owner = (lead && (lead.owner_email || lead.ownerEmail)) || "";
+  const m = team.find((t) => (t.email || "").toLowerCase() === owner.toLowerCase());
+  return {
+    first: (m && m.first) || (config && config.defaultRepFirst) || "Joe",
+    signature: (m && m.signature) || (config && config.signature) || "Joe at ASAP Funding USA",
+  };
+}
 function fillTokens(text, lead, config) {
+  const rep = repInfo(lead, config);
   return (text || "")
     .replaceAll("{{first}}", (lead.name || "there").trim().split(/\s+/)[0] || "there")
     .replaceAll("{{name}}", lead.name || "")
     .replaceAll("{{link}}", config.reportLink || "")
     .replaceAll("{{smartcredit}}", config.smartCreditLink || "")
     .replaceAll("{{applink}}", config.appLink || "")
-    .replaceAll("{{signature}}", config.signature || "");
+    .replaceAll("{{repfirst}}", rep.first)
+    .replaceAll("{{signature}}", rep.signature);
 }
 
 // Central-time business hours check (America/Chicago handles CST/CDT)

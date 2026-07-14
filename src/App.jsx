@@ -58,6 +58,8 @@ const DEFAULT_CONFIG = {
   smartCreditLink: "https://www.smartcredit.com/?PID=52188",
   appLink: "https://tranquil-muffin-691d4e.netlify.app/apply.html",
   signature: "Joe at ASAP Funding USA",
+  defaultRepFirst: "Joe",
+  team: [],
   funderName: "Torro",
   funderEmail: "slocsubmissions@torro.com",
   autoSnoozeDays: 3,
@@ -69,13 +71,13 @@ const DEFAULT_CONFIG = {
 const DEFAULT_TEMPLATES = [
   // ============ VOICEMAIL: text (pool vm_sms) ============
   { id: "vm_sms_a", pool: "vm_sms", name: "VM text: direct", channel: "sms", subject: "",
-    body: `Hi {{first}}, it's Joe with ASAP. I just gave you a call about the Facebook ad you responded to on getting your business approved. Give me a quick call back or shoot me a text when you get a sec.` },
+    body: `Hi {{first}}, it's {{repfirst}} with ASAP. I just gave you a call about the Facebook ad you responded to on getting your business approved. Give me a quick call back or shoot me a text when you get a sec.` },
   { id: "vm_sms_b", pool: "vm_sms", name: "VM text: story", channel: "sms", subject: "",
-    body: `Hi {{first}}, Joe with ASAP here. I just called you about the Facebook ad you responded to on getting your business approved. Call or text me back and I will walk you through it.` },
+    body: `Hi {{first}}, {{repfirst}} with ASAP here. I just called you about the Facebook ad you responded to on getting your business approved. Call or text me back and I will walk you through it.` },
   { id: "vm_sms_c", pool: "vm_sms", name: "VM text: myth bust", channel: "sms", subject: "",
     body: `Hi {{first}}, it's Joe from ASAP. I just tried calling you about the Facebook ad you responded to on getting your business approved. This is not spam, just following up like you asked. Text me back a good time to connect.` },
   { id: "vm_sms_d", pool: "vm_sms", name: "VM text: curiosity", channel: "sms", subject: "",
-    body: `{{first}}, Joe with ASAP. I just gave you a call about the Facebook ad you responded to on getting your business approved. Whenever you have a sec, call or text me back and I will keep it quick.` },
+    body: `{{first}}, {{repfirst}} with ASAP. I just gave you a call about the Facebook ad you responded to on getting your business approved. Whenever you have a sec, call or text me back and I will keep it quick.` },
 
   // ============ VOICEMAIL: email (pool vm_email) ============
   { id: "vm_email_a", pool: "vm_email", name: "VM email: direct", channel: "email", subject: "Tried to reach you, {{first}}",
@@ -112,9 +114,9 @@ Reply or call me back and I will pull your options together.
 
   // ============ INTERESTED / SEND LINK: text (pool int_sms) ============
   { id: "first_sms", pool: "int_sms", name: "Interested text: standard", channel: "sms", subject: "",
-    body: `Hi {{first}}, Joe with ASAP. Here is the one thing between you and knowing exactly what you qualify for, your report: {{link}} 5 minutes, soft pull, zero hit to your score. Text me DONE when it is in and I will get to work.` },
+    body: `Hi {{first}}, {{repfirst}} with ASAP. Here is the one thing between you and knowing exactly what you qualify for, your report: {{link}} 5 minutes, soft pull, zero hit to your score. Text me DONE when it is in and I will get to work.` },
   { id: "int_sms_b", pool: "int_sms", name: "Interested text: story", channel: "sms", subject: "",
-    body: `{{first}}, Joe with ASAP. You did the hard part by reaching out. This part takes 5 minutes: pull your report here so I can show you real numbers, not guesses: {{link}} No hit to your score.` },
+    body: `{{first}}, {{repfirst}} with ASAP. You did the hard part by reaching out. This part takes 5 minutes: pull your report here so I can show you real numbers, not guesses: {{link}} No hit to your score.` },
   { id: "int_sms_c", pool: "int_sms", name: "Interested text: risk reversal", channel: "sms", subject: "",
     body: `{{first}}, most owners are shocked when they see what they actually qualify for. I cannot show you until I see your report though, and it is a soft pull, no score hit: {{link}} Worth 5 minutes?` },
   { id: "int_sms_d", pool: "int_sms", name: "Interested text: speed", channel: "sms", subject: "",
@@ -158,7 +160,7 @@ To do that I need one thing, your report:
 
   // ============ ACCOUNT CHECK: text (pool acct_sms) ============
   { id: "acct_sms_a", pool: "acct_sms", name: "Account check: text", channel: "sms", subject: "",
-    body: `{{first}}, Joe with ASAP. Quick one: were you able to get your MyScoreIQ account created? That report is the only thing between you and knowing exactly what you qualify for. Here is the link again, 5 minutes: {{link}} Reply DONE when it is set and I will take it from there.` },
+    body: `{{first}}, {{repfirst}} with ASAP. Quick one: were you able to get your MyScoreIQ account created? That report is the only thing between you and knowing exactly what you qualify for. Here is the link again, 5 minutes: {{link}} Reply DONE when it is set and I will take it from there.` },
   { id: "acct_sms_b", pool: "acct_sms", name: "Account check: text 2", channel: "sms", subject: "",
     body: `{{first}}, not going to let you leave money on the table. Two minutes to create your MyScoreIQ account and I can tell you what you qualify for today: {{link}} If you get stuck anywhere, text me STUCK and I will jump on a call with you.` },
 
@@ -208,9 +210,9 @@ I would love to see what is possible for you. Got a few minutes this week to tal
 
   // ============ CALL BACK: text (pool cb_sms) ============
   { id: "cb_sms_a", pool: "cb_sms", name: "Call back text: reconnect", channel: "sms", subject: "",
-    body: `Hi {{first}}, Joe with ASAP, circling back like we planned. When is a good time to connect? Text me a time that works.` },
+    body: `Hi {{first}}, {{repfirst}} with ASAP, circling back like we planned. When is a good time to connect? Text me a time that works.` },
   { id: "cb_sms_b", pool: "cb_sms", name: "Call back text: nudge", channel: "sms", subject: "",
-    body: `{{first}}, Joe with ASAP here. Still holding your spot. 5 minutes is all I need. What time today or tomorrow works?` },
+    body: `{{first}}, {{repfirst}} with ASAP here. Still holding your spot. 5 minutes is all I need. What time today or tomorrow works?` },
 
   // ============ CALL BACK: email (pool cb_email) ============
   { id: "cb_email_a", pool: "cb_email", name: "Call back email: reconnect", channel: "email", subject: "Picking back up, {{first}}",
@@ -250,9 +252,9 @@ Keep my number. When you are ready, we can usually get you a pre-approval fast. 
 
   // ============ AFTER REPORT PULLED: text (pool pulled_sms) ============
   { id: "pulled_sms_a", pool: "pulled_sms", name: "Got it, reviewing", channel: "sms", subject: "",
-    body: `Got your report, {{first}}, thank you. Reviewing everything now and I will be back to you today. Joe with ASAP` },
+    body: `Got your report, {{first}}, thank you. Reviewing everything now and I will be back to you today. {{repfirst}} with ASAP` },
   { id: "pulled_sms_b", pool: "pulled_sms", name: "Got it, working it", channel: "sms", subject: "",
-    body: `{{first}}, got it, thank you. Going through your file now to see how I can help. Back to you today. Joe with ASAP` },
+    body: `{{first}}, got it, thank you. Going through your file now to see how I can help. Back to you today. {{repfirst}} with ASAP` },
 
   // ============ APPLICATION (after pre-approval): pool app_sms / app_email ============
   { id: "app_sms_a", pool: "app_sms", name: "Application: more funding (text)", channel: "sms", subject: "",
@@ -271,7 +273,7 @@ Takes about 5 minutes. Reply or text me once you are in and I will take it from 
 
 {{signature}}` },
   { id: "manual_checkin_sms", pool: "manual", name: "Warm check-in (text)", channel: "sms", subject: "",
-    body: `{{first}}, Joe with ASAP. Just thinking about your business, still want to help you get where you are trying to go. Got a couple minutes to talk this week?` },
+    body: `{{first}}, {{repfirst}} with ASAP. Just thinking about your business, still want to help you get where you are trying to go. Got a couple minutes to talk this week?` },
   { id: "app_email_a", pool: "app_email", name: "Application: more funding (email)", channel: "email", subject: "Your funding application, {{first}}",
     body: `Hi {{first}},
 
@@ -287,13 +289,13 @@ Have your bank statements, a voided check, and your driver's license handy. Repl
   { id: "urg_sms_a", pool: "urgency_sms", name: "Urgency text: window", channel: "sms", subject: "",
     body: `{{first}}, quick nudge from Joe at ASAP. Still want to get your business in a position to get approved? Pull your report here and I take it from there: {{link}}` },
   { id: "urg_sms_b", pool: "urgency_sms", name: "Urgency text: not a pest", channel: "sms", subject: "",
-    body: `{{first}}, Joe with ASAP. Not trying to bug you, just do not want you to miss your window. 5 minutes here and I go to work: {{link}}` },
+    body: `{{first}}, {{repfirst}} with ASAP. Not trying to bug you, just do not want you to miss your window. 5 minutes here and I go to work: {{link}}` },
   { id: "urg_sms_c", pool: "urgency_sms", name: "Urgency text: one more", channel: "sms", subject: "",
     body: `{{first}}, it is Joe at ASAP. Circling back one more time. Ready when you are: {{link}} Reply STOP anytime and I will hold off.` },
   { id: "urg_sms_d", pool: "urgency_sms", name: "Urgency text: things change", channel: "sms", subject: "",
     body: `{{first}}, Joe here. A lot can change in a few weeks. If now is a better time, here is your link: {{link}}` },
   { id: "urg_sms_e", pool: "urgency_sms", name: "Urgency text: still on desk", channel: "sms", subject: "",
-    body: `{{first}}, Joe with ASAP. Still have your file on my desk. Want me to keep going? {{link}}` },
+    body: `{{first}}, {{repfirst}} with ASAP. Still have your file on my desk. Want me to keep going? {{link}}` },
   { id: "urg_sms_f", pool: "urgency_sms", name: "Urgency text: yes or no", channel: "sms", subject: "",
     body: `{{first}}, one word is all I need. Are you still trying to get your business approved this year? If yes, here is step one: {{link}}` },
 
@@ -377,7 +379,7 @@ The next move is yours. Pull your report and let me get to work.
 
   // ============ BREAKUP / FINAL: text (pool breakup_sms) ============
   { id: "break_sms_a", pool: "breakup_sms", name: "Breakup text: close file", channel: "sms", subject: "",
-    body: `{{first}}, Joe with ASAP. I have reached out a few times and do not want to be a pest. I will close your file for now. If you ever want to pick it back up, just text me. No hard feelings.` },
+    body: `{{first}}, {{repfirst}} with ASAP. I have reached out a few times and do not want to be a pest. I will close your file for now. If you ever want to pick it back up, just text me. No hard feelings.` },
   { id: "break_sms_b", pool: "breakup_sms", name: "Breakup text: last call", channel: "sms", subject: "",
     body: `{{first}}, last one from me for now. If getting your business approved is still a goal, here is your link: {{link}} If not, no worries at all and I will step back.` },
   { id: "break_sms_c", pool: "breakup_sms", name: "Breakup text: door open", channel: "sms", subject: "",
@@ -411,11 +413,11 @@ Wishing you and the business well either way.
 
   // ============ EXTRA VOICEMAIL variety ============
   { id: "vm_first_sms", pool: "vm_first_sms", name: "VM text: first touch (pre-approval)", channel: "sms", subject: "",
-    body: `{{first}}, Joe with ASAP. We got the info you submitted and I want to get your pre-approval sent out, possibly as early as today. I just missed you by phone. Call or text me back and we will get moving.` },
+    body: `{{first}}, {{repfirst}} with ASAP. We got the info you submitted and I want to get your pre-approval sent out, possibly as early as today. I just missed you by phone. Call or text me back and we will get moving.` },
   { id: "vm_sms_e", pool: "vm_sms", name: "VM text: quick", channel: "sms", subject: "",
     body: `{{first}}, Joe at ASAP. Tried you by phone about the Facebook ad on getting your business approved. Got 2 minutes today? Text me back.` },
   { id: "vm_sms_f", pool: "vm_sms", name: "VM text: worth it", channel: "sms", subject: "",
-    body: `{{first}}, it is Joe with ASAP. You reached out about getting your business approved and I just missed you. This is worth 5 minutes of your day, promise. Call or text back.` },
+    body: `{{first}}, it is {{repfirst}} with ASAP. You reached out about getting your business approved and I just missed you. This is worth 5 minutes of your day, promise. Call or text back.` },
   { id: "vm_email_d", pool: "vm_email", name: "VM email: still here", channel: "email", subject: "Still here when you are ready, {{first}}",
     body: `Hey {{first}},
 
@@ -427,7 +429,7 @@ Whenever you have a few minutes, reply here or give me a call and I will show yo
 
   // ============ EXTRA INTERESTED / report-link variety ============
   { id: "int_sms_e", pool: "int_sms", name: "Interested text: curiosity 2", channel: "sms", subject: "",
-    body: `{{first}}, Joe with ASAP. I genuinely think you will be surprised by what you qualify for. Only way to know is your report: {{link}} Soft pull, no score hit.` },
+    body: `{{first}}, {{repfirst}} with ASAP. I genuinely think you will be surprised by what you qualify for. Only way to know is your report: {{link}} Soft pull, no score hit.` },
   { id: "int_sms_f", pool: "int_sms", name: "Interested text: same day", channel: "sms", subject: "",
     body: `{{first}}, pull this and I will have real options back to you today: {{link}} 5 minutes, no hit to your score. Text me DONE when it is in.` },
   { id: "int_email_d", pool: "int_email", name: "Interested email: no guessing", channel: "email", subject: "Let us stop guessing, {{first}}",
@@ -457,7 +459,7 @@ If you hit a snag, just reply and tell me where you got stuck. I will get you th
 
   // ============ EXTRA SUCCESS STORY variety ============
   { id: "story_sms_d", pool: "story_sms", name: "Success story text: turnaround", channel: "sms", subject: "",
-    body: `{{first}}, Joe with ASAP. Had an owner this month who was sure they would get told no everywhere. We found their yes. I would love to do the same for you: {{link}}` },
+    body: `{{first}}, {{repfirst}} with ASAP. Had an owner this month who was sure they would get told no everywhere. We found their yes. I would love to do the same for you: {{link}}` },
   { id: "story_email_d", pool: "story_email", name: "Success story email: rough credit", channel: "email", subject: "Rough credit is not the end, {{first}}",
     body: `Hey {{first}},
 
@@ -469,7 +471,7 @@ Your file might have a similar story hiding in it. I will not know until I see i
 
   // ============ EXTRA CALLBACK variety ============
   { id: "cb_sms_c", pool: "cb_sms", name: "Call back text: reconnect", channel: "sms", subject: "",
-    body: `{{first}}, Joe with ASAP. You asked me to circle back, so here I am. Got a few minutes now to pick up where we left off?` },
+    body: `{{first}}, {{repfirst}} with ASAP. You asked me to circle back, so here I am. Got a few minutes now to pick up where we left off?` },
   { id: "cb_sms_d", pool: "cb_sms", name: "Call back text: good time", channel: "sms", subject: "",
     body: `{{first}}, Joe at ASAP. Trying to catch you at a better time. What works today, morning or afternoon? I will make it quick.` },
   { id: "cb_sms_e", pool: "cb_sms", name: "Call back text: ready", channel: "sms", subject: "",
@@ -494,13 +496,13 @@ Tell me when works and I will call you then, or start it yourself here: {{link}}
 
   // ============ APPLICATION SENT / chase the signed app (pools appchase_sms, appchase_email) ============
   { id: "appchase_sms_a", pool: "appchase_sms", name: "App chase text: nudge", channel: "sms", subject: "",
-    body: `{{first}}, Joe with ASAP. I sent over the application to get you moving. Were you able to get it filled out and sent back? Let me know if you hit any snags.` },
+    body: `{{first}}, {{repfirst}} with ASAP. I sent over the application to get you moving. Were you able to get it filled out and sent back? Let me know if you hit any snags.` },
   { id: "appchase_sms_b", pool: "appchase_sms", name: "App chase text: almost there", channel: "sms", subject: "",
     body: `{{first}}, Joe here. You are one step away. Once that application is back to me I can get everything moving on my end. Need anything from me to finish it?` },
   { id: "appchase_sms_c", pool: "appchase_sms", name: "App chase text: quick check", channel: "sms", subject: "",
     body: `{{first}}, quick check from Joe at ASAP. Any questions on the application I sent? Happy to walk you through any part of it. Just reply here.` },
   { id: "appchase_sms_d", pool: "appchase_sms", name: "App chase text: help", channel: "sms", subject: "",
-    body: `{{first}}, Joe with ASAP. If the application looked like a lot, do not worry, most of it is quick. Text me and I will help you knock it out in a few minutes.` },
+    body: `{{first}}, {{repfirst}} with ASAP. If the application looked like a lot, do not worry, most of it is quick. Text me and I will help you knock it out in a few minutes.` },
 
   { id: "appchase_email_a", pool: "appchase_email", name: "App chase email: nudge", channel: "email", subject: "Did you get the application, {{first}}?",
     body: `Hey {{first}},
@@ -681,6 +683,7 @@ function rowToLead(r) {
     loanProgram: r.loan_program || "",
     automationPaused: !!r.automation_paused,
     optedOut: !!r.opted_out,
+    ownerEmail: r.owner_email || "",
     snoozeUntil: r.snooze_until ? new Date(r.snooze_until).getTime() : null,
     fundedAt: r.funded_at ? new Date(r.funded_at).getTime() : null,
     commissionPaidAt: r.commission_paid_at ? new Date(r.commission_paid_at).getTime() : null,
@@ -709,7 +712,7 @@ const FIELD_MAP = {
   myscoreiqUsername: "myscoreiq_username", myscoreiqPassword: "myscoreiq_password", ssnLast4: "ssn_last4",
   reportPath: "report_path",
   fundedAmount: "funded_amount", commissionAmount: "commission_amount", declineReason: "decline_reason", loanProgram: "loan_program",
-  automationPaused: "automation_paused",
+  automationPaused: "automation_paused", ownerEmail: "owner_email",
 };
 // Format a US phone as xxx-xxx-xxxx. Leaves anything that isn't 10/11 digits untouched.
 function fmtPhone(v) {
@@ -816,6 +819,7 @@ function matchLenders(lead, lenders) {
 }
 
 function fillTokens(text, lead, config) {
+  const rep = repInfo(lead, config);
   return (text || "")
     .replaceAll("{{opener}}", callOpener(lead))
     .replaceAll("{{first}}", firstName(lead.name))
@@ -823,7 +827,18 @@ function fillTokens(text, lead, config) {
     .replaceAll("{{link}}", config.reportLink || "[set your MyScoreIQ link in Settings]")
     .replaceAll("{{smartcredit}}", config.smartCreditLink || "https://www.smartcredit.com/?PID=52188")
     .replaceAll("{{applink}}", config.appLink || APP_LINK_DEFAULT)
-    .replaceAll("{{signature}}", config.signature || "");
+    .replaceAll("{{repfirst}}", rep.first)
+    .replaceAll("{{signature}}", rep.signature);
+}
+// Resolve the rep working this lead (their first name + email signature). Falls back to defaults.
+function repInfo(lead, config) {
+  const team = (config && config.team) || [];
+  const owner = (lead && (lead.ownerEmail || lead.owner_email)) || "";
+  const m = team.find((t) => (t.email || "").toLowerCase() === owner.toLowerCase());
+  return {
+    first: (m && m.first) || (config && config.defaultRepFirst) || "Joe",
+    signature: (m && m.signature) || (config && config.signature) || "Joe at ASAP Funding USA",
+  };
 }
 function parseMoney(s) {
   if (!s) return null;
@@ -1405,6 +1420,8 @@ function Dashboard({ userEmail }) {
       if ("status" in patch && patch.status !== l.status) {
         p.stageEnteredAt = Date.now();
         p.lastTouchAt = Date.now();
+        // Whoever moves the lead becomes its owner, so messages go out under their name.
+        if (userEmail) p.ownerEmail = userEmail;
       }
       finalPatch = p;
       return { ...l, ...p };
@@ -1414,7 +1431,7 @@ function Dashboard({ userEmail }) {
       const { error } = await supabase.from("leads").update(row).eq("id", id);
       if (error) setErr(error.message);
     }
-  }, []);
+  }, [userEmail]);
 
   const logTouch = useCallback(async (id, channel, kind, extra = {}) => {
     const now = Date.now();
@@ -3036,6 +3053,16 @@ function Settings({ config, persistConfig, lenders = [], persistLenders }) {
   const save = async () => { await persistConfig(draft); setSaved(true); setTimeout(() => setSaved(false), 1600); };
 
   const [newLender, setNewLender] = useState({ name: "", email: "", cc: "" });
+  const team = draft.team || [];
+  const setTeam = (t) => setDraft({ ...draft, team: t });
+  const [newMember, setNewMember] = useState({ email: "", first: "", signature: "" });
+  const addMember = () => {
+    if (!newMember.email.trim() || !newMember.first.trim()) return;
+    setTeam([...team, { email: newMember.email.trim(), first: newMember.first.trim(), signature: newMember.signature.trim() || `${newMember.first.trim()} at ASAP Funding USA` }]);
+    setNewMember({ email: "", first: "", signature: "" });
+  };
+  const updateMember = (i, patch) => setTeam(team.map((m, idx) => idx === i ? { ...m, ...patch } : m));
+  const removeMember = (i) => setTeam(team.filter((_, idx) => idx !== i));
   const addLender = async () => {
     if (!newLender.name.trim() || !newLender.email.trim()) return;
     await persistLenders([...(lenders || []), { id: Date.now().toString(36), name: newLender.name.trim(), email: newLender.email.trim(), cc: newLender.cc.trim() }]);
@@ -3062,6 +3089,32 @@ function Settings({ config, persistConfig, lenders = [], persistLenders }) {
           <button onClick={save} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"><Send size={15} /> Save</button>
           {saved && <span className="inline-flex items-center gap-1 text-sm font-medium text-blue-600"><Check size={15} /> Saved</span>}
         </div>
+      </div>
+
+      {/* Team: who works leads, and the name their messages send under */}
+      <div className="rounded-xl border border-slate-200 bg-white p-4">
+        <h3 className="mb-1 flex items-center gap-1.5 text-sm font-bold text-slate-800"><User size={15} className="text-blue-600" /> Team</h3>
+        <p className="mb-3 text-sm text-slate-500">Map each person's login to their first name. Whoever moves a lead becomes its owner, and that lead's texts and emails go out under their name (the <span className="font-mono">{"{{repfirst}}"}</span> and signature in your templates). Leads with no owner use the default ({draft.defaultRepFirst || "Joe"}).</p>
+        <div className="mb-3">
+          <Labeled label="Default rep first name (for unassigned leads)"><input value={draft.defaultRepFirst || ""} onChange={set("defaultRepFirst")} className={inputCls} /></Labeled>
+        </div>
+        <div className="flex flex-col gap-2">
+          {team.map((m, i) => (
+            <div key={i} className="grid grid-cols-1 gap-2 rounded-lg border border-slate-100 bg-slate-50 p-2 sm:grid-cols-[1.4fr_0.8fr_1.4fr_auto]">
+              <input value={m.email} onChange={(e) => updateMember(i, { email: e.target.value })} placeholder="login email" className={`${inputCls} font-mono`} />
+              <input value={m.first} onChange={(e) => updateMember(i, { first: e.target.value })} placeholder="First name" className={inputCls} />
+              <input value={m.signature || ""} onChange={(e) => updateMember(i, { signature: e.target.value })} placeholder="Email signature" className={inputCls} />
+              <button onClick={() => removeMember(i)} className="rounded-lg px-2 text-slate-400 hover:bg-rose-50 hover:text-rose-500"><Trash2 size={15} /></button>
+            </div>
+          ))}
+          <div className="grid grid-cols-1 gap-2 rounded-lg border border-dashed border-blue-200 bg-blue-50/40 p-2 sm:grid-cols-[1.4fr_0.8fr_1.4fr_auto]">
+            <input value={newMember.email} onChange={(e) => setNewMember({ ...newMember, email: e.target.value })} placeholder="login email" className={`${inputCls} font-mono`} />
+            <input value={newMember.first} onChange={(e) => setNewMember({ ...newMember, first: e.target.value })} placeholder="First name" className={inputCls} />
+            <input value={newMember.signature} onChange={(e) => setNewMember({ ...newMember, signature: e.target.value })} placeholder="Signature (optional)" className={inputCls} />
+            <button onClick={addMember} className="rounded-lg bg-blue-600 px-3 text-sm font-semibold text-white hover:bg-blue-700">Add</button>
+          </div>
+        </div>
+        <p className="mt-2 text-xs text-slate-400">Remember to Save (top) after editing the team.</p>
       </div>
 
       {/* Lenders directory */}

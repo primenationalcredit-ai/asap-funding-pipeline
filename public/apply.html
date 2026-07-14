@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Business Funding Application · ASAP Funding USA</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   * { box-sizing: border-box; }
   body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #f1f5f9; color: #0f172a; }
@@ -257,21 +258,45 @@
     return doc.output('datauristring').split(',')[1];
   }
 
+  function dataUriToBlob(b64, type){ var bin=atob(b64); var arr=new Uint8Array(bin.length); for(var i=0;i<bin.length;i++) arr[i]=bin.charCodeAt(i); return new Blob([arr],{type:type||'application/octet-stream'}); }
+
   var form = document.getElementById('appForm');
   form.addEventListener('submit', async function(e){
     e.preventDefault();
     var errBox = document.getElementById('errBox'); errBox.innerHTML='';
     if(!hasSig){ errBox.innerHTML='<div class="err">Please sign in the signature box before submitting.</div>'; window.scrollTo(0,document.body.scrollHeight); return; }
     var total = files.reduce(function(s,f){ return s+f.size; },0);
-    if(total > 22*1024*1024){ errBox.innerHTML='<div class="err">Your uploaded files are too large (over 22 MB). Please remove some and email the rest separately.</div>'; return; }
+    if(total > 45*1024*1024){ errBox.innerHTML='<div class="err">Your uploaded files are very large (over 45 MB). Please remove some and send the rest separately.</div>'; return; }
     var btn = document.getElementById('submitBtn'); btn.disabled=true; btn.textContent='Submitting...';
     try {
       var data = {}; new FormData(form).forEach(function(v,k){ data[k]=v; });
       data.sigImg = hasSig ? canvas.toDataURL('image/png') : '';
-      var pdfB64 = buildPdf(data);
-      var attachments = [];
-      for (var i=0;i<files.length;i++){ attachments.push({ name: files[i].name, type: files[i].type||'application/octet-stream', label: files[i]._label||'Other', data: await toB64(files[i]) }); }
-      var payload = { business: data.legal_name, owner: data.owner_name, email: data.owner_email, phone: data.cell_phone, amount: data.amount_requested, applicationPdf: pdfB64, attachments: attachments, fields: data };
+
+      // Build the file list: generated application PDF + every uploaded document.
+      var pdfBlob = dataUriToBlob(buildPdf(data), 'application/pdf');
+      var appName = 'Application-' + (data.legal_name||'form').replace(/[^a-zA-Z0-9]+/g,'-').slice(0,40) + '.pdf';
+      var toUpload = [{ name: appName, label: 'Application', blob: pdfBlob }];
+      for (var i=0;i<files.length;i++){ toUpload.push({ name: files[i].name, label: files[i]._label||'Other', blob: files[i] }); }
+
+      // 1) Ask the server for signed upload URLs (tiny request).
+      btn.textContent='Uploading documents...';
+      var signRes = await fetch('/.netlify/functions/sign-uploads', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ files: toUpload.map(function(u){ return { name:u.name, label:u.label }; }) }) });
+      if(!signRes.ok){ var se=''; try{ se=(await signRes.json()).error; }catch(e){} throw new Error(se || 'Could not start upload'); }
+      var sign = await signRes.json();
+      var sb = window.supabase.createClient(sign.base, sign.anonKey);
+
+      // 2) Upload each file DIRECTLY to storage (no size limit through Netlify).
+      var docs = [];
+      for (var j=0;j<sign.uploads.length;j++){
+        var u = sign.uploads[j];
+        var up = await sb.storage.from('reports').uploadToSignedUrl(u.path, u.token, toUpload[j].blob);
+        if(up.error){ throw new Error('Upload failed for '+u.name+': '+up.error.message); }
+        docs.push({ path: u.path, name: u.name, label: u.label });
+      }
+
+      // 3) Send only metadata to record the application (small, fast).
+      btn.textContent='Finishing...';
+      var payload = { business: data.legal_name, owner: data.owner_name, email: data.owner_email, phone: data.cell_phone, amount: data.amount_requested, fields: data, docs: docs };
       var res = await fetch('/.netlify/functions/submit-application', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
       if(!res.ok){ var et=''; try{ var ej=await res.json(); et=ej.error||''; }catch(e){} throw new Error(et || ('Server error '+res.status)); }
       form.style.display='none'; document.getElementById('successBox').style.display='block'; window.scrollTo(0,0);

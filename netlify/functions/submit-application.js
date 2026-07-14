@@ -1,28 +1,8 @@
 ﻿import { createClient } from "@supabase/supabase-js";
 
-function guessLabel(name) {
-  const s = (name || "").toLowerCase();
-  if (/bank|statement/.test(s)) return "Bank statements";
-  if (/void|check/.test(s)) return "Voided check";
-  if (/licen|dl|id\b|driver/.test(s)) return "Driver's license";
-  if (/credit/.test(s)) return "Credit report";
-  if (/tax|return/.test(s)) return "Tax return";
-  return "Other";
-}
-
-async function sendEmailWithAttachments(to, subject, text, attachments) {
-  const body = {
-    personalizations: [{ to: [{ email: to }] }],
-    from: { email: process.env.EMAIL_FROM, name: process.env.EMAIL_FROM_NAME || "ASAP Funding USA" },
-    subject,
-    content: [{ type: "text/plain", value: text }],
-    attachments: attachments.map((a) => ({ content: a.data, filename: a.name, type: a.type || "application/octet-stream", disposition: "attachment" })),
-  };
-  const r = await fetch("https://api.sendgrid.com/v3/mail/send", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${process.env.SENDGRID_API_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+async function sendEmail(to, subject, text) {
+  const body = { personalizations: [{ to: [{ email: to }] }], from: { email: process.env.EMAIL_FROM, name: process.env.EMAIL_FROM_NAME || "ASAP Funding USA" }, subject, content: [{ type: "text/plain", value: text }] };
+  const r = await fetch("https://api.sendgrid.com/v3/mail/send", { method: "POST", headers: { Authorization: `Bearer ${process.env.SENDGRID_API_KEY}`, "Content-Type": "application/json" }, body: JSON.stringify(body) });
   if (r.status !== 202) { const t = await r.text(); throw new Error(`Email ${r.status}: ${t}`); }
 }
 
@@ -35,7 +15,7 @@ export const handler = async (event) => {
     const biz = p.business || "Unknown business";
     const owner = p.owner || "";
     const f = p.fields || {};
-    const safe = (biz || "application").replace(/[^a-zA-Z0-9]+/g, "-").slice(0, 40);
+    const docs = Array.isArray(p.docs) ? p.docs : [];
 
     let filed = false;
     try {
@@ -45,36 +25,18 @@ export const handler = async (event) => {
         let lead = null;
         if (email) { const { data } = await supabase.from("leads").select("id,documents,status").ilike("email", email).maybeSingle(); lead = data; }
         if (lead) {
-          const docs = Array.isArray(lead.documents) ? lead.documents : [];
-          if (p.applicationPdf) {
-            const path = `${lead.id}/application-${Date.now()}.pdf`;
-            await supabase.storage.from("reports").upload(path, Buffer.from(p.applicationPdf, "base64"), { contentType: "application/pdf", upsert: true });
-            docs.push({ name: `Application-${safe}.pdf`, path, label: "Application", uploadedAt: Date.now(), by: "application form" });
-          }
-          for (const a of (p.attachments || [])) {
-            if (!a || !a.data) continue;
-            const clean = (a.name || "document").replace(/[^a-zA-Z0-9.\-_]/g, "_").slice(0, 80);
-            const path = `${lead.id}/appdoc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}-${clean}`;
-            try {
-              await supabase.storage.from("reports").upload(path, Buffer.from(a.data, "base64"), { contentType: a.type || "application/octet-stream", upsert: true });
-              docs.push({ name: a.name || clean, path, label: a.label || guessLabel(a.name), uploadedAt: Date.now(), by: "application form" });
-            } catch (e) { warnings.push("doc store: " + e.message); }
-          }
-          const patch = { documents: docs, last_touch_at: new Date().toISOString() };
+          const existing = Array.isArray(lead.documents) ? lead.documents : [];
+          const newDocs = docs.map((d) => ({ name: d.name, path: d.path, label: d.label || "Other", uploadedAt: Date.now(), by: "application form" }));
+          const patch = { documents: [...existing, ...newDocs], last_touch_at: new Date().toISOString() };
           if (["new", "voicemail", "interested", "callback", "check_back"].includes(lead.status)) patch.status = "app_sent";
           await supabase.from("leads").update(patch).eq("id", lead.id);
-          await supabase.from("communications").insert({ lead_id: lead.id, direction: "in", channel: "note", body: "Client submitted the funding application with documents.", by_user: "application form" });
+          await supabase.from("communications").insert({ lead_id: lead.id, direction: "in", channel: "note", body: `Client submitted the funding application with ${newDocs.length} document(s).`, by_user: "application form" });
           filed = true;
-        } else {
-          warnings.push("no matching lead for " + email);
-        }
+        } else { warnings.push("no matching lead for " + email); }
       }
-    } catch (e) { warnings.push("file-on-lead: " + e.message); }
+    } catch (e) { warnings.push("file-on-lead: " + e.message); console.log("[submit-application] file failed:", e.message); }
 
     try {
-      const attachments = [];
-      if (p.applicationPdf) attachments.push({ name: `Application-${safe}.pdf`, type: "application/pdf", data: p.applicationPdf });
-      (p.attachments || []).forEach((a) => { if (a && a.data) attachments.push({ name: a.name || "document", type: a.type, data: a.data }); });
       const summary =
 `New funding application submitted.
 
@@ -94,9 +56,11 @@ OWNER / GUARANTOR
   DL:    ${f.dl_number || ""} (${f.dl_state || ""})
   Email: ${f.owner_email || ""}   Cell: ${f.cell_phone || ""}
 
+Documents uploaded: ${docs.map((d) => d.label).join(", ") || "none"}.
 Signed by ${f.consent_name || owner} on ${f.sign_date || ""}.
-Application PDF and all uploaded documents are attached.`;
-      await sendEmailWithAttachments(to, `Funding Application — ${biz}${owner ? " (" + owner + ")" : ""}`, summary, attachments);
+
+Open the client's file in the CRM to review the application and documents, and to send the package to lenders.`;
+      await sendEmail(to, `Funding Application — ${biz}${owner ? " (" + owner + ")" : ""}`, summary);
     } catch (e) { warnings.push("email: " + e.message); console.log("[submit-application] email failed:", e.message); }
 
     if (warnings.length) console.log("[submit-application] warnings:", warnings.join(" | "));

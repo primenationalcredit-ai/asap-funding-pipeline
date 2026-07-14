@@ -90,7 +90,7 @@ The full application PDF and all uploaded documents are attached. Forward this p
             const path = `${lead.id}/appdoc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}-${clean}`;
             try {
               await supabase.storage.from("reports").upload(path, Buffer.from(a.data, "base64"), { contentType: a.type || "application/octet-stream", upsert: true });
-              docs.push({ name: a.name || clean, path, label: guessLabel(a.name), uploadedAt: Date.now(), by: "application form" });
+              docs.push({ name: a.name || clean, path, label: a.label || guessLabel(a.name), uploadedAt: Date.now(), by: "application form" });
             } catch (e) { console.log("[submit-application] doc store failed", e.message); }
           }
           const patch = { documents: docs, last_touch_at: new Date().toISOString() };

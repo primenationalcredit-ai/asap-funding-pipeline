@@ -668,6 +668,7 @@ function rowToLead(r) {
     businessName: r.business_name || "",
     businessType: r.business_type || "",
     einStatus: r.ein_status || "",
+    hasBankAccount: r.has_bank_account || "",
     bestTime: r.best_time || "",
     nextStep: r.next_step || "",
     myscoreiqUsername: r.myscoreiq_username || "",
@@ -700,7 +701,7 @@ const FIELD_MAP = {
   name: "name", phone: "phone", email: "email", notes: "notes", source: "source", tags: "tags",
   status: "status", touches: "touches",
   opportunityName: "opportunity_name", pipelineStage: "pipeline_stage",
-  desiredAmount: "desired_amount", creditScore: "estimated_credit_score",
+  desiredAmount: "desired_amount", creditScore: "estimated_credit_score", hasBankAccount: "has_bank_account",
   fundingPurpose: "funding_purpose", fundingTimeline: "funding_timeline", confirmedFields: "confirmed_fields",
   monthlyRevenue: "monthly_revenue", timeInBusiness: "time_in_business",
   businessName: "business_name", businessType: "business_type", einStatus: "ein_status",
@@ -764,6 +765,55 @@ function callOpener(lead) {
   if (last.disposition === "callback") return "Following up as promised. ";
   return "";
 }
+// ---- Lender matching: parse the human-readable intake bands into comparable numbers ----
+function parseMonthsInBiz(s) {
+  if (!s) return null;
+  const str = String(s).toLowerCase();
+  const nums = (str.match(/\d+/g) || []).map(Number);
+  if (!nums.length) return null;
+  if (str.includes("year")) return nums[0] * 12; // "3+ Years" -> 36, "1-2 Years" -> 12 (conservative floor)
+  return nums[0]; // "6 Months - 1 Year" -> 6
+}
+function parseMoneyLow(s) {
+  if (!s) return null;
+  const nums = (String(s).replace(/,/g, "").match(/\d+/g) || []).map(Number);
+  return nums.length ? nums[0] : null; // lower bound of the band
+}
+function parseScoreLow(s) {
+  if (!s) return null;
+  const nums = (String(s).match(/\d{3}/g) || []).map(Number);
+  return nums.length ? Math.min(...nums) : null; // conservative
+}
+// Rank saved lenders by fit for this lead. Each lender may carry: minScore, minMonths, minRevenue, needsBank.
+function matchLenders(lead, lenders) {
+  const score = parseScoreLow(lead.creditScore);
+  const months = parseMonthsInBiz(lead.timeInBusiness);
+  const rev = parseMoneyLow(lead.monthlyRevenue);
+  const bank = lead.hasBankAccount || "";
+  const evalOne = (l) => {
+    const checks = [];
+    let fail = false, unknown = false;
+    const need = (label, min, val, fmt) => {
+      if (!min) return;
+      if (val == null) { checks.push({ k: label, s: "unknown" }); unknown = true; }
+      else if (val >= min) { checks.push({ k: label, s: "pass", detail: fmt } ); }
+      else { checks.push({ k: label, s: "fail", detail: fmt }); fail = true; }
+    };
+    need("Credit " + (l.minScore || ""), Number(l.minScore) || 0, score);
+    need("Time " + (l.minMonths ? l.minMonths + "mo" : ""), Number(l.minMonths) || 0, months);
+    need("Rev $" + (l.minRevenue ? Number(l.minRevenue).toLocaleString() : ""), Number(l.minRevenue) || 0, rev);
+    if (l.needsBank) {
+      if (!bank) { checks.push({ k: "Bank acct", s: "unknown" }); unknown = true; }
+      else if (bank === "Yes") { checks.push({ k: "Bank acct", s: "pass" }); }
+      else { checks.push({ k: "Bank acct", s: "fail" }); fail = true; }
+    }
+    const status = fail ? "no" : (unknown ? "maybe" : "fit");
+    return { lender: l, status, checks, passCount: checks.filter((c) => c.s === "pass").length };
+  };
+  const order = { fit: 0, maybe: 1, no: 2 };
+  return (lenders || []).map(evalOne).sort((a, b) => (order[a.status] - order[b.status]) || (b.passCount - a.passCount));
+}
+
 function fillTokens(text, lead, config) {
   return (text || "")
     .replaceAll("{{opener}}", callOpener(lead))
@@ -1627,6 +1677,38 @@ const BOARDS = {
   closed: { label: "Closed", stages: ["declined", "offer_cr", "referred_cr", "credit_repair", "dead"] },
 };
 
+function QuickStart() {
+  const [open, setOpen] = useState(true);
+  const steps = [
+    ["Open a lead", "Click any card on the board to open the client's file."],
+    ["Read before you dial", "Check the Call guide and Scripts for this stage at the top, they tell you what to say for exactly where this client is."],
+    ["Call and log it", "Make the call, then under \"What happened on this call\" type a note (required) and pick the outcome. The outcome moves them to the right stage and starts the follow-up texts and emails automatically."],
+    ["Confirm their info", "Tap the blue chips (Wants, Rev, Score, etc.) to confirm or fix them as you talk. They turn green when confirmed."],
+    ["Reply in the Inbox", "When a client texts or emails back, it shows in the Inbox with a blue dot. Open it and reply right there. Automation pauses itself while you're talking to them."],
+    ["Send the application", "When they're ready, send the application link (it's in the text/email templates). Once they submit, it lands on their file under Documents."],
+    ["Match and submit to a lender", "On the file, Best-fit lenders shows who they qualify for. In Documents, hit Send package to lender to email the full application. Track the response under Lender submissions."],
+  ];
+  if (!open) return (
+    <button onClick={() => setOpen(true)} className="mb-3 inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-500 hover:bg-slate-200"><FileText size={13} /> Show quick start</button>
+  );
+  return (
+    <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50/60 p-4">
+      <div className="mb-2 flex items-center gap-2">
+        <span className="text-sm font-bold text-blue-900">Quick start: how to work a lead</span>
+        <button onClick={() => setOpen(false)} className="ml-auto text-xs font-medium text-blue-500 hover:text-blue-700">Hide</button>
+      </div>
+      <ol className="flex flex-col gap-1.5">
+        {steps.map((s, i) => (
+          <li key={i} className="flex items-start gap-2 text-sm text-slate-700">
+            <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-blue-600 text-[11px] font-bold text-white">{i + 1}</span>
+            <span><span className="font-semibold text-slate-900">{s[0]}.</span> {s[1]}</span>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
 function Pipeline({ leads, allLeads, allCount, dueList, stats, config, query, setQuery, filter, setFilter, showAdd, setShowAdd, addLead, onOpen, logTouch, updateLead, cadences, templates, openCompose, onGoFollowups }) {
   const [view, setView] = useState("board");
   const [boardTab, setBoardTab] = useState("outreach");
@@ -1639,6 +1721,7 @@ function Pipeline({ leads, allLeads, allCount, dueList, stats, config, query, se
 
   return (
     <div className="mt-4">
+      <QuickStart />
       {dueList.length > 0 && (
         <button onClick={onGoFollowups} className="mb-4 flex w-full items-center gap-2 rounded-xl border border-orange-200 bg-orange-50 px-4 py-2.5 text-left text-sm font-semibold text-orange-800 hover:bg-orange-100">
           <Clock size={15} /> {dueList.length} follow-up{dueList.length === 1 ? "" : "s"} due
@@ -2156,6 +2239,46 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
               </div>
             )}
           </div>
+
+          {/* best-fit lenders */}
+          {lenders.length > 0 && (() => {
+            const ranked = matchLenders(lead, lenders);
+            const chip = (s) => s === "pass" ? "bg-emerald-100 text-emerald-700" : s === "fail" ? "bg-rose-100 text-rose-700" : "bg-slate-100 text-slate-500";
+            const badge = { fit: ["Best fit", "bg-emerald-600"], maybe: ["Possible", "bg-amber-500"], no: ["Not a fit", "bg-rose-500"] };
+            return (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-4">
+                <div className="mb-1 flex items-center gap-1.5 text-sm font-bold text-emerald-900"><Send size={15} /> Best-fit lenders</div>
+                <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                  <span>Based on:</span>
+                  <span className="rounded bg-white px-1.5 py-0.5 ring-1 ring-slate-200">Score {lead.creditScore || "?"}</span>
+                  <span className="rounded bg-white px-1.5 py-0.5 ring-1 ring-slate-200">{lead.timeInBusiness || "time ?"}</span>
+                  <span className="rounded bg-white px-1.5 py-0.5 ring-1 ring-slate-200">Rev {lead.monthlyRevenue || "?"}</span>
+                  <label className="flex items-center gap-1 rounded bg-white px-1.5 py-0.5 ring-1 ring-slate-200">Bank acct
+                    <select value={lead.hasBankAccount || ""} onChange={(e) => updateLead(lead.id, { hasBankAccount: e.target.value })} className="bg-transparent text-xs font-semibold outline-none">
+                      <option value="">?</option><option value="Yes">Yes</option><option value="No">No</option>
+                    </select>
+                  </label>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  {ranked.map(({ lender, status, checks }) => (
+                    <div key={lender.id} className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase text-white ${badge[status][1]}`}>{badge[status][0]}</span>
+                        <span className="font-semibold text-slate-800">{lender.name}</span>
+                        <button onClick={() => { setLenderOpen(true); setLenderName(lender.name); setLenderEmail(lender.email); setLenderCc(lender.cc || ""); }} className="ml-auto rounded-md bg-emerald-600 px-2 py-1 text-xs font-semibold text-white hover:bg-emerald-700">Send</button>
+                      </div>
+                      {checks.length > 0 && (
+                        <div className="mt-1.5 flex flex-wrap gap-1">
+                          {checks.map((c, i) => <span key={i} className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${chip(c.s)}`}>{c.k} {c.s === "pass" ? "✓" : c.s === "fail" ? "✗" : "?"}</span>)}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-2 text-xs text-slate-400">Ranked by fit. Set each lender's criteria under Settings. "Send" jumps to the package sender (documents must be on file).</p>
+              </div>
+            );
+          })()}
 
           {/* call guide (top, above the composer) */}
           {/* call guide */}
@@ -2936,11 +3059,20 @@ function Settings({ config, persistConfig, lenders = [], persistLenders }) {
         <p className="mb-3 text-sm text-slate-500">Save the lenders you submit to. From any client file you can forward the full application package to any of these in one click. CC is optional (comma-separate multiple addresses).</p>
         <div className="flex flex-col gap-2">
           {(lenders || []).map((l) => (
-            <div key={l.id} className="grid grid-cols-1 gap-2 rounded-lg border border-slate-100 bg-slate-50 p-2 sm:grid-cols-[1fr_1.3fr_1.3fr_auto]">
-              <input value={l.name} onChange={(e) => updateLender(l.id, { name: e.target.value })} placeholder="Lender name" className={inputCls} />
-              <input value={l.email} onChange={(e) => updateLender(l.id, { email: e.target.value })} placeholder="Submission email" className={`${inputCls} font-mono`} />
-              <input value={l.cc || ""} onChange={(e) => updateLender(l.id, { cc: e.target.value })} placeholder="CC (optional)" className={`${inputCls} font-mono`} />
-              <button onClick={() => removeLender(l.id)} className="rounded-lg px-2 text-slate-400 hover:bg-rose-50 hover:text-rose-500"><Trash2 size={15} /></button>
+            <div key={l.id} className="rounded-lg border border-slate-100 bg-slate-50 p-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1.3fr_1.3fr_auto]">
+                <input value={l.name} onChange={(e) => updateLender(l.id, { name: e.target.value })} placeholder="Lender name" className={inputCls} />
+                <input value={l.email} onChange={(e) => updateLender(l.id, { email: e.target.value })} placeholder="Submission email" className={`${inputCls} font-mono`} />
+                <input value={l.cc || ""} onChange={(e) => updateLender(l.id, { cc: e.target.value })} placeholder="CC (optional)" className={`${inputCls} font-mono`} />
+                <button onClick={() => removeLender(l.id)} className="rounded-lg px-2 text-slate-400 hover:bg-rose-50 hover:text-rose-500"><Trash2 size={15} /></button>
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-slate-200 pt-2">
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Qualifies if</span>
+                <label className="flex items-center gap-1 text-xs text-slate-500">min score <input type="number" value={l.minScore || ""} onChange={(e) => updateLender(l.id, { minScore: e.target.value })} placeholder="—" className="w-16 rounded border border-slate-200 px-1.5 py-1 text-sm" /></label>
+                <label className="flex items-center gap-1 text-xs text-slate-500">min months in biz <input type="number" value={l.minMonths || ""} onChange={(e) => updateLender(l.id, { minMonths: e.target.value })} placeholder="—" className="w-16 rounded border border-slate-200 px-1.5 py-1 text-sm" /></label>
+                <label className="flex items-center gap-1 text-xs text-slate-500">min monthly rev $<input type="number" value={l.minRevenue || ""} onChange={(e) => updateLender(l.id, { minRevenue: e.target.value })} placeholder="—" className="w-24 rounded border border-slate-200 px-1.5 py-1 text-sm" /></label>
+                <label className="flex items-center gap-1 text-xs text-slate-500"><input type="checkbox" checked={!!l.needsBank} onChange={(e) => updateLender(l.id, { needsBank: e.target.checked })} /> needs business bank account</label>
+              </div>
             </div>
           ))}
           <div className="grid grid-cols-1 gap-2 rounded-lg border border-dashed border-emerald-200 bg-emerald-50/40 p-2 sm:grid-cols-[1fr_1.3fr_1.3fr_auto]">

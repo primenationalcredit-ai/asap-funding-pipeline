@@ -1422,6 +1422,10 @@ function Dashboard({ userEmail }) {
         p.lastTouchAt = Date.now();
         // Whoever first works the lead owns it (sticky: do not steal an existing owner).
         if (userEmail && !l.ownerEmail) p.ownerEmail = userEmail;
+        // Moving a lead to Report Pulled means we obtained their credit report: log it for tracking.
+        if (patch.status === "report_pulled") {
+          p.touches = [...(l.touches || []), { at: Date.now(), kind: "report", by: userEmail || (l.ownerEmail || "") }];
+        }
       }
       finalPatch = p;
       return { ...l, ...p };
@@ -2087,6 +2091,8 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
         added.push({ name: file.name, path, label: docLabel, uploadedAt: Date.now(), by: userEmail });
       }
       await updateLead(lead.id, { documents: [...(lead.documents || []), ...added], lastTouchAt: Date.now() });
+      // Uploading a credit report counts as obtaining a report, log it for tracking.
+      if (docLabel === "Credit report") logTouch(lead.id, "report", "report", { by: userEmail, label: "Credit report" });
     } catch (e) { alert("Upload failed: " + (e.message || e)); }
     finally { setDocBusy(false); }
   };
@@ -2552,7 +2558,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
               <div className="flex-1 min-w-[140px]">
                 <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400">Label</label>
                 <select value={docLabel} onChange={(e) => setDocLabel(e.target.value)} className={inputCls}>
-                  {["Bank statements", "Voided check", "Driver's license", "Application", "Business formation / EIN", "Tax return", "Proof of ownership", "Signed agreement", "Other"].map((l) => <option key={l} value={l}>{l}</option>)}
+                  {["Bank statements", "Voided check", "Driver's license", "Credit report", "Application", "Business formation / EIN", "Tax return", "Proof of ownership", "Signed agreement", "Other"].map((l) => <option key={l} value={l}>{l}</option>)}
                 </select>
               </div>
               <label className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-white ${docBusy ? "bg-slate-400" : "bg-blue-600 hover:bg-blue-700"}`}>
@@ -3803,12 +3809,30 @@ function Team({ leads, onOpen }) {
     return out;
   }, [leads, start, end]);
 
-  const reps = useMemo(() => [...new Set(acts.map((a) => a.rep))].sort(), [acts]);
+  // Lender-submission outcomes per rep (attributed to the lead's owner).
+  const subStats = useMemo(() => {
+    const m = {};
+    const bump = (rep, key) => { m[rep] = m[rep] || { submitted: 0, approved: 0, declined: 0 }; m[rep][key]++; };
+    for (const l of leads) {
+      const owner = l.ownerEmail || "(unassigned)";
+      for (const s of (l.submissions || [])) {
+        if (s.sentAt >= start && s.sentAt < end) bump(owner, "submitted");
+        if (s.respondedAt && s.respondedAt >= start && s.respondedAt < end) {
+          if (["Approved", "Pre-approved", "Funded"].includes(s.status)) bump(owner, "approved");
+          else if (s.status === "Declined") bump(owner, "declined");
+        }
+      }
+    }
+    return m;
+  }, [leads, start, end]);
+
+  const reps = useMemo(() => [...new Set([...acts.map((a) => a.rep), ...Object.keys(subStats)])].sort(), [acts, subStats]);
   const shownReps = repFilter === "all" ? reps : reps.filter((r) => r === repFilter);
 
   const statsFor = (rep) => {
     const mine = acts.filter((a) => a.rep === rep);
     const calls = mine.filter((a) => a.kind === "call");
+    const sub = subStats[rep] || { submitted: 0, approved: 0, declined: 0 };
     return {
       calls: calls.length,
       voicemails: calls.filter((a) => /voicemail/i.test(a.disposition || "")).length,
@@ -3816,6 +3840,10 @@ function Team({ leads, onOpen }) {
       texts: mine.filter((a) => a.channel === "sms").length,
       emails: mine.filter((a) => a.channel === "email").length,
       notes: mine.filter((a) => a.kind === "note" || (a.kind === "call" && a.note)).length,
+      reports: mine.filter((a) => a.kind === "report").length,
+      submitted: sub.submitted,
+      approved: sub.approved,
+      declined: sub.declined,
       total: mine.length,
     };
   };
@@ -3827,7 +3855,7 @@ function Team({ leads, onOpen }) {
   const recent = useMemo(() => [...acts].filter((a) => repFilter === "all" || a.rep === repFilter).sort((a, b) => b.at - a.at).slice(0, 120), [acts, repFilter]);
 
   const RANGES = [["today", "Today"], ["yesterday", "Yesterday"], ["week", "Last 7 days"], ["month", "This month"], ["custom", "Custom"]];
-  const cellsOf = (s) => [["Calls", s.calls], ["Voicemails", s.voicemails], ["Spoke to", s.spoke], ["Texts", s.texts], ["Emails", s.emails], ["Notes", s.notes]];
+  const cellsOf = (s) => [["Calls", s.calls], ["Voicemails", s.voicemails], ["Spoke to", s.spoke], ["Texts", s.texts], ["Emails", s.emails], ["Reports", s.reports], ["Notes", s.notes]];
 
   return (
     <div className="mt-4 flex flex-col gap-4">
@@ -3860,6 +3888,11 @@ function Team({ leads, onOpen }) {
               <div key={lbl} className="rounded-lg bg-white p-3 text-center"><div className="text-2xl font-bold text-blue-800">{val || 0}</div><div className="text-xs text-slate-400">{lbl}</div></div>
             ))}
           </div>
+          <div className="mt-3 grid grid-cols-3 gap-3">
+            <div className="rounded-lg bg-white p-3 text-center"><div className="text-2xl font-bold text-slate-800">{totals.submitted || 0}</div><div className="text-xs text-slate-500">Apps submitted</div></div>
+            <div className="rounded-lg bg-white p-3 text-center"><div className="text-2xl font-bold text-emerald-700">{totals.approved || 0}</div><div className="text-xs text-emerald-600">Approvals</div></div>
+            <div className="rounded-lg bg-white p-3 text-center"><div className="text-2xl font-bold text-rose-700">{totals.declined || 0}</div><div className="text-xs text-rose-600">Declines</div></div>
+          </div>
         </div>
       )}
 
@@ -3878,6 +3911,13 @@ function Team({ leads, onOpen }) {
                 <div key={lbl} className="rounded-lg bg-slate-50 p-3 text-center"><div className="text-2xl font-bold text-slate-800">{val}</div><div className="text-xs text-slate-400">{lbl}</div></div>
               ))}
             </div>
+            {rep !== "automation" && (
+              <div className="mt-3 grid grid-cols-3 gap-3">
+                <div className="rounded-lg bg-slate-100 p-3 text-center"><div className="text-2xl font-bold text-slate-800">{s.submitted}</div><div className="text-xs text-slate-500">Apps submitted</div></div>
+                <div className="rounded-lg bg-emerald-50 p-3 text-center"><div className="text-2xl font-bold text-emerald-700">{s.approved}</div><div className="text-xs text-emerald-600">Approvals</div></div>
+                <div className="rounded-lg bg-rose-50 p-3 text-center"><div className="text-2xl font-bold text-rose-700">{s.declined}</div><div className="text-xs text-rose-600">Declines</div></div>
+              </div>
+            )}
           </div>
         );
       })}

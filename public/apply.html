@@ -40,6 +40,11 @@
   .success .ok { width: 64px; height: 64px; border-radius: 999px; background: #dcfce7; color: #16a34a; display: inline-flex; align-items: center; justify-content: center; font-size: 34px; }
   .err { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; border-radius: 9px; padding: 10px 12px; font-size: 14px; margin-top: 12px; }
   .hint { font-size: 11px; color: #94a3b8; margin-top: 3px; }
+  .docslot { border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px; margin-bottom: 10px; background: #fafbfc; }
+  .docslot-label { font-size: 13px; font-weight: 700; color: #002D61; margin-bottom: 8px; }
+  .docslot-hint { display: block; font-size: 11px; font-weight: 400; color: #94a3b8; margin-top: 2px; }
+  .req-star { color: #e11d48; }
+  .docinput { width: 100%; font-size: 13px; }
 </style>
 </head>
 <body>
@@ -85,10 +90,26 @@
     <!-- 3 DOCUMENTS -->
     <div class="card">
       <h2><span class="n">3</span> Supporting Documents</h2>
-      <p style="font-size:13px;color:#64748b;margin:0 0 12px">Upload your last 4 months of business bank statements, a voided check, and your driver's license. You can add more files if needed.</p>
-      <label>Add files</label>
-      <input type="file" id="docInput" multiple accept="image/*,application/pdf" />
-      <div class="hint">PDF or images. Total upload should stay under 20 MB.</div>
+      <p style="font-size:13px;color:#64748b;margin:0 0 14px">Please upload each item below. These are the same documents lenders require to review your file, having them all speeds up your approval.</p>
+
+      <div class="docslot">
+        <div class="docslot-label">Last 4 months business bank statements <span class="req-star">*</span><span class="docslot-hint">All pages, most recent 4 months. PDF preferred.</span></div>
+        <input type="file" data-label="Last 4 Months Business Bank Statements" class="docinput" multiple accept="image/*,application/pdf" />
+      </div>
+      <div class="docslot">
+        <div class="docslot-label">Month-to-date activity <span class="docslot-hint">Only if it is after the 15th of the month. Current month's transactions so far.</span></div>
+        <input type="file" data-label="Month-to-date activity" class="docinput" multiple accept="image/*,application/pdf" />
+      </div>
+      <div class="docslot">
+        <div class="docslot-label">Driver's license <span class="req-star">*</span><span class="docslot-hint">Front of your government-issued ID.</span></div>
+        <input type="file" data-label="Drivers License" class="docinput" multiple accept="image/*,application/pdf" />
+      </div>
+      <div class="docslot">
+        <div class="docslot-label">Credit report <span class="docslot-hint">If you have it. Otherwise we can pull it with you.</span></div>
+        <input type="file" data-label="Credit Report" class="docinput" multiple accept="image/*,application/pdf,text/html,.html" />
+      </div>
+
+      <div class="hint" style="margin-top:6px">PDF or images. Total upload should stay under 20 MB across all files.</div>
       <div class="filelist" id="fileList"></div>
     </div>
 
@@ -138,19 +159,22 @@
   canvas.addEventListener('touchstart', start); canvas.addEventListener('touchmove', move); canvas.addEventListener('touchend', end);
   document.getElementById('clearSig').addEventListener('click', function(){ ctx.clearRect(0,0,canvas.width,canvas.height); hasSig = false; });
 
-  // files
+  // files, each tagged with the category (label) of the slot it came from
   var files = [];
   var fileList = document.getElementById('fileList');
-  document.getElementById('docInput').addEventListener('change', function(e){
-    for (var i=0;i<e.target.files.length;i++){ files.push(e.target.files[i]); }
-    e.target.value = '';
-    renderFiles();
+  Array.prototype.forEach.call(document.querySelectorAll('.docinput'), function(input){
+    input.addEventListener('change', function(e){
+      var label = e.target.getAttribute('data-label') || 'Other';
+      for (var i=0;i<e.target.files.length;i++){ var f = e.target.files[i]; f._label = label; files.push(f); }
+      e.target.value = '';
+      renderFiles();
+    });
   });
   function renderFiles(){
     fileList.innerHTML = '';
     files.forEach(function(f, idx){
       var div = document.createElement('div'); div.className = 'fileitem';
-      div.innerHTML = '<span style="flex:1">'+f.name+'</span><span style="color:#94a3b8">'+(f.size/1024/1024).toFixed(1)+' MB</span>';
+      div.innerHTML = '<span style="flex:1">'+f.name+'</span><span style="color:#2563eb;font-size:11px;font-weight:600">'+(f._label||'')+'</span><span style="color:#94a3b8">'+(f.size/1024/1024).toFixed(1)+' MB</span>';
       var b = document.createElement('button'); b.type='button'; b.className='link'; b.textContent='remove';
       b.onclick = function(){ files.splice(idx,1); renderFiles(); };
       div.appendChild(b); fileList.appendChild(div);
@@ -246,7 +270,7 @@
       data.sigImg = hasSig ? canvas.toDataURL('image/png') : '';
       var pdfB64 = buildPdf(data);
       var attachments = [];
-      for (var i=0;i<files.length;i++){ attachments.push({ name: files[i].name, type: files[i].type||'application/octet-stream', data: await toB64(files[i]) }); }
+      for (var i=0;i<files.length;i++){ attachments.push({ name: files[i].name, type: files[i].type||'application/octet-stream', label: files[i]._label||'Other', data: await toB64(files[i]) }); }
       var payload = { business: data.legal_name, owner: data.owner_name, email: data.owner_email, phone: data.cell_phone, amount: data.amount_requested, applicationPdf: pdfB64, attachments: attachments, fields: data };
       var res = await fetch('/.netlify/functions/submit-application', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
       if(!res.ok){ throw new Error('Server error '+res.status); }

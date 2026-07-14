@@ -75,7 +75,7 @@ const DEFAULT_TEMPLATES = [
   { id: "vm_sms_b", pool: "vm_sms", name: "VM text: story", channel: "sms", subject: "",
     body: `Hi {{first}}, {{repfirst}} with ASAP here. I just called you about the Facebook ad you responded to on getting your business approved. Call or text me back and I will walk you through it.` },
   { id: "vm_sms_c", pool: "vm_sms", name: "VM text: myth bust", channel: "sms", subject: "",
-    body: `Hi {{first}}, it's Joe from ASAP. I just tried calling you about the Facebook ad you responded to on getting your business approved. This is not spam, just following up like you asked. Text me back a good time to connect.` },
+    body: `Hi {{first}}, it's {{repfirst}} from ASAP. I just tried calling you about the Facebook ad you responded to on getting your business approved. This is not spam, just following up like you asked. Text me back a good time to connect.` },
   { id: "vm_sms_d", pool: "vm_sms", name: "VM text: curiosity", channel: "sms", subject: "",
     body: `{{first}}, {{repfirst}} with ASAP. I just gave you a call about the Facebook ad you responded to on getting your business approved. Whenever you have a sec, call or text me back and I will keep it quick.` },
 
@@ -287,13 +287,13 @@ Have your bank statements, a voided check, and your driver's license handy. Repl
 
   // ============ URGENCY / NUDGE: text (pool urgency_sms) ============
   { id: "urg_sms_a", pool: "urgency_sms", name: "Urgency text: window", channel: "sms", subject: "",
-    body: `{{first}}, quick nudge from Joe at ASAP. Still want to get your business in a position to get approved? Pull your report here and I take it from there: {{link}}` },
+    body: `{{first}}, quick nudge from {{repfirst}} at ASAP. Still want to get your business in a position to get approved? Pull your report here and I take it from there: {{link}}` },
   { id: "urg_sms_b", pool: "urgency_sms", name: "Urgency text: not a pest", channel: "sms", subject: "",
     body: `{{first}}, {{repfirst}} with ASAP. Not trying to bug you, just do not want you to miss your window. 5 minutes here and I go to work: {{link}}` },
   { id: "urg_sms_c", pool: "urgency_sms", name: "Urgency text: one more", channel: "sms", subject: "",
-    body: `{{first}}, it is Joe at ASAP. Circling back one more time. Ready when you are: {{link}} Reply STOP anytime and I will hold off.` },
+    body: `{{first}}, it is {{repfirst}} at ASAP. Circling back one more time. Ready when you are: {{link}} Reply STOP anytime and I will hold off.` },
   { id: "urg_sms_d", pool: "urgency_sms", name: "Urgency text: things change", channel: "sms", subject: "",
-    body: `{{first}}, Joe here. A lot can change in a few weeks. If now is a better time, here is your link: {{link}}` },
+    body: `{{first}}, {{repfirst}} here. A lot can change in a few weeks. If now is a better time, here is your link: {{link}}` },
   { id: "urg_sms_e", pool: "urgency_sms", name: "Urgency text: still on desk", channel: "sms", subject: "",
     body: `{{first}}, {{repfirst}} with ASAP. Still have your file on my desk. Want me to keep going? {{link}}` },
   { id: "urg_sms_f", pool: "urgency_sms", name: "Urgency text: yes or no", channel: "sms", subject: "",
@@ -383,7 +383,7 @@ The next move is yours. Pull your report and let me get to work.
   { id: "break_sms_b", pool: "breakup_sms", name: "Breakup text: last call", channel: "sms", subject: "",
     body: `{{first}}, last one from me for now. If getting your business approved is still a goal, here is your link: {{link}} If not, no worries at all and I will step back.` },
   { id: "break_sms_c", pool: "breakup_sms", name: "Breakup text: door open", channel: "sms", subject: "",
-    body: `{{first}}, Joe here. Going to give you some space. The door stays open, text me anytime and we pick right back up where we left off.` },
+    body: `{{first}}, {{repfirst}} here. Going to give you some space. The door stays open, text me anytime and we pick right back up where we left off.` },
 
   // ============ BREAKUP / FINAL: email (pool breakup_email) ============
   { id: "break_email_a", pool: "breakup_email", name: "Breakup email: should I close", channel: "email", subject: "Should I close your file, {{first}}?",
@@ -415,7 +415,7 @@ Wishing you and the business well either way.
   { id: "vm_first_sms", pool: "vm_first_sms", name: "VM text: first touch (pre-approval)", channel: "sms", subject: "",
     body: `{{first}}, {{repfirst}} with ASAP. We got the info you submitted and I want to get your pre-approval sent out, possibly as early as today. I just missed you by phone. Call or text me back and we will get moving.` },
   { id: "vm_sms_e", pool: "vm_sms", name: "VM text: quick", channel: "sms", subject: "",
-    body: `{{first}}, Joe at ASAP. Tried you by phone about the Facebook ad on getting your business approved. Got 2 minutes today? Text me back.` },
+    body: `{{first}}, {{repfirst}} at ASAP. Tried you by phone about the Facebook ad on getting your business approved. Got 2 minutes today? Text me back.` },
   { id: "vm_sms_f", pool: "vm_sms", name: "VM text: worth it", channel: "sms", subject: "",
     body: `{{first}}, it is {{repfirst}} with ASAP. You reached out about getting your business approved and I just missed you. This is worth 5 minutes of your day, promise. Call or text back.` },
   { id: "vm_email_d", pool: "vm_email", name: "VM email: still here", channel: "email", subject: "Still here when you are ready, {{first}}",
@@ -445,7 +445,7 @@ The moment it is in, I go to work and come back with your actual options.
 
   // ============ EXTRA ACCOUNT-CHECK variety ============
   { id: "acct_sms_c", pool: "acct_sms", name: "Account check text: nudge", channel: "sms", subject: "",
-    body: `{{first}}, Joe at ASAP. Were you able to get your report pulled? If the link gave you trouble, here it is again: {{link}} Happy to walk you through it.` },
+    body: `{{first}}, {{repfirst}} at ASAP. Were you able to get your report pulled? If the link gave you trouble, here it is again: {{link}} Happy to walk you through it.` },
   { id: "acct_email_c", pool: "acct_email", name: "Account check email: stuck", channel: "email", subject: "Did the link give you trouble, {{first}}?",
     body: `Hey {{first}},
 
@@ -473,9 +473,9 @@ Your file might have a similar story hiding in it. I will not know until I see i
   { id: "cb_sms_c", pool: "cb_sms", name: "Call back text: reconnect", channel: "sms", subject: "",
     body: `{{first}}, {{repfirst}} with ASAP. You asked me to circle back, so here I am. Got a few minutes now to pick up where we left off?` },
   { id: "cb_sms_d", pool: "cb_sms", name: "Call back text: good time", channel: "sms", subject: "",
-    body: `{{first}}, Joe at ASAP. Trying to catch you at a better time. What works today, morning or afternoon? I will make it quick.` },
+    body: `{{first}}, {{repfirst}} at ASAP. Trying to catch you at a better time. What works today, morning or afternoon? I will make it quick.` },
   { id: "cb_sms_e", pool: "cb_sms", name: "Call back text: ready", channel: "sms", subject: "",
-    body: `{{first}}, Joe here. Ready to pick this back up whenever you are. Text me a good time and I will call you then.` },
+    body: `{{first}}, {{repfirst}} here. Ready to pick this back up whenever you are. Text me a good time and I will call you then.` },
   { id: "cb_email_c", pool: "cb_email", name: "Call back email: reconnect", channel: "email", subject: "Picking up where we left off, {{first}}",
     body: `Hey {{first}},
 
@@ -498,9 +498,9 @@ Tell me when works and I will call you then, or start it yourself here: {{link}}
   { id: "appchase_sms_a", pool: "appchase_sms", name: "App chase text: nudge", channel: "sms", subject: "",
     body: `{{first}}, {{repfirst}} with ASAP. I sent over the application to get you moving. Were you able to get it filled out and sent back? Let me know if you hit any snags.` },
   { id: "appchase_sms_b", pool: "appchase_sms", name: "App chase text: almost there", channel: "sms", subject: "",
-    body: `{{first}}, Joe here. You are one step away. Once that application is back to me I can get everything moving on my end. Need anything from me to finish it?` },
+    body: `{{first}}, {{repfirst}} here. You are one step away. Once that application is back to me I can get everything moving on my end. Need anything from me to finish it?` },
   { id: "appchase_sms_c", pool: "appchase_sms", name: "App chase text: quick check", channel: "sms", subject: "",
-    body: `{{first}}, quick check from Joe at ASAP. Any questions on the application I sent? Happy to walk you through any part of it. Just reply here.` },
+    body: `{{first}}, quick check from {{repfirst}} at ASAP. Any questions on the application I sent? Happy to walk you through any part of it. Just reply here.` },
   { id: "appchase_sms_d", pool: "appchase_sms", name: "App chase text: help", channel: "sms", subject: "",
     body: `{{first}}, {{repfirst}} with ASAP. If the application looked like a lot, do not worry, most of it is quick. Text me and I will help you knock it out in a few minutes.` },
 

@@ -803,8 +803,9 @@ function matchLenders(lead, lenders) {
     need("Time " + (l.minMonths ? l.minMonths + "mo" : ""), Number(l.minMonths) || 0, months);
     need("Rev $" + (l.minRevenue ? Number(l.minRevenue).toLocaleString() : ""), Number(l.minRevenue) || 0, rev);
     if (l.needsBank) {
-      if (!bank) { checks.push({ k: "Bank acct", s: "unknown" }); unknown = true; }
-      else if (bank === "Yes") { checks.push({ k: "Bank acct", s: "pass" }); }
+      const b = String(bank || "").trim().toLowerCase();
+      if (!b) { checks.push({ k: "Bank acct", s: "unknown" }); unknown = true; }
+      else if (b[0] === "y") { checks.push({ k: "Bank acct", s: "pass" }); }
       else { checks.push({ k: "Bank acct", s: "fail" }); fail = true; }
     }
     const status = fail ? "no" : (unknown ? "maybe" : "fit");
@@ -2185,6 +2186,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
               ["desiredAmount", "Wants", "$"],
               ["monthlyRevenue", "Rev/mo", ""],
               ["creditScore", "Score", ""],
+              ["hasBankAccount", "Bank acct", "Yes/No"],
               ["timeInBusiness", "In biz", ""],
               ["fundingPurpose", "Needs it for", "use of funds"],
               ["fundingTimeline", "How soon", ""],

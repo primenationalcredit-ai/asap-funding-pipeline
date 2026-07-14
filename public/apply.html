@@ -273,7 +273,7 @@
       for (var i=0;i<files.length;i++){ attachments.push({ name: files[i].name, type: files[i].type||'application/octet-stream', label: files[i]._label||'Other', data: await toB64(files[i]) }); }
       var payload = { business: data.legal_name, owner: data.owner_name, email: data.owner_email, phone: data.cell_phone, amount: data.amount_requested, applicationPdf: pdfB64, attachments: attachments, fields: data };
       var res = await fetch('/.netlify/functions/submit-application', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
-      if(!res.ok){ throw new Error('Server error '+res.status); }
+      if(!res.ok){ var et=''; try{ var ej=await res.json(); et=ej.error||''; }catch(e){} throw new Error(et || ('Server error '+res.status)); }
       form.style.display='none'; document.getElementById('successBox').style.display='block'; window.scrollTo(0,0);
     } catch(err){
       errBox.innerHTML='<div class="err">Something went wrong submitting your application. Please try again, or contact us and we will help. ('+(err.message||err)+')</div>';

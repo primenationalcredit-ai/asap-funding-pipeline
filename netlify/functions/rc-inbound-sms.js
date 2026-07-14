@@ -1,4 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
+﻿import { createClient } from "@supabase/supabase-js";
 
 /*
  * RingCentral inbound SMS receiver.
@@ -115,6 +115,7 @@ export const handler = async (event) => {
     return { statusCode: 200, body: JSON.stringify({ ok: true, matched: true, direction: dir }) };
   } catch (err) {
     console.error("[rc-inbound] failed:", err.message || err);
-    return { statusCode: 500, body: JSON.stringify({ error: String(err.message || err) }) };
+    return { statusCode: 200, body: JSON.stringify({ ok: false, error: String(err.message || err) }) };
   }
 };
+

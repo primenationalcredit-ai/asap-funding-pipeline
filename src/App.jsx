@@ -1606,6 +1606,16 @@ function Dashboard({ userEmail }) {
     unreadLeadIds.forEach((id) => updateLead(id, { readAt: Date.now() }));
   }, [unreadLeadIds, updateLead]);
 
+  // Applications that have come in but haven't been sent to a lender yet (the queue that needs action).
+  const newAppsCount = useMemo(() => {
+    return leads.filter((l) => {
+      const docs = Array.isArray(l.documents) ? l.documents : [];
+      const hasApp = docs.some((d) => /application/i.test((d.label || "") + (d.name || ""))) || ["app_sent", "submitted", "pre_approved", "contracts_out", "funded"].includes(l.status);
+      const sentToLender = (Array.isArray(l.submissions) ? l.submissions : []).length > 0;
+      return hasApp && !sentToLender;
+    }).length;
+  }, [leads]);
+
   if (!loaded) return <div className="flex min-h-96 items-center justify-center font-sans text-slate-400">Loading your pipeline...</div>;
 
   const NAV = [["pipeline", "Pipeline", LayoutGrid], ["inbox", "Inbox", MessageSquare], ["applications", "Applications", FileText], ["activities", "Activities", CalendarClock], ["followups", "Follow-ups", Clock], ["commissions", "Commissions", DollarSign], ["team", "Team", User], ["messaging", "Templates", FileText], ["scripts", "Scripts", ListChecks], ["settings", "Settings", SettingsIcon]];
@@ -1643,6 +1653,9 @@ function Dashboard({ userEmail }) {
               {k === "inbox" && unreadLeadIds.size > 0 && (
                 <span className="ml-auto hidden rounded-full bg-blue-500 px-1.5 text-[11px] font-bold text-white md:inline">{unreadLeadIds.size}</span>
               )}
+              {k === "applications" && newAppsCount > 0 && (
+                <span className="ml-auto hidden rounded-full bg-emerald-500 px-1.5 text-[11px] font-bold text-white md:inline">{newAppsCount}</span>
+              )}
             </button>
           ))}
         </nav>
@@ -1667,6 +1680,7 @@ function Dashboard({ userEmail }) {
             {tab === "followups" && dueList.length > 0 && <span className="rounded-full bg-orange-100 px-2 py-0.5 text-xs font-semibold text-orange-700">{dueList.length}</span>}
             {tab === "activities" && actAlerts > 0 && <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-700">{actAlerts} due</span>}
             {tab === "inbox" && unreadLeadIds.size > 0 && <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700">{unreadLeadIds.size} unread</span>}
+            {tab === "applications" && newAppsCount > 0 && <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">{newAppsCount} to send</span>}
           </div>
           <button onClick={() => { setTab("pipeline"); setShowAdd(true); }} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-500"><Plus size={16} /> <span className="hidden sm:inline">Add client</span></button>
         </header>

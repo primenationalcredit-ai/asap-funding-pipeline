@@ -21,9 +21,12 @@ const STAGES = [
   { key: "report_pulled", label: "Report Pulled", tone: "teal" },
   { key: "app_sent", label: "Application Sent", tone: "purple" },
   { key: "submitted", label: "Submitted", tone: "indigo" },
+  { key: "denied", label: "Denied", tone: "rose" },
   { key: "pre_approved", label: "Approved / Offer", tone: "cyan" },
-  { key: "contracts_out", label: "Contracts Out", tone: "lime" },
-  { key: "funded", label: "Funded", tone: "emerald" },
+  { key: "contracts_out", label: "Waiting on Signature", tone: "amber" },
+  { key: "agreement_signed", label: "Agreement Signed", tone: "lime" },
+  { key: "getting_approvals", label: "Getting Approvals", tone: "sky" },
+  { key: "funded", label: "Client Funded", tone: "emerald" },
   { key: "commission_paid", label: "Commission Paid", tone: "yellow" },
   { key: "declined", label: "Declined", tone: "pink" },
   { key: "offer_cr", label: "Offer Credit Repair", tone: "violet" },
@@ -685,6 +688,8 @@ function rowToLead(r) {
     automationPaused: !!r.automation_paused,
     optedOut: !!r.opted_out,
     ownerEmail: r.owner_email || "",
+    product: r.product || "",
+    lenderTag: r.lender_tag || "",
     snoozeUntil: r.snooze_until ? new Date(r.snooze_until).getTime() : null,
     fundedAt: r.funded_at ? new Date(r.funded_at).getTime() : null,
     commissionPaidAt: r.commission_paid_at ? new Date(r.commission_paid_at).getTime() : null,
@@ -713,7 +718,7 @@ const FIELD_MAP = {
   myscoreiqUsername: "myscoreiq_username", myscoreiqPassword: "myscoreiq_password", ssnLast4: "ssn_last4",
   reportPath: "report_path",
   fundedAmount: "funded_amount", commissionAmount: "commission_amount", declineReason: "decline_reason", loanProgram: "loan_program",
-  automationPaused: "automation_paused", ownerEmail: "owner_email",
+  automationPaused: "automation_paused", ownerEmail: "owner_email", product: "product", lenderTag: "lender_tag",
 };
 // Format a US phone as xxx-xxx-xxxx. Leaves anything that isn't 10/11 digits untouched.
 function fmtPhone(v) {
@@ -1730,7 +1735,7 @@ function Dashboard({ userEmail }) {
 /* ================================================================== */
 const BOARDS = {
   outreach: { label: "Outreach", stages: ["new", "voicemail", "interested", "callback", "not_interested", "check_back"] },
-  funding: { label: "Funding", stages: ["report_pulled", "app_sent", "submitted", "pre_approved", "contracts_out", "funded", "commission_paid"] },
+  funding: { label: "Funding", stages: ["report_pulled", "app_sent", "submitted", "denied", "pre_approved", "contracts_out", "agreement_signed", "getting_approvals", "funded", "commission_paid"] },
   closed: { label: "Closed", stages: ["declined", "offer_cr", "referred_cr", "credit_repair", "dead"] },
 };
 
@@ -1891,6 +1896,12 @@ function BoardCard({ lead, onOpen, cadences, templates, config, openCompose, upd
           {lead.commissionAmount ? <span className="font-semibold text-blue-700">{money(lead.commissionAmount)} comm</span> : lead.desiredAmount ? <span>Wants {lead.desiredAmount}</span> : null}
         </div>
       )}
+      {(lead.product || lead.lenderTag) && (
+        <div className="mt-1.5 flex flex-wrap gap-1" onClick={stop}>
+          {lead.product && <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${lead.product === "SLOC" ? "bg-indigo-100 text-indigo-700" : "bg-orange-100 text-orange-700"}`}>{lead.product}</span>}
+          {lead.lenderTag && <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">{lead.lenderTag}</span>}
+        </div>
+      )}
       <div className="mt-2 flex items-center gap-1" onClick={stop}>
         <a href={telHref(lead.phone)} onClick={() => lead.phone && updateLead(lead.id, lead.status === "new" ? { status: "called" } : {})} title="Call" className={`rounded-md p-1.5 ${lead.phone ? "bg-slate-100 text-slate-600 hover:bg-slate-200" : "pointer-events-none bg-slate-50 text-slate-300"}`}><Phone size={13} /></a>
         <button disabled={!lead.phone} onClick={() => openCompose({ lead, channel: "sms", to: lead.phone, subject: "", body: fillTokens(tplSms?.body || "{{link}}", lead, config), kind: "link" })} title="Text" className={`rounded-md p-1.5 ${lead.phone ? "bg-blue-600 text-white hover:bg-blue-700" : "bg-slate-50 text-slate-300"}`}><MessageSquare size={13} /></button>
@@ -2049,7 +2060,7 @@ const LOAN_PROGRAMS = [
 ];
 
 function Profile({ lead, config, templates, cadences, onClose, updateLead, removeLead, logTouch, openCompose, userEmail, lenders = [], comms = [], activities = [], addActivity, completeActivity, deleteActivity, sendReply, addNote, markRead }) {
-  const EDITABLE = ["name", "phone", "email", "notes", "loanProgram", "confirmedFields", "desiredAmount", "fundingPurpose", "fundingTimeline", "monthlyRevenue", "creditScore", "timeInBusiness",
+  const EDITABLE = ["name", "phone", "email", "notes", "loanProgram", "product", "lenderTag", "confirmedFields", "desiredAmount", "fundingPurpose", "fundingTimeline", "monthlyRevenue", "creditScore", "timeInBusiness",
     "businessName", "businessType", "einStatus", "bestTime", "nextStep", "myscoreiqUsername", "myscoreiqPassword", "ssnLast4", "fundedAmount", "commissionAmount", "declineReason"];
   const [draft, setDraft] = useState(lead);
   const [savedAt, setSavedAt] = useState(0);
@@ -2174,7 +2185,9 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
       setLenderEmail(""); setLenderNote(""); setLenderCc(""); setLenderName("");
       // Auto-advance the stage: once a package is sent to a lender, they're Submitted.
       if (["new", "voicemail", "interested", "callback", "check_back", "report_pulled", "app_sent"].includes(lead.status)) {
-        updateLead(lead.id, { status: "submitted" });
+        updateLead(lead.id, { status: "submitted", lenderTag: lenderName || j.to || lead.lenderTag });
+      } else if (lenderName && !lead.lenderTag) {
+        updateLead(lead.id, { lenderTag: lenderName });
       }
       setTimeout(() => { setLenderOpen(false); setLenderMsg(""); }, 2500);
     } catch (e) { setLenderMsg(String(e.message || e)); }
@@ -2564,6 +2577,22 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
                 <select value={draft.loanProgram || ""} onChange={set("loanProgram")} className={inputCls}>
                   <option value="">Not decided yet</option>
                   {LOAN_PROGRAMS.map((p) => <option key={p.label} value={p.label}>{p.label} ({p.hint})</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-400">Product</label>
+                <select value={draft.product || ""} onChange={set("product")} className={inputCls}>
+                  <option value="">Not set</option>
+                  <option value="SLOC">SLOC</option>
+                  <option value="MCA">MCA</option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-400">Lender (submitted to)</label>
+                <select value={draft.lenderTag || ""} onChange={set("lenderTag")} className={inputCls}>
+                  <option value="">Not set</option>
+                  {(lenders || []).map((l) => <option key={l.id} value={l.name}>{l.name}</option>)}
+                  {draft.lenderTag && !(lenders || []).some((l) => l.name === draft.lenderTag) && <option value={draft.lenderTag}>{draft.lenderTag}</option>}
                 </select>
               </div>
             </div>

@@ -6,6 +6,7 @@
 <title>Business Funding Application · ASAP Funding USA</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
 <style>
   * { box-sizing: border-box; }
   body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #f1f5f9; color: #0f172a; }
@@ -186,79 +187,51 @@
   // default sign date today
   document.querySelector('[name=sign_date]').valueAsDate = new Date();
 
-  function buildPdf(data){
-    var jsPDF = window.jspdf.jsPDF;
-    var doc = new jsPDF({ unit:'pt', format:'letter' });
-    var L=40, R=572, W=R-L, y=44;
-    var NAVY=[0,45,97], ORANGE=[254,116,2], INK=[30,41,59], GRAY=[110,120,135];
-
-    // header
-    doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(ORANGE[0],ORANGE[1],ORANGE[2]);
-    doc.text('ASAP FUNDING USA', L, y);
-    doc.setTextColor(NAVY[0],NAVY[1],NAVY[2]); doc.setFontSize(15);
-    doc.text('UNIVERSAL MERCHANT CREDIT APPLICATION', L, y+16);
-    doc.setDrawColor(ORANGE[0],ORANGE[1],ORANGE[2]); doc.setLineWidth(2); doc.line(L, y+22, R, y+22);
-    y+=38;
-
-    function bar(t){ if(y>720){doc.addPage();y=44;} doc.setFillColor(NAVY[0],NAVY[1],NAVY[2]); doc.rect(L, y, W, 16, 'F'); doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(255,255,255); doc.text(t.toUpperCase(), L+6, y+11); y+=16; }
-    // a labeled field cell
-    function cell(x, w, h, label, value){
-      doc.setDrawColor(203,213,225); doc.setLineWidth(0.6); doc.rect(x, y, w, h);
-      doc.setFont('helvetica','normal'); doc.setFontSize(6); doc.setTextColor(GRAY[0],GRAY[1],GRAY[2]);
-      doc.text(String(label||'').toUpperCase(), x+4, y+7);
-      doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(INK[0],INK[1],INK[2]);
-      var v = String(value===undefined||value===null?'':value);
-      doc.text(doc.splitTextToSize(v, w-8), x+4, y+18);
+  // Fill the client's data onto the actual ARF universal application PDF (loaded as a template).
+  async function fillTemplate(data){
+    var PDFLib = window.PDFLib;
+    var tplBytes = await fetch('/umca-template.pdf').then(function(r){ return r.arrayBuffer(); });
+    var doc = await PDFLib.PDFDocument.load(tplBytes);
+    var page = doc.getPages()[0];
+    var font = await doc.embedFont(PDFLib.StandardFonts.Helvetica);
+    var H = 792, col = PDFLib.rgb(0.05,0.1,0.45);
+    function draw(text,x,top,size){ if(text==null||text==='')return; page.drawText(String(text),{x:x,y:H-top-8,size:size||8,font:font,color:col}); }
+    function mark(x,top){ page.drawText('X',{x:x,y:H-top-8,size:9,font:font,color:col}); }
+    // MERCHANT INFO
+    draw(data.legal_name,90,178); draw(data.dba_name,245,178); draw(data.business_type,450,179,7);
+    draw(data.biz_address,145,197);
+    draw(data.biz_city,65,215); draw(data.biz_state,228,215); draw(data.employees,510,215);
+    draw(data.biz_zip,62,234); draw(data.biz_phone,235,234); draw(data.biz_web,390,234,7);
+    draw(data.entity_type,115,275); draw(data.owner_name,450,275,7);
+    draw(data.org_date,120,296); draw(data.org_state,290,296); draw(data.ein,470,296);
+    draw(data.owned_years,236,314); draw(data.owned_months,293,314);
+    draw(data.landlord_name,115,334); draw(data.landlord_phone,405,334);
+    draw(data.annual_sales,120,354); draw(data.amount_requested,420,354);
+    // OWNER
+    draw(data.owner_name,190,394);
+    draw(data.owner_dob,100,413); draw(data.owner_ssn,345,413);
+    draw(data.dl_number,115,431); draw(data.dl_state,275,431); draw(data.owner_email,415,431,7);
+    draw(data.home_address,110,450);
+    draw(data.home_city,65,468); draw(data.home_state,275,468); draw(data.home_zip,425,468);
+    if(data.citizen==='Yes') mark(133,486); else if(data.citizen==='No') mark(160,486);
+    if(data.resident==='Yes') mark(403,486); else if(data.resident==='No') mark(431,486);
+    draw(data.home_phone,115,505); draw(data.cell_phone,355,505);
+    if(data.own_rent==='Own') mark(134,523); else if(data.own_rent==='Rent') mark(173,523);
+    // SIGNATURE + DATE + TITLE
+    draw(data.sign_date,435,683); draw(data.sign_title,195,704);
+    if(data.sigImg){
+      try {
+        var png = await doc.embedPng(data.sigImg);
+        var w = 165, h = Math.min(24, w*png.height/png.width);
+        page.drawImage(png,{x:70,y:H-682-h+6,width:w,height:h});
+        // initials: small signature squeezed at the far left of the signature line
+        var iw = 40, ih = Math.min(18, iw*png.height/png.width);
+        page.drawImage(png,{x:250,y:H-682-ih+6,width:iw,height:ih});
+      } catch(e){}
     }
-    // a row of cells: specs = [[label,value,widthFraction], ...]
-    function row(specs, h){
-      h = h||30; if(y+h>750){doc.addPage();y=44;}
-      var x=L;
-      specs.forEach(function(s){ var w=W*s[2]; cell(x, w, h, s[0], s[1]); x+=w; });
-      y+=h;
-    }
-
-    bar('Merchant Information');
-    row([['Legal Business Name', data.legal_name, 0.6],['Type of Business', data.business_type, 0.4]]);
-    row([['DBA Name', data.dba_name, 0.6],['Legal Entity Type', data.entity_type, 0.4]]);
-    row([['Business Address', data.biz_address, 1.0]]);
-    row([['City', data.biz_city, 0.4],['State', data.biz_state, 0.15],['Zip', data.biz_zip, 0.2],['Business Phone', data.biz_phone, 0.25]]);
-    row([['Web Address', data.biz_web, 0.4],['# W-2 Employees', data.employees, 0.2],['Federal Tax ID (EIN)', data.ein, 0.4]]);
-    row([['Date of Organization', data.org_date, 0.33],['State of Organization', data.org_state, 0.33],['Time Owned', (data.owned_years||'0')+' yrs '+(data.owned_months||'0')+' mo', 0.34]]);
-    row([['Total Annual Sales', data.annual_sales, 0.33],['Total Funding Requested', data.amount_requested, 0.33],['Ownership %', data.owner_pct, 0.34]]);
-    row([['Landlord Name', data.landlord_name, 0.5],['Landlord Phone', data.landlord_phone, 0.5]]);
-    y+=8;
-
-    bar('Principal Owner / Guarantor');
-    row([['Full Name', data.owner_name, 0.5],['Title', data.owner_title, 0.25],['Date of Birth', data.owner_dob, 0.25]]);
-    row([['Social Security #', data.owner_ssn, 0.33],["Driver's License #", data.dl_number, 0.33],['DL State', data.dl_state, 0.34]]);
-    row([['Email Address', data.owner_email, 0.5],['Cell Phone', data.cell_phone, 0.25],['Home Phone', data.home_phone, 0.25]]);
-    row([['Home Address', data.home_address, 1.0]]);
-    row([['City', data.home_city, 0.4],['State', data.home_state, 0.15],['Zip', data.home_zip, 0.2],['US Citizen', data.citizen, 0.12],['Own/Rent', data.own_rent, 0.13]]);
-    y+=8;
-
-    bar('Credit Authorization & Consent');
-    doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(GRAY[0],GRAY[1],GRAY[2]);
-    var auth = document.getElementById('authText').textContent.trim().replace(/\s+/g,' ');
-    var lines = doc.splitTextToSize(auth, W-8); if(y+lines.length*9+8>750){doc.addPage();y=44;} doc.text(lines, L+4, y+10); y+=lines.length*9+14;
-
-    bar('Signature');
-    if(y+90>750){doc.addPage();y=44;}
-    doc.setDrawColor(203,213,225); doc.setLineWidth(0.6); doc.rect(L, y, W, 84);
-    if(data.sigImg){ try { doc.addImage(data.sigImg, 'PNG', L+8, y+8, 190, 50); } catch(e){} }
-    doc.setDrawColor(150,160,175); doc.line(L+8, y+62, L+210, y+62);
-    doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(GRAY[0],GRAY[1],GRAY[2]);
-    doc.text('Authorized Signature', L+8, y+72);
-    doc.setFontSize(9); doc.setTextColor(INK[0],INK[1],INK[2]); doc.setFont('helvetica','bold');
-    doc.text('Signed by: '+(data.consent_name||''), L+230, y+24);
-    doc.text('Title: '+(data.sign_title||''), L+230, y+44);
-    doc.text('Date: '+(data.sign_date||''), L+230, y+64);
-    y+=84;
-
-    return doc.output('datauristring').split(',')[1];
+    var bytes = await doc.save();
+    return bytes;
   }
-
-  function dataUriToBlob(b64, type){ var bin=atob(b64); var arr=new Uint8Array(bin.length); for(var i=0;i<bin.length;i++) arr[i]=bin.charCodeAt(i); return new Blob([arr],{type:type||'application/octet-stream'}); }
 
   var form = document.getElementById('appForm');
   form.addEventListener('submit', async function(e){
@@ -273,7 +246,7 @@
       data.sigImg = hasSig ? canvas.toDataURL('image/png') : '';
 
       // Build the file list: generated application PDF + every uploaded document.
-      var pdfBlob = dataUriToBlob(buildPdf(data), 'application/pdf');
+      var pdfBytes = await fillTemplate(data); var pdfBlob = new Blob([pdfBytes], {type:'application/pdf'});
       var appName = 'Application-' + (data.legal_name||'form').replace(/[^a-zA-Z0-9]+/g,'-').slice(0,40) + '.pdf';
       var toUpload = [{ name: appName, label: 'Application', blob: pdfBlob }];
       for (var i=0;i<files.length;i++){ toUpload.push({ name: files[i].name, label: files[i]._label||'Other', blob: files[i] }); }

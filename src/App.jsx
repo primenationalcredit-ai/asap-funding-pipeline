@@ -1700,7 +1700,7 @@ function Dashboard({ userEmail }) {
           {tab === "activities" && <Activities activities={activities} leads={leads} onOpen={setProfileId} completeActivity={completeActivity} deleteActivity={deleteActivity} />}
           {tab === "messaging" && <Messaging templates={templates} persistTemplates={persistTemplates} cadences={cadences} persistCadences={persistCadences} />}
           {tab === "commissions" && <Commissions leads={leads} onOpen={setProfileId} />}
-          {tab === "applications" && <Applications leads={leads} lenders={lenders} onOpen={setProfileId} />}
+          {tab === "applications" && <Applications leads={leads} lenders={lenders} onOpen={setProfileId} onDelete={removeLead} />}
           {tab === "team" && <Team leads={leads} onOpen={setProfileId} />}
           {tab === "scripts" && <Scripts />}
           {tab === "settings" && <Settings config={config} persistConfig={persistConfig} lenders={lenders} persistLenders={persistLenders} />}
@@ -2151,6 +2151,10 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
       if (!res.ok) throw new Error(j.error || "Failed to send");
       setLenderMsg(`Sent ${j.sent} files to ${j.to}`);
       setLenderEmail(""); setLenderNote(""); setLenderCc(""); setLenderName("");
+      // Auto-advance the stage: once a package is sent to a lender, they're Submitted.
+      if (["new", "voicemail", "interested", "callback", "check_back", "report_pulled", "app_sent"].includes(lead.status)) {
+        updateLead(lead.id, { status: "submitted" });
+      }
       setTimeout(() => { setLenderOpen(false); setLenderMsg(""); }, 2500);
     } catch (e) { setLenderMsg(String(e.message || e)); }
     finally { setLenderBusy(false); }
@@ -2654,6 +2658,13 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
               <div className="flex flex-col gap-2">
                 {lead.submissions.map((s) => {
                   const setSub = (patch) => updateLead(lead.id, { submissions: lead.submissions.map((x) => x.id === s.id ? { ...x, ...patch } : x) });
+                  // When a lender response is logged, advance the client's stage to match.
+                  const setSubStatus = (status) => {
+                    const extra = {};
+                    if (["Approved", "Pre-approved", "Funded"].includes(status) && !["pre_approved", "contracts_out", "funded"].includes(lead.status)) extra.status = status === "Funded" ? "funded" : "pre_approved";
+                    if (status === "Declined" && lead.status === "submitted") extra.status = "declined";
+                    updateLead(lead.id, { submissions: lead.submissions.map((x) => x.id === s.id ? { ...x, status, respondedAt: Date.now() } : x), ...extra });
+                  };
                   const statusColor = { "Submitted": "bg-slate-100 text-slate-700", "Pre-approved": "bg-amber-100 text-amber-800", "Approved": "bg-emerald-100 text-emerald-800", "Declined": "bg-rose-100 text-rose-700", "Funded": "bg-blue-100 text-blue-800" }[s.status] || "bg-slate-100 text-slate-700";
                   return (
                     <div key={s.id} className="rounded-lg border border-slate-200 bg-white p-3">
@@ -2663,7 +2674,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
                         <span className="ml-auto text-xs text-slate-400">{s.sentAt ? fmtDateTime(s.sentAt).split(",")[0] : ""} · {s.files} files</span>
                       </div>
                       <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr]">
-                        <select value={s.status} onChange={(e) => setSub({ status: e.target.value, respondedAt: Date.now() })} className={inputCls}>
+                        <select value={s.status} onChange={(e) => setSubStatus(e.target.value)} className={inputCls}>
                           {["Submitted", "Pre-approved", "Approved", "Declined", "Funded"].map((o) => <option key={o}>{o}</option>)}
                         </select>
                         <input value={s.amount || ""} onChange={(e) => setSub({ amount: e.target.value })} placeholder="Offer / approved amount" className={inputCls} />
@@ -3846,7 +3857,7 @@ function Followups({ dueList, config, onOpen, openCompose, updateLead }) {
   );
 }
 
-function Applications({ leads, lenders = [], onOpen }) {
+function Applications({ leads, lenders = [], onOpen, onDelete }) {
   // Leads that have submitted an application (an Application doc on file) or are past that point.
   const apps = useMemo(() => {
     return (leads || [])
@@ -3897,6 +3908,7 @@ function Applications({ leads, lenders = [], onOpen }) {
                   <span className="text-xs italic text-slate-400">Not sent to any lender yet</span>
                 )}
                 <button onClick={() => onOpen(lead.id)} className="ml-auto rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700">Open & send to lender</button>
+                <button onClick={() => { if (window.confirm(`Delete the application for ${lead.businessName || lead.name || "this client"}? This removes the client and their application entirely. This cannot be undone.`)) onDelete(lead.id); }} className="rounded-lg border border-rose-200 px-2 py-1.5 text-xs font-semibold text-rose-500 hover:bg-rose-50" title="Delete application"><Trash2 size={14} /></button>
               </div>
             </div>
           ))}

@@ -21,9 +21,17 @@ export const handler = async (event) => {
     try {
       if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
         const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
-        const email = (p.email || f.owner_email || "").toLowerCase();
+        const email = (p.email || f.owner_email || "").toLowerCase().trim();
+        const phone10 = (p.phone || f.cell_phone || "").replace(/\D/g, "").slice(-10);
         let lead = null;
-        if (email) { const { data } = await supabase.from("leads").select("id,documents,status").ilike("email", email).maybeSingle(); lead = data; }
+        if (email) {
+          const { data } = await supabase.from("leads").select("id,documents,status,last_touch_at").ilike("email", email).order("last_touch_at", { ascending: false, nullsFirst: false }).limit(1);
+          lead = data && data[0];
+        }
+        if (!lead && phone10) {
+          const { data } = await supabase.from("leads").select("id,documents,status,phone,last_touch_at").not("phone", "is", null).order("last_touch_at", { ascending: false, nullsFirst: false }).limit(1000);
+          lead = (data || []).find((l) => (l.phone || "").replace(/\D/g, "").slice(-10) === phone10) || null;
+        }
         if (lead) {
           const existing = Array.isArray(lead.documents) ? lead.documents : [];
           const newDocs = docs.map((d) => ({ name: d.name, path: d.path, label: d.label || "Other", uploadedAt: Date.now(), by: "application form" }));
@@ -32,7 +40,7 @@ export const handler = async (event) => {
           await supabase.from("leads").update(patch).eq("id", lead.id);
           await supabase.from("communications").insert({ lead_id: lead.id, direction: "in", channel: "note", body: `Client submitted the funding application with ${newDocs.length} document(s).`, by_user: "application form" });
           filed = true;
-        } else { warnings.push("no matching lead for " + email); }
+        } else { warnings.push("no matching lead for " + email + " / " + phone10); }
       }
     } catch (e) { warnings.push("file-on-lead: " + e.message); console.log("[submit-application] file failed:", e.message); }
 
@@ -42,24 +50,18 @@ export const handler = async (event) => {
 
 BUSINESS
   Legal name:   ${f.legal_name || ""}
-  Type:         ${f.business_type || ""}
-  Entity:       ${f.entity_type || ""}
-  Address:      ${[f.biz_address, f.biz_city, f.biz_state, f.biz_zip].filter(Boolean).join(", ")}
-  Phone:        ${f.biz_phone || ""}
-  EIN:          ${f.ein || ""}
-  Annual sales: ${f.annual_sales || ""}
   Requested:    ${f.amount_requested || ""}
 
 OWNER / GUARANTOR
   Name:  ${f.owner_name || ""} (${f.owner_title || ""})
-  DOB:   ${f.owner_dob || ""}   SSN: ${f.owner_ssn || ""}
-  DL:    ${f.dl_number || ""} (${f.dl_state || ""})
   Email: ${f.owner_email || ""}   Cell: ${f.cell_phone || ""}
 
 Documents uploaded: ${docs.map((d) => d.label).join(", ") || "none"}.
-Signed by ${f.consent_name || owner} on ${f.sign_date || ""}.
+Filed to a client record: ${filed ? "YES" : "NO - no matching lead found, attach manually"}.
+Document storage paths:
+${docs.map((d) => "  " + d.label + ": " + d.path).join("\n") || "  none"}
 
-Open the client's file in the CRM to review the application and documents, and to send the package to lenders.`;
+Open the client's file in the CRM to review.`;
       await sendEmail(to, `Funding Application — ${biz}${owner ? " (" + owner + ")" : ""}`, summary);
     } catch (e) { warnings.push("email: " + e.message); console.log("[submit-application] email failed:", e.message); }
 

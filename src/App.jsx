@@ -2455,12 +2455,20 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
             <div className="mt-2 flex items-center gap-2 border-t border-slate-100 pt-2 text-xs">
               <span className="font-semibold uppercase tracking-wide text-slate-400">Owner</span>
               <span className="font-semibold text-slate-700">{repInfo(lead, config).first}{lead.ownerEmail ? "" : " (default)"}</span>
-              {(config.team || []).length > 0 && (
-                <select value={lead.ownerEmail || ""} onChange={(e) => updateLead(lead.id, { ownerEmail: e.target.value })} className="ml-auto rounded border border-slate-200 px-1.5 py-1 text-xs">
-                  <option value="">Unassigned (default)</option>
-                  {(config.team || []).map((m) => <option key={m.email} value={m.email}>{m.first}</option>)}
-                </select>
-              )}
+              {(() => {
+                const seen = new Set();
+                const validTeam = (config.team || []).filter((m) => {
+                  const e = (m.email || "").trim().toLowerCase();
+                  if (!e || !m.first || !m.first.trim() || seen.has(e)) return false;
+                  seen.add(e); return true;
+                });
+                return validTeam.length > 0 ? (
+                  <select value={lead.ownerEmail || ""} onChange={(e) => updateLead(lead.id, { ownerEmail: e.target.value })} className="ml-auto rounded border border-slate-200 px-1.5 py-1 text-xs">
+                    <option value="">Unassigned</option>
+                    {validTeam.map((m) => <option key={m.email} value={m.email}>{m.first}</option>)}
+                  </select>
+                ) : null;
+              })()}
             </div>
             {!lead.automationPaused && (
               <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
@@ -3961,7 +3969,25 @@ function Team({ leads, onOpen }) {
     return m;
   }, [leads, start, end]);
 
-  const reps = useMemo(() => [...new Set([...acts.map((a) => a.rep), ...Object.keys(subStats)])].sort(), [acts, subStats]);
+  // Credit reports per rep: count leads that have a credit report on file (document or uploaded report),
+  // attributed to the lead's owner, by when the report landed. Robust regardless of how it arrived.
+  const reportStats = useMemo(() => {
+    const m = {};
+    for (const l of leads) {
+      const docs = Array.isArray(l.documents) ? l.documents : [];
+      let when = 0, by = null;
+      for (const d of docs) {
+        if (/credit/i.test((d.label || "") + (d.name || "")) && d.uploadedAt && d.uploadedAt > when) { when = d.uploadedAt; by = d.by; }
+      }
+      if (!when && l.reportPath && l.reportUploadedAt) { when = l.reportUploadedAt; by = null; }
+      // Credit to whoever uploaded it (a rep email); if it came from the form/system, credit the lead owner.
+      const rep = (by && String(by).includes("@")) ? by : (l.ownerEmail || "(unassigned)");
+      if (when && when >= start && when < end) m[rep] = (m[rep] || 0) + 1;
+    }
+    return m;
+  }, [leads, start, end]);
+
+  const reps = useMemo(() => [...new Set([...acts.map((a) => a.rep), ...Object.keys(subStats), ...Object.keys(reportStats)])].sort(), [acts, subStats, reportStats]);
   const shownReps = repFilter === "all" ? reps : reps.filter((r) => r === repFilter);
 
   const statsFor = (rep) => {
@@ -3975,7 +4001,7 @@ function Team({ leads, onOpen }) {
       texts: mine.filter((a) => a.channel === "sms").length,
       emails: mine.filter((a) => a.channel === "email").length,
       notes: mine.filter((a) => a.kind === "note" || (a.kind === "call" && a.note)).length,
-      reports: mine.filter((a) => a.kind === "report").length,
+      reports: reportStats[rep] || 0,
       submitted: sub.submitted,
       approved: sub.approved,
       declined: sub.declined,

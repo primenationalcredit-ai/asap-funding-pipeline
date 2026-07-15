@@ -187,50 +187,49 @@
   // default sign date today
   document.querySelector('[name=sign_date]').valueAsDate = new Date();
 
-  // Fill the client's data onto the actual ARF universal application PDF (loaded as a template).
+  // Fill the client's data onto the actual ARF application by filling its form fields, then flatten to a clean, non-fillable copy.
   async function fillTemplate(data){
     var PDFLib = window.PDFLib;
     var tplBytes = await fetch('/umca-template.pdf').then(function(r){ return r.arrayBuffer(); });
     var doc = await PDFLib.PDFDocument.load(tplBytes);
+    var form = doc.getForm();
     var page = doc.getPages()[0];
-    var font = await doc.embedFont(PDFLib.StandardFonts.Helvetica);
-    var H = 792, col = PDFLib.rgb(0.05,0.1,0.45);
-    function draw(text,x,top,size){ if(text==null||text==='')return; page.drawText(String(text),{x:x,y:H-top-8,size:size||8,font:font,color:col}); }
-    function mark(x,top){ page.drawText('X',{x:x,y:H-top-8,size:9,font:font,color:col}); }
-    // MERCHANT INFO
-    draw(data.legal_name,90,178); draw(data.dba_name,245,178); draw(data.business_type,450,179,7);
-    draw(data.biz_address,145,197);
-    draw(data.biz_city,65,215); draw(data.biz_state,228,215); draw(data.employees,510,215);
-    draw(data.biz_zip,62,234); draw(data.biz_phone,235,234); draw(data.biz_web,390,234,7);
-    draw(data.entity_type,115,275); draw(data.owner_name,450,275,7);
-    draw(data.org_date,120,296); draw(data.org_state,290,296); draw(data.ein,470,296);
-    draw(data.owned_years,236,314); draw(data.owned_months,293,314);
-    draw(data.landlord_name,115,334); draw(data.landlord_phone,405,334);
-    draw(data.annual_sales,120,354); draw(data.amount_requested,420,354);
+    var helv = await doc.embedFont(PDFLib.StandardFonts.Helvetica);
+    function setF(n,v){ try{ form.getField(n).setText(String(v==null?'':v)); }catch(e){} }
+    function chk(n){ try{ form.getField(n).check(); }catch(e){} }
+    // MERCHANT
+    setF("Legal Name",data.legal_name); setF("DBA Name",data.dba_name); setF("Type of Business",data.business_type);
+    setF("Corporate Legal Address",data.biz_address); setF("City",data.biz_city); setF("State",data.biz_state);
+    setF("Zip",data.biz_zip); setF("Phone",data.biz_phone); setF("Web Address",data.biz_web); setF("Number of W2 Employees",data.employees);
+    setF("Legal Entity Type",data.entity_type); setF("Name of Officer Signing Application",data.owner_name);
+    setF("Date of Organization_es_:date",data.org_date); setF("State of Organization",data.org_state); setF("Federal Tax ID",data.ein);
+    setF("Years?",data.owned_years); setF("Months?",data.owned_months);
+    setF("Name of Landlord",data.landlord_name); setF("Landlord Phone",data.landlord_phone);
+    setF("Total Annual Sales",data.annual_sales); setF("Total Cash Needed",data.amount_requested);
     // OWNER
-    draw(data.owner_name,190,394);
-    draw(data.owner_dob,100,413); draw(data.owner_ssn,345,413);
-    draw(data.dl_number,115,431); draw(data.dl_state,275,431); draw(data.owner_email,415,431,7);
-    draw(data.home_address,110,450);
-    draw(data.home_city,65,468); draw(data.home_state,275,468); draw(data.home_zip,425,468);
-    if(data.citizen==='Yes') mark(133,486); else if(data.citizen==='No') mark(160,486);
-    if(data.resident==='Yes') mark(403,486); else if(data.resident==='No') mark(431,486);
-    draw(data.home_phone,115,505); draw(data.cell_phone,355,505);
-    if(data.own_rent==='Own') mark(134,523); else if(data.own_rent==='Rent') mark(173,523);
-    // SIGNATURE + DATE + TITLE
-    draw(data.sign_date,435,683); draw(data.sign_title,195,704);
+    setF("Name of Principal OwnerGuarantor",data.owner_name);
+    setF("Date of Birth_es_:date",data.owner_dob); setF("Social Security Number",data.owner_ssn);
+    setF("Drivers License",data.dl_number); setF("State_2",data.dl_state); setF("Email Address",data.owner_email);
+    setF("Home Address",data.home_address); setF("City_2",data.home_city); setF("State_3",data.home_state); setF("Zip_2",data.home_zip);
+    setF("Home Phone",data.home_phone); setF("Cell Phone",data.cell_phone);
+    setF("Merchant Authorized Signers Title",data.sign_title); setF("Date1_es_:date",data.sign_date);
+    if(data.citizen==='Yes') chk("Citizen Yes"); else if(data.citizen==='No') chk("Citizen No");
+    if(data.resident==='Yes') chk("Resident Yes"); else if(data.resident==='No') chk("Resident No");
+    if(data.own_rent==='Own') chk("Own"); else if(data.own_rent==='Rent') chk("Rent");
+    // bake appearances, then flatten to a clean non-fillable copy
+    form.getFields().forEach(function(f){ try{ f.updateAppearances(helv); }catch(e){} });
+    try { form.flatten({ updateFieldAppearances: false }); } catch(e){ try { form.flatten(); } catch(e2){} }
+    // signature on the signature line + initials on the authorization line
     if(data.sigImg){
       try {
         var png = await doc.embedPng(data.sigImg);
-        var w = 165, h = Math.min(24, w*png.height/png.width);
-        page.drawImage(png,{x:70,y:H-682-h+6,width:w,height:h});
-        // initials: small signature squeezed at the far left of the signature line
-        var iw = 40, ih = Math.min(18, iw*png.height/png.width);
-        page.drawImage(png,{x:250,y:H-682-ih+6,width:iw,height:ih});
+        var sh = 26, sw = Math.min(200, sh*png.width/png.height);
+        page.drawImage(png,{x:65, y:99, width:sw, height:sh});
+        var ih = 12, iw = Math.min(46, ih*png.width/png.height);
+        page.drawImage(png,{x:80, y:207, width:iw, height:ih});
       } catch(e){}
     }
-    var bytes = await doc.save();
-    return bytes;
+    return await doc.save();
   }
 
   var form = document.getElementById('appForm');

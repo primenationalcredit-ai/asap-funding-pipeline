@@ -1701,7 +1701,7 @@ function Dashboard({ userEmail }) {
           {tab === "messaging" && <Messaging templates={templates} persistTemplates={persistTemplates} cadences={cadences} persistCadences={persistCadences} />}
           {tab === "commissions" && <Commissions leads={leads} onOpen={setProfileId} />}
           {tab === "applications" && <Applications leads={leads} lenders={lenders} onOpen={setProfileId} onDelete={removeLead} />}
-          {tab === "team" && <Team leads={leads} onOpen={setProfileId} />}
+          {tab === "team" && <Team leads={leads} onOpen={setProfileId} config={config} />}
           {tab === "scripts" && <Scripts />}
           {tab === "settings" && <Settings config={config} persistConfig={persistConfig} lenders={lenders} persistLenders={persistLenders} />}
         </div>
@@ -2053,9 +2053,13 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
   const [uploading, setUploading] = useState(false);
   const [reportCreditRep, setReportCreditRep] = useState("");
   const [reportPulledMsg, setReportPulledMsg] = useState("");
+  const [reportDate, setReportDate] = useState(() => new Date().toISOString().slice(0, 10));
   const markReportPulled = () => {
     const by = reportCreditRep || lead.ownerEmail || userEmail || "";
-    logTouch(lead.id, "report", "report", { by, manual: true });
+    // Use the chosen date (noon local, so timezone can't push it to the previous/next day).
+    let at = Date.now();
+    if (reportDate) { const d = new Date(reportDate + "T12:00:00"); if (!isNaN(d)) at = d.getTime(); }
+    logTouch(lead.id, "report", "report", { by, manual: true, at });
     if (["new", "voicemail", "interested", "callback", "check_back"].includes(lead.status)) updateLead(lead.id, { status: "report_pulled" });
     const who = (config.team || []).find((m) => (m.email || "").toLowerCase() === by.toLowerCase());
     setReportPulledMsg(`Credit report pull logged${who ? " for " + who.first : ""}.`);
@@ -2742,6 +2746,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
               <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">Report pulled outside the app?</div>
               <p className="mb-2 text-xs text-slate-500">Log a credit report pull (e.g. done in another system) so the rep gets credit for it in the Team report.</p>
               <div className="flex flex-wrap items-center gap-2">
+                <input type="date" value={reportDate} onChange={(e) => setReportDate(e.target.value)} max={new Date().toISOString().slice(0, 10)} className="rounded border border-slate-200 px-2 py-1.5 text-sm" title="Date the report was pulled" />
                 {(() => {
                   const seen = new Set();
                   const validTeam = (config.team || []).filter((m) => { const e = (m.email || "").trim().toLowerCase(); if (!e || !m.first || seen.has(e)) return false; seen.add(e); return true; });
@@ -3954,7 +3959,14 @@ function Applications({ leads, lenders = [], onOpen, onDelete }) {
   );
 }
 
-function Team({ leads, onOpen }) {
+function Team({ leads, onOpen, config = {} }) {
+  // Show friendly first names instead of raw emails.
+  const repName = (rep) => {
+    if (rep === "automation") return "Automation";
+    if (rep === "(unassigned)") return "Unassigned";
+    const m = (config.team || []).find((t) => (t.email || "").toLowerCase() === String(rep || "").toLowerCase());
+    return m ? m.first : rep;
+  };
   const [range, setRange] = useState("today"); // today | yesterday | week | month | custom
   const [from, setFrom] = useState(() => new Date().toISOString().slice(0, 10));
   const [to, setTo] = useState(() => new Date().toISOString().slice(0, 10));
@@ -4068,7 +4080,7 @@ function Team({ leads, onOpen }) {
         )}
         <select value={repFilter} onChange={(e) => setRepFilter(e.target.value)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm outline-none focus:border-blue-400">
           <option value="all">All employees</option>
-          {reps.map((r) => <option key={r} value={r}>{r}</option>)}
+          {reps.map((r) => <option key={r} value={r}>{repName(r)}</option>)}
         </select>
       </div>
 
@@ -4096,7 +4108,7 @@ function Team({ leads, onOpen }) {
         return (
           <div key={rep} className="rounded-xl border border-slate-200 bg-white p-4">
             <div className="mb-3 flex items-center gap-2 text-sm font-bold text-slate-800">
-              {rep === "automation" ? <Zap size={15} className="text-violet-500" /> : <User size={15} className="text-blue-600" />} {rep}
+              {rep === "automation" ? <Zap size={15} className="text-violet-500" /> : <User size={15} className="text-blue-600" />} {repName(rep)}
               <span className="ml-auto text-xs font-medium text-slate-400">{s.total} actions</span>
             </div>
             <div className="grid grid-cols-3 gap-3 sm:grid-cols-6">

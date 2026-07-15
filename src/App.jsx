@@ -2335,6 +2335,36 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
             <p className="mt-2 text-xs text-slate-400">A call note is required. Outcomes match where this client is in the pipeline. "Moving forward," "Call back," and "Funding path" log the call without changing the stage.</p>
           </div>
 
+          {/* call log & notes: every logged call/note on this client */}
+          {(() => {
+            const log = (lead.touches || [])
+              .filter((t) => t.note && String(t.note).trim())
+              .sort((a, b) => (b.at || 0) - (a.at || 0));
+            if (!log.length) return null;
+            const repName = (email) => {
+              if (!email) return "";
+              const m = (config.team || []).find((x) => (x.email || "").toLowerCase() === String(email).toLowerCase());
+              return m ? m.first : email;
+            };
+            return (
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <div className="mb-2 flex items-center gap-1.5 text-sm font-bold text-slate-800"><Phone size={15} className="text-blue-600" /> Call log & notes <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-500">{log.length}</span></div>
+                <div className="flex flex-col gap-2">
+                  {log.map((t, i) => (
+                    <div key={i} className="rounded-lg border border-slate-100 bg-slate-50 p-2.5">
+                      <div className="mb-1 flex flex-wrap items-center gap-2 text-xs">
+                        {t.disposition && <span className="rounded-full bg-blue-100 px-2 py-0.5 font-semibold text-blue-700">{t.disposition}</span>}
+                        {t.by && <span className="font-medium text-slate-500">{repName(t.by)}</span>}
+                        <span className="ml-auto text-slate-400">{fmtDateTime(t.at)}</span>
+                      </div>
+                      <p className="whitespace-pre-wrap text-sm text-slate-700">{t.note}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+
 
 
           {/* best-fit lenders (only once an application is in) */}

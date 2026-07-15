@@ -4,6 +4,7 @@ import {
   Clock, Trash2, User, FileText, Send, AlertCircle, ChevronDown, Zap, Wifi,
   X, Eye, EyeOff, KeyRound, Upload, ExternalLink, Building2, CalendarClock,
   ListChecks, Pencil, Save, LogOut, Lock, LayoutGrid, DollarSign, Menu,
+  RefreshCw,
 } from "lucide-react";
 import { supabase } from "./supabaseClient.js";
 
@@ -2050,6 +2051,24 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
   const [rawOpen, setRawOpen] = useState(false);
   const [reportUrl, setReportUrl] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const [crBusy, setCrBusy] = useState(false);
+  const [crResult, setCrResult] = useState(null);
+  const sendToCreditRepair = async () => {
+    if (crBusy) return;
+    if (!window.confirm("Send this client to Credit Repair? This creates their lead in Pipedrive with the credit report and funding history, and moves them to Referred to Credit Repair.")) return;
+    setCrBusy(true); setCrResult(null);
+    try {
+      const res = await fetch("/.netlify/functions/send-to-credit-repair", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ leadId: lead.id }),
+      });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error || `Error ${res.status}`);
+      setCrResult({ ok: true, dealId: j.dealId, fileUploaded: j.fileUploaded, hadReport: j.hadReport });
+      updateLead(lead.id, { status: "referred_cr" });
+    } catch (e) {
+      setCrResult({ ok: false, error: e.message });
+    } finally { setCrBusy(false); }
+  };
   const [callNote, setCallNote] = useState("");
   const [noteErr, setNoteErr] = useState(false);
   const [docLabel, setDocLabel] = useState("Bank statements");
@@ -2656,6 +2675,31 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
               </div>
             </Section>
           )}
+
+          {/* send to credit repair (Pipedrive) */}
+          <Section icon={<RefreshCw size={15} className="text-fuchsia-600" />} title="Credit Repair referral" collapsible defaultOpen={["declined", "offer_cr", "referred_cr", "credit"].includes(lead.status)}>
+            <p className="mb-2 text-sm text-slate-500">Creates this client in the Credit Repair Pipedrive with a copy of their credit report and funding history, then moves them to Referred to Credit Repair.</p>
+            {(() => {
+              const docs = lead.documents || [];
+              const hasCR = docs.some((d) => /credit/i.test((d.label || "") + (d.name || "")));
+              return (
+                <>
+                  {!hasCR && <div className="mb-2 rounded-md bg-amber-50 px-2.5 py-1.5 text-xs font-medium text-amber-700 ring-1 ring-inset ring-amber-200">No credit report on file yet. You can still send the referral, but no report will be attached. Upload the credit report first if you have it.</div>}
+                  <button onClick={sendToCreditRepair} disabled={crBusy} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-white ${crBusy ? "bg-slate-300" : "bg-fuchsia-600 hover:bg-fuchsia-700"}`}>
+                    <RefreshCw size={15} /> {crBusy ? "Sending to Credit Repair..." : "Send to Credit Repair"}
+                  </button>
+                  {crResult && crResult.ok && (
+                    <div className="mt-2 rounded-md bg-emerald-50 px-2.5 py-1.5 text-xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200">
+                      Sent. Pipedrive deal #{crResult.dealId} created.{crResult.fileUploaded ? " Credit report attached." : crResult.hadReport ? " (Report found but attach failed, check the report file.)" : " (No credit report was on file.)"}
+                    </div>
+                  )}
+                  {crResult && !crResult.ok && (
+                    <div className="mt-2 rounded-md bg-rose-50 px-2.5 py-1.5 text-xs font-medium text-rose-700 ring-1 ring-inset ring-rose-200">Could not send: {crResult.error}</div>
+                  )}
+                </>
+              );
+            })()}
+          </Section>
           <Section icon={<FileText size={15} />} title="Credit report" collapsible defaultOpen={["interested", "report_pulled", "submitted", "pre_approved"].includes(lead.status)}>
             <div className="flex flex-wrap items-center gap-2">
               <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-2 text-sm font-medium text-white hover:bg-slate-900">

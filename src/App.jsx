@@ -2051,6 +2051,16 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
   const [rawOpen, setRawOpen] = useState(false);
   const [reportUrl, setReportUrl] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const [reportCreditRep, setReportCreditRep] = useState("");
+  const [reportPulledMsg, setReportPulledMsg] = useState("");
+  const markReportPulled = () => {
+    const by = reportCreditRep || lead.ownerEmail || userEmail || "";
+    logTouch(lead.id, "report", "report", { by, manual: true });
+    if (["new", "voicemail", "interested", "callback", "check_back"].includes(lead.status)) updateLead(lead.id, { status: "report_pulled" });
+    const who = (config.team || []).find((m) => (m.email || "").toLowerCase() === by.toLowerCase());
+    setReportPulledMsg(`Credit report pull logged${who ? " for " + who.first : ""}.`);
+    setTimeout(() => setReportPulledMsg(""), 3000);
+  };
   const [crBusy, setCrBusy] = useState(false);
   const [crResult, setCrResult] = useState(null);
   const sendToCreditRepair = async () => {
@@ -2727,6 +2737,24 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
               </label>
               {lead.reportPath && <button onClick={viewReport} className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-2 text-sm font-medium text-blue-700 ring-1 ring-blue-300 hover:bg-blue-50"><ExternalLink size={15} /> View report</button>}
               {lead.reportUploadedAt && <span className="text-xs text-slate-400">Uploaded {fmtDate(lead.reportUploadedAt)}</span>}
+            </div>
+            <div className="mt-3 border-t border-slate-100 pt-3">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">Report pulled outside the app?</div>
+              <p className="mb-2 text-xs text-slate-500">Log a credit report pull (e.g. done in another system) so the rep gets credit for it in the Team report.</p>
+              <div className="flex flex-wrap items-center gap-2">
+                {(() => {
+                  const seen = new Set();
+                  const validTeam = (config.team || []).filter((m) => { const e = (m.email || "").trim().toLowerCase(); if (!e || !m.first || seen.has(e)) return false; seen.add(e); return true; });
+                  return validTeam.length > 0 ? (
+                    <select value={reportCreditRep} onChange={(e) => setReportCreditRep(e.target.value)} className="rounded border border-slate-200 px-2 py-1.5 text-sm">
+                      <option value="">{lead.ownerEmail ? "Credit the owner" : "Credit me"}</option>
+                      {validTeam.map((m) => <option key={m.email} value={m.email}>Credit {m.first}</option>)}
+                    </select>
+                  ) : null;
+                })()}
+                <button onClick={markReportPulled} className="inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-teal-700"><FileText size={14} /> Mark credit report pulled</button>
+                {reportPulledMsg && <span className="text-xs font-medium text-emerald-600">{reportPulledMsg}</span>}
+              </div>
             </div>
           </Section>
 
@@ -3974,15 +4002,19 @@ function Team({ leads, onOpen }) {
   const reportStats = useMemo(() => {
     const m = {};
     for (const l of leads) {
-      const docs = Array.isArray(l.documents) ? l.documents : [];
       let when = 0, by = null;
-      for (const d of docs) {
+      for (const d of (Array.isArray(l.documents) ? l.documents : [])) {
         if (/credit/i.test((d.label || "") + (d.name || "")) && d.uploadedAt && d.uploadedAt > when) { when = d.uploadedAt; by = d.by; }
       }
-      if (!when && l.reportPath && l.reportUploadedAt) { when = l.reportUploadedAt; by = null; }
-      // Credit to whoever uploaded it (a rep email); if it came from the form/system, credit the lead owner.
-      const rep = (by && String(by).includes("@")) ? by : (l.ownerEmail || "(unassigned)");
-      if (when && when >= start && when < end) m[rep] = (m[rep] || 0) + 1;
+      if (l.reportPath && l.reportUploadedAt && l.reportUploadedAt > when) { when = l.reportUploadedAt; by = null; }
+      // manual "report pulled" logs (e.g. reports pulled outside the app), credited to the rep
+      for (const t of (Array.isArray(l.touches) ? l.touches : [])) {
+        if (t.kind === "report" && t.at && t.at > when) { when = t.at; by = t.by; }
+      }
+      if (when && when >= start && when < end) {
+        const rep = (by && String(by).includes("@")) ? by : (l.ownerEmail || "(unassigned)");
+        m[rep] = (m[rep] || 0) + 1;
+      }
     }
     return m;
   }, [leads, start, end]);

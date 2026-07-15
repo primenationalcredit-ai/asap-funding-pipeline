@@ -1608,7 +1608,7 @@ function Dashboard({ userEmail }) {
 
   if (!loaded) return <div className="flex min-h-96 items-center justify-center font-sans text-slate-400">Loading your pipeline...</div>;
 
-  const NAV = [["pipeline", "Pipeline", LayoutGrid], ["inbox", "Inbox", MessageSquare], ["activities", "Activities", CalendarClock], ["followups", "Follow-ups", Clock], ["commissions", "Commissions", DollarSign], ["team", "Team", User], ["messaging", "Templates", FileText], ["scripts", "Scripts", ListChecks], ["settings", "Settings", SettingsIcon]];
+  const NAV = [["pipeline", "Pipeline", LayoutGrid], ["inbox", "Inbox", MessageSquare], ["applications", "Applications", FileText], ["activities", "Activities", CalendarClock], ["followups", "Follow-ups", Clock], ["commissions", "Commissions", DollarSign], ["team", "Team", User], ["messaging", "Templates", FileText], ["scripts", "Scripts", ListChecks], ["settings", "Settings", SettingsIcon]];
   const tabTitle = { pipeline: "Pipeline", inbox: "Inbox", activities: "Activities", followups: "Follow-ups", commissions: "Commissions", team: "Team activity", messaging: "Message templates", scripts: "Call scripts", settings: "Settings" }[tab];
 
   return (
@@ -1685,6 +1685,7 @@ function Dashboard({ userEmail }) {
           {tab === "activities" && <Activities activities={activities} leads={leads} onOpen={setProfileId} completeActivity={completeActivity} deleteActivity={deleteActivity} />}
           {tab === "messaging" && <Messaging templates={templates} persistTemplates={persistTemplates} cadences={cadences} persistCadences={persistCadences} />}
           {tab === "commissions" && <Commissions leads={leads} onOpen={setProfileId} />}
+          {tab === "applications" && <Applications leads={leads} lenders={lenders} onOpen={setProfileId} />}
           {tab === "team" && <Team leads={leads} onOpen={setProfileId} />}
           {tab === "scripts" && <Scripts />}
           {tab === "settings" && <Settings config={config} persistConfig={persistConfig} lenders={lenders} persistLenders={persistLenders} />}
@@ -2252,33 +2253,34 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
           {/* LEFT COLUMN: work this client now */}
           <div className="space-y-5 lg:col-span-3">
 
-          {/* command bar: move stage, tag program, see next */}
-          <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-3">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div>
-                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-400">Move to stage</label>
-                <select value={lead.status} onChange={(e) => updateLead(lead.id, { status: e.target.value })} className={inputCls}>
-                  {STAGES.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
-                </select>
+          {/* what happened on this call */}
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <div className="mb-2 flex items-center gap-1.5 text-sm font-bold text-slate-800"><Phone size={15} className="text-blue-600" /> What happened on this call? <span className="text-rose-500">*</span></div>
+            <textarea value={callNote} onChange={(e) => { setCallNote(e.target.value); if (e.target.value.trim()) setNoteErr(false); }} rows={2} placeholder="Required: what did you discuss? (logged with your name and the time)" className={`${inputCls} mb-1 ${noteErr ? "border-rose-400 bg-rose-50 ring-2 ring-rose-100" : ""}`} />
+            {noteErr && <p className="mb-2 text-xs font-medium text-rose-600">Please add a call note before logging the outcome.</p>}
+            {!spoke ? (
+              <div className="flex flex-wrap gap-2">
+                <button onClick={() => logOutcome(lvmStage, "Left voicemail")} className="rounded-lg bg-amber-100 px-3 py-2 text-sm font-semibold text-amber-800 ring-1 ring-inset ring-amber-200 hover:bg-amber-200">No answer / left voicemail</button>
+                <button onClick={() => setSpoke(true)} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700">Spoke to them</button>
               </div>
+            ) : (
               <div>
-                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-400">Likely loan program</label>
-                <select value={draft.loanProgram || ""} onChange={set("loanProgram")} className={inputCls}>
-                  <option value="">Not decided yet</option>
-                  {LOAN_PROGRAMS.map((p) => <option key={p.label} value={p.label}>{p.label} ({p.hint})</option>)}
-                </select>
-              </div>
-            </div>
-            {nextStepFor(lead).text && (
-              <div className={`flex items-start gap-2 rounded-lg px-3 py-2 text-sm font-medium ${TONE[nextStepFor(lead).tone]}`}>
-                <span className="mt-0.5 shrink-0 text-[10px] font-bold uppercase tracking-wide opacity-70">Next</span>
-                <span>{nextStepFor(lead).text}</span>
+                <div className="mb-1.5 text-xs font-medium text-slate-500">How did it go?</div>
+                <div className="flex flex-wrap gap-2">
+                  {spokeOutcomes.map((o) => (
+                    <button key={o.label} onClick={() => logOutcome(o.stage, o.disp)} className={`rounded-lg px-3 py-2 text-sm font-semibold text-white ${OUTCOME_BTN[o.c]}`}>{o.label}</button>
+                  ))}
+                  <button onClick={() => setSpoke(false)} className="rounded-lg px-3 py-2 text-sm font-medium text-slate-500 hover:bg-slate-100">Back</button>
+                </div>
               </div>
             )}
+            <p className="mt-2 text-xs text-slate-400">A call note is required. Outcomes match where this client is in the pipeline. "Moving forward," "Call back," and "Funding path" log the call without changing the stage.</p>
           </div>
 
-          {/* best-fit lenders */}
-          {lenders.length > 0 && (() => {
+
+
+          {/* best-fit lenders (only once an application is in) */}
+          {lenders.length > 0 && ((lead.documents||[]).some(d => /application/i.test((d.label||"")+(d.name||""))) || ["app_sent","submitted","pre_approved","contracts_out","funded"].includes(lead.status)) && (() => {
             const ranked = matchLenders(lead, lenders);
             const chip = (s) => s === "pass" ? "bg-emerald-100 text-emerald-700" : s === "fail" ? "bg-rose-100 text-rose-700" : "bg-slate-100 text-slate-500";
             const badge = { fit: ["Best fit", "bg-emerald-600"], maybe: ["Possible", "bg-amber-500"], no: ["Not a fit", "bg-rose-500"] };
@@ -2449,30 +2451,33 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
             <CopyButton text={config.reportLink || ""} label="Copy link" className="bg-slate-100 text-slate-700 hover:bg-slate-200" />
           </div>
 
-          {/* what happened on this call */}
-          <div className="rounded-xl border border-slate-200 bg-white p-4">
-            <div className="mb-2 flex items-center gap-1.5 text-sm font-bold text-slate-800"><Phone size={15} className="text-blue-600" /> What happened on this call? <span className="text-rose-500">*</span></div>
-            <textarea value={callNote} onChange={(e) => { setCallNote(e.target.value); if (e.target.value.trim()) setNoteErr(false); }} rows={2} placeholder="Required: what did you discuss? (logged with your name and the time)" className={`${inputCls} mb-1 ${noteErr ? "border-rose-400 bg-rose-50 ring-2 ring-rose-100" : ""}`} />
-            {noteErr && <p className="mb-2 text-xs font-medium text-rose-600">Please add a call note before logging the outcome.</p>}
-            {!spoke ? (
-              <div className="flex flex-wrap gap-2">
-                <button onClick={() => logOutcome(lvmStage, "Left voicemail")} className="rounded-lg bg-amber-100 px-3 py-2 text-sm font-semibold text-amber-800 ring-1 ring-inset ring-amber-200 hover:bg-amber-200">No answer / left voicemail</button>
-                <button onClick={() => setSpoke(true)} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700">Spoke to them</button>
-              </div>
-            ) : (
+
+
+
+          {/* command bar: move stage, tag program, see next */}
+          <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-3">
+            <div className="grid gap-3 sm:grid-cols-2">
               <div>
-                <div className="mb-1.5 text-xs font-medium text-slate-500">How did it go?</div>
-                <div className="flex flex-wrap gap-2">
-                  {spokeOutcomes.map((o) => (
-                    <button key={o.label} onClick={() => logOutcome(o.stage, o.disp)} className={`rounded-lg px-3 py-2 text-sm font-semibold text-white ${OUTCOME_BTN[o.c]}`}>{o.label}</button>
-                  ))}
-                  <button onClick={() => setSpoke(false)} className="rounded-lg px-3 py-2 text-sm font-medium text-slate-500 hover:bg-slate-100">Back</button>
-                </div>
+                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-400">Move to stage</label>
+                <select value={lead.status} onChange={(e) => updateLead(lead.id, { status: e.target.value })} className={inputCls}>
+                  {STAGES.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-400">Likely loan program</label>
+                <select value={draft.loanProgram || ""} onChange={set("loanProgram")} className={inputCls}>
+                  <option value="">Not decided yet</option>
+                  {LOAN_PROGRAMS.map((p) => <option key={p.label} value={p.label}>{p.label} ({p.hint})</option>)}
+                </select>
+              </div>
+            </div>
+            {nextStepFor(lead).text && (
+              <div className={`flex items-start gap-2 rounded-lg px-3 py-2 text-sm font-medium ${TONE[nextStepFor(lead).tone]}`}>
+                <span className="mt-0.5 shrink-0 text-[10px] font-bold uppercase tracking-wide opacity-70">Next</span>
+                <span>{nextStepFor(lead).text}</span>
               </div>
             )}
-            <p className="mt-2 text-xs text-slate-400">A call note is required. Outcomes match where this client is in the pipeline. "Moving forward," "Call back," and "Funding path" log the call without changing the stage.</p>
           </div>
-
 
           </div>{/* end left column */}
 
@@ -3778,6 +3783,66 @@ function Followups({ dueList, config, onOpen, openCompose, updateLead }) {
         <button onClick={() => setShowAll(true)} className="rounded-lg bg-slate-100 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-200">
           Show all {dueList.length}
         </button>
+      )}
+    </div>
+  );
+}
+
+function Applications({ leads, lenders = [], onOpen }) {
+  // Leads that have submitted an application (an Application doc on file) or are past that point.
+  const apps = useMemo(() => {
+    return (leads || [])
+      .map((l) => {
+        const docs = Array.isArray(l.documents) ? l.documents : [];
+        const appDoc = docs.find((d) => /application/i.test((d.label || "") + (d.name || "")));
+        const hasApp = !!appDoc || ["app_sent", "submitted", "pre_approved", "contracts_out", "funded"].includes(l.status);
+        return { lead: l, docs, appDoc, submittedAt: appDoc?.uploadedAt || l.lastTouchAt || 0, subs: Array.isArray(l.submissions) ? l.submissions : [], hasApp };
+      })
+      .filter((a) => a.hasApp)
+      .sort((a, b) => b.submittedAt - a.submittedAt);
+  }, [leads]);
+
+  const stLabel = (s) => (STAGES.find((x) => x.key === s) || {}).label || s;
+
+  return (
+    <div className="mt-4">
+      <div className="mb-3 flex items-center gap-2">
+        <h2 className="text-lg font-bold text-slate-800">Applications</h2>
+        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-500">{apps.length}</span>
+      </div>
+      {apps.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-400">No applications submitted yet. When a client completes the application form, they show up here.</div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {apps.map(({ lead, docs, submittedAt, subs }) => (
+            <div key={lead.id} className="rounded-xl border border-slate-200 bg-white p-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <button onClick={() => onOpen(lead.id)} className="text-base font-bold text-blue-700 hover:underline">{lead.businessName || lead.name || "Unknown"}</button>
+                <span className="text-sm text-slate-400">{lead.name}</span>
+                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">{stLabel(lead.status)}</span>
+                {submittedAt > 0 && <span className="ml-auto text-xs text-slate-400">Submitted {fmtDateTime(submittedAt).split(",")[0]}</span>}
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
+                <span className="font-semibold uppercase tracking-wide text-slate-400">Docs:</span>
+                {docs.length ? docs.map((d, i) => <span key={i} className="rounded bg-slate-50 px-1.5 py-0.5 text-slate-600 ring-1 ring-slate-200">{d.label || d.name}</span>) : <span className="text-slate-400">none</span>}
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                {subs.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Sent to:</span>
+                    {subs.map((s) => {
+                      const c = { "Submitted": "bg-slate-100 text-slate-700", "Pre-approved": "bg-amber-100 text-amber-800", "Approved": "bg-emerald-100 text-emerald-800", "Declined": "bg-rose-100 text-rose-700", "Funded": "bg-blue-100 text-blue-800" }[s.status] || "bg-slate-100 text-slate-700";
+                      return <span key={s.id} className={`rounded-full px-2 py-0.5 text-xs font-semibold ${c}`}>{s.lender}: {s.status}</span>;
+                    })}
+                  </div>
+                ) : (
+                  <span className="text-xs italic text-slate-400">Not sent to any lender yet</span>
+                )}
+                <button onClick={() => onOpen(lead.id)} className="ml-auto rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700">Open & send to lender</button>
+              </div>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );

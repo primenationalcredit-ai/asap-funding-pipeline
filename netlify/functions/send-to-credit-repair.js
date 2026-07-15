@@ -36,17 +36,17 @@ export const handler = async (event) => {
     const { data: lead } = await supabase.from("leads").select("*").eq("id", leadId).maybeSingle();
     if (!lead) return { statusCode: 404, body: JSON.stringify({ error: "lead not found" }) };
     const displayName = lead.name || lead.business_name || "Unknown";
+    const orgId = process.env.PIPEDRIVE_CR_ORG_ID ? Number(process.env.PIPEDRIVE_CR_ORG_ID) : 200221;
 
     const person = await pd("/persons", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: displayName, email: lead.email ? [lead.email] : [], phone: lead.phone ? [lead.phone] : [] }),
+      body: JSON.stringify({ name: displayName, email: lead.email ? [lead.email] : [], phone: lead.phone ? [lead.phone] : [], org_id: orgId }),
     });
 
     const { pipeline_id, stage_id } = await resolvePipelineStage(process.env.PIPEDRIVE_CR_PIPELINE, process.env.PIPEDRIVE_CR_STAGE);
-    const deal = await pd("/deals", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: `${lead.business_name || displayName} - Credit Repair`, person_id: person.id, pipeline_id, stage_id }),
-    });
+    const dealBody = { title: `${lead.business_name || displayName} - Credit Repair`, person_id: person.id, pipeline_id, stage_id };
+    if (orgId) dealBody.org_id = orgId;
+    const deal = await pd("/deals", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(dealBody) });
 
     const subs = Array.isArray(lead.submissions) ? lead.submissions : [];
     const noteLines = [
@@ -81,6 +81,15 @@ export const handler = async (event) => {
           if (!fr.ok) console.log("[send-to-credit-repair] file upload failed", fr.status, await fr.text());
         }
       } catch (e) { console.log("[send-to-credit-repair] file error", e.message); }
+    }
+
+    if (fileUploaded) {
+      try {
+        await pd("/activities", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ subject: "@@@ CREDIT REPORT ATTACHED, TASK TO PROCESSING @@@", type: "task", deal_id: deal.id, person_id: person.id, org_id: orgId || undefined, done: 0, note: "Credit report was sent over already attached from ASAP Funding. Ready for processing." }),
+        });
+      } catch (e) { console.log("[send-to-credit-repair] activity error", e.message); }
     }
 
     await supabase.from("leads").update({ status: "referred_cr", last_touch_at: new Date().toISOString() }).eq("id", leadId);

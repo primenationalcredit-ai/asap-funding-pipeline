@@ -65,15 +65,17 @@ export const handler = async (event) => {
 
     const docs = Array.isArray(lead.documents) ? lead.documents : [];
     const crDoc = docs.find((d) => /credit\s*report/i.test((d.label || "") + (d.name || ""))) || docs.find((d) => /credit/i.test((d.label || "") + (d.name || "")));
+    const reportPath = (crDoc && crDoc.path) || lead.report_path || null;
+    const reportName = (crDoc && crDoc.name) || (lead.report_path ? `${(lead.business_name || displayName).replace(/[^a-zA-Z0-9]+/g, "-")}-credit-report.pdf` : null);
     let fileUploaded = false;
-    if (crDoc && crDoc.path) {
+    if (reportPath) {
       try {
-        const { data: file } = await supabase.storage.from("reports").download(crDoc.path);
+        const { data: file } = await supabase.storage.from("reports").download(reportPath);
         if (file) {
           const buf = Buffer.from(await file.arrayBuffer());
           const { base, token } = pdConfig();
           const form = new FormData();
-          form.append("file", new Blob([buf]), crDoc.name || "credit-report");
+          form.append("file", new Blob([buf]), reportName || "credit-report");
           form.append("deal_id", String(deal.id));
           form.append("person_id", String(person.id));
           const fr = await fetch(`${base}/files?api_token=${token}`, { method: "POST", body: form });
@@ -93,9 +95,9 @@ export const handler = async (event) => {
     }
 
     await supabase.from("leads").update({ status: "referred_cr", last_touch_at: new Date().toISOString() }).eq("id", leadId);
-    await supabase.from("communications").insert({ lead_id: leadId, direction: "out", channel: "note", body: `Referred to Credit Repair (Pipedrive deal #${deal.id}).${fileUploaded ? " Credit report attached." : (crDoc ? " Credit report found but upload failed." : " No credit report on file to attach.")}`, by_user: "system" });
+    await supabase.from("communications").insert({ lead_id: leadId, direction: "out", channel: "note", body: `Referred to Credit Repair (Pipedrive deal #${deal.id}).${fileUploaded ? " Credit report attached." : (reportPath ? " Credit report found but upload failed." : " No credit report on file to attach.")}`, by_user: "system" });
 
-    return { statusCode: 200, body: JSON.stringify({ ok: true, dealId: deal.id, personId: person.id, fileUploaded, hadReport: !!crDoc }) };
+    return { statusCode: 200, body: JSON.stringify({ ok: true, dealId: deal.id, personId: person.id, fileUploaded, hadReport: !!reportPath }) };
   } catch (e) {
     console.log("[send-to-credit-repair]", e.message);
     return { statusCode: 500, body: JSON.stringify({ error: e.message }) };

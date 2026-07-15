@@ -1,4 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
+﻿import { createClient } from "@supabase/supabase-js";
 const fmtPhone = (v) => {
   if (v == null) return v;
   let d = String(v).replace(/\D/g, "");
@@ -214,8 +214,27 @@ export const handler = async (event) => {
     if (error) throw error;
     // Instant welcome: text + email with the pre-approval hook (weekend-aware). Never blocks the response.
     try { await sendInstantWelcome(supabase, row, data.id); } catch (e) { console.log("[welcome] error", e.message); }
+    try {
+      const notifyTo = process.env.NEW_LEAD_NOTIFY_TO || "funding@asapfundingusa.com";
+      const nm = row.name || "New lead";
+      const lines = [
+        `New funding lead in the portal:`, ``,
+        `Name:     ${row.name || ""}`,
+        `Business: ${row.business_name || ""}`,
+        `Phone:    ${row.phone || ""}`,
+        `Email:    ${row.email || ""}`,
+        `Source:   ${row.source || "website"}`,
+        row.desired_amount ? `Wants:    ${row.desired_amount}` : "",
+        row.estimated_credit_score ? `Score:    ${row.estimated_credit_score}` : "",
+        row.monthly_revenue ? `Revenue:  ${row.monthly_revenue}` : "",
+        row.time_in_business ? `In biz:   ${row.time_in_business}` : "",
+        ``, `Open the portal to work this lead: https://tranquil-muffin-691d4e.netlify.app`,
+      ].filter((l) => l !== "");
+      await sendEmail(notifyTo, `New funding lead: ${nm}`, lines.join("\n"));
+    } catch (e) { console.log("[new-lead-notify] error", e.message); }
     return json(200, { ok: true, action: "inserted", id: data.id });
   } catch (err) {
     return json(500, { error: "Database write failed", detail: String(err.message || err) });
   }
 };
+

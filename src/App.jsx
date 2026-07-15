@@ -1545,11 +1545,18 @@ function Dashboard({ userEmail }) {
   // Add a free-text note that lands in the client's timeline
   const addNote = useCallback(async (lead, text) => {
     if (!text || !text.trim()) return;
-    await supabase.from("communications").insert({
+    // Store on the lead record first (this path is reliable and surfaces its own errors),
+    // so the note is preserved even if the communications insert is blocked.
+    logTouch(lead.id, "note", "note", { note: text.trim(), by: userEmail });
+    const { error } = await supabase.from("communications").insert({
       lead_id: lead.id, direction: "out", channel: "note", body: text.trim(), by_user: userEmail,
     });
-    logTouch(lead.id, "note", "note", { note: text.trim(), by: userEmail });
+    if (error) {
+      setErr("Note saved to the client record, but could not post to the timeline: " + error.message);
+      return false;
+    }
     refetchComms();
+    return true;
   }, [userEmail, logTouch, refetchComms]);
 
   // Leads that replied are handled by a human (in the Inbox), not the auto-cadence.

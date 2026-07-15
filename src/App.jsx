@@ -2295,6 +2295,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
               ["creditScore", "Score", ""],
               ["hasBankAccount", "Bank acct", "Yes/No"],
               ["timeInBusiness", "In biz", ""],
+              ["loanProgram", "Loan program", ""],
               ["fundingPurpose", "Needs it for", "use of funds"],
               ["fundingTimeline", "How soon", ""],
               ["businessType", "Industry", ""],
@@ -2318,6 +2319,32 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
               </>
             );
           })()}
+        </div>
+
+        {/* Product + Lender tabs (click to set, shows as chips on the card) */}
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-slate-100 bg-white px-5 py-3">
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Product</span>
+            {["SLOC", "MCA"].map((p) => {
+              const on = draft.product === p;
+              const color = p === "SLOC" ? "bg-indigo-600" : "bg-orange-500";
+              return (
+                <button key={p} onClick={() => { const v = on ? "" : p; setDraft({ ...draft, product: v }); updateLead(lead.id, { product: v }); }}
+                  className={`rounded-lg px-3 py-1.5 text-sm font-bold ${on ? color + " text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>{p}</button>
+              );
+            })}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Lender</span>
+            {(lenders || []).length === 0 && <span className="text-xs text-slate-400">Add lenders in Settings</span>}
+            {(lenders || []).map((l) => {
+              const on = draft.lenderTag === l.name;
+              return (
+                <button key={l.id} onClick={() => { const v = on ? "" : l.name; setDraft({ ...draft, lenderTag: v }); updateLead(lead.id, { lenderTag: v }); }}
+                  className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${on ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>{l.name}</button>
+              );
+            })}
+          </div>
         </div>
 
         <div className="grid gap-5 px-5 py-4 lg:grid-cols-5">
@@ -2570,29 +2597,6 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
                 <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-400">Move to stage</label>
                 <select value={lead.status} onChange={(e) => updateLead(lead.id, { status: e.target.value })} className={inputCls}>
                   {STAGES.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-400">Likely loan program</label>
-                <select value={draft.loanProgram || ""} onChange={set("loanProgram")} className={inputCls}>
-                  <option value="">Not decided yet</option>
-                  {LOAN_PROGRAMS.map((p) => <option key={p.label} value={p.label}>{p.label} ({p.hint})</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-400">Product</label>
-                <select value={draft.product || ""} onChange={set("product")} className={inputCls}>
-                  <option value="">Not set</option>
-                  <option value="SLOC">SLOC</option>
-                  <option value="MCA">MCA</option>
-                </select>
-              </div>
-              <div>
-                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-400">Lender (submitted to)</label>
-                <select value={draft.lenderTag || ""} onChange={set("lenderTag")} className={inputCls}>
-                  <option value="">Not set</option>
-                  {(lenders || []).map((l) => <option key={l.id} value={l.name}>{l.name}</option>)}
-                  {draft.lenderTag && !(lenders || []).some((l) => l.name === draft.lenderTag) && <option value={draft.lenderTag}>{draft.lenderTag}</option>}
                 </select>
               </div>
             </div>

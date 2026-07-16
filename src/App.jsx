@@ -970,12 +970,15 @@ function nextStepFor(lead) {
     case "callback": return { text: "Reconnect when you agreed. Reminder messages are running until you reach them.", tone: "violet" };
     case "not_interested": return { text: "Parked. Light check-ins go out in case their timing changes.", tone: "orange" };
     case "check_back": return { text: "Needs funding but wants to pause. Gentle check-ins go out every 30 days. Snooze or set a reminder for when they said to circle back.", tone: "blue" };
-    case "report_pulled": return { text: "Report is in. Pick the likely loan program, then submit to Torro or send the application.", tone: "teal" };
-    case "app_sent": return { text: "Application emailed. Chase the signed app back, then submit to Torro.", tone: "purple" };
-    case "submitted": return { text: "Submitted to Torro. Waiting on their pre-approval.", tone: "indigo" };
-    case "pre_approved": return { text: "Torro approved them. Review the offer with the client. When they accept, send contracts.", tone: "cyan" };
-    case "contracts_out": return { text: "Contracts are out for signature. Once signed and funded, mark it funded.", tone: "lime" };
-    case "funded": return { text: "Funded. Enter the funded amount and your commission, then mark commission paid when Torro pays you.", tone: "blue" };
+    case "report_pulled": return { text: "Report is in. Set the Product (SLOC/MCA), then send the application or submit to a lender.", tone: "teal" };
+    case "app_sent": return { text: "Application sent. Chase the signed app + documents back, then submit to a lender.", tone: "purple" };
+    case "submitted": return { text: "Submitted. Tag the lender you sent to and wait on their response. If more than one, use best-fit to pick the next.", tone: "indigo" };
+    case "denied": return { text: "Lender denied. Try the next best-fit lender, or if it's a credit issue, offer Credit Repair.", tone: "rose" };
+    case "pre_approved": return { text: "Approved. Review the offer with the client. When they accept, send the agreement for signature.", tone: "cyan" };
+    case "contracts_out": return { text: "Agreement is out for signature. Once they sign, move to Agreement Signed.", tone: "amber" };
+    case "agreement_signed": return { text: "Signed. Working through the lender's final approvals and verifications.", tone: "lime" };
+    case "getting_approvals": return { text: "Final approvals in progress. Once cleared and funded, mark Client Funded.", tone: "sky" };
+    case "funded": return { text: "Funded. Enter the funded amount and your commission, then mark Commission Paid when you're paid.", tone: "emerald" };
     case "commission_paid": return { text: "Paid in full. This one's done.", tone: "yellow" };
     case "declined": return { text: "Torro declined. Note the reason, then offer them Credit Repair to get approval-ready, or revisit later.", tone: "pink" };
     case "offer_cr": return { text: "Pitch the credit accelerator (use the script). Never say credit repair, lead with getting approval-ready in 60 to 120 days. Move to Referred when they say yes.", tone: "violet" };
@@ -2059,7 +2062,38 @@ const LOAN_PROGRAMS = [
   { label: "Line of Credit", hint: "Revolving, moderate credit" },
 ];
 
+// Stage-driven file: which "phase" a stage belongs to, so the file shows only what matters.
+const PHASE = {
+  new: "qualify", voicemail: "qualify", interested: "qualify", callback: "qualify", check_back: "qualify", not_interested: "qualify", dead: "qualify",
+  report_pulled: "collect", app_sent: "collect",
+  submitted: "submit", denied: "submit", pre_approved: "submit",
+  contracts_out: "close", agreement_signed: "close", getting_approvals: "close", funded: "close", commission_paid: "close",
+  declined: "credit_repair", offer_cr: "credit_repair", referred_cr: "credit_repair", credit_repair: "credit_repair",
+};
+const phaseOf = (status) => PHASE[status] || "qualify";
+// Which phases each section is relevant to.
+const SHOW_IN = {
+  productLender: ["submit", "close"],
+  bestfit: ["submit"],
+  documents: ["collect", "submit", "close", "credit_repair"],
+  lenderSubs: ["submit", "close"],
+  creditRepair: ["credit_repair", "submit"],
+  creditReport: ["qualify", "collect", "submit", "credit_repair"],
+  application: ["collect", "submit", "close"],
+  submitFunder: ["submit", "close"],
+};
+function Gated({ show, label, children }) {
+  const [open, setOpen] = useState(false);
+  if (show || open) return children;
+  return (
+    <button onClick={() => setOpen(true)} className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-400 hover:bg-slate-50 hover:text-slate-600">
+      <Plus size={12} /> Show {label}
+    </button>
+  );
+}
+
 function Profile({ lead, config, templates, cadences, onClose, updateLead, removeLead, logTouch, openCompose, userEmail, lenders = [], comms = [], activities = [], addActivity, completeActivity, deleteActivity, sendReply, addNote, markRead }) {
+  const phase = phaseOf(lead.status);
   const EDITABLE = ["name", "phone", "email", "notes", "loanProgram", "product", "lenderTag", "confirmedFields", "desiredAmount", "fundingPurpose", "fundingTimeline", "monthlyRevenue", "creditScore", "timeInBusiness",
     "businessName", "businessType", "einStatus", "bestTime", "nextStep", "myscoreiqUsername", "myscoreiqPassword", "ssnLast4", "fundedAmount", "commissionAmount", "declineReason"];
   const [draft, setDraft] = useState(lead);
@@ -2322,7 +2356,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
         </div>
 
         {/* Product + Lender tabs (click to set, shows as chips on the card) */}
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-slate-100 bg-white px-5 py-3">
+          <Gated show={SHOW_IN.productLender.includes(phase)} label="product / lender tags"><div className="flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-slate-100 bg-white px-5 py-3">
           <div className="flex items-center gap-2">
             <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Product</span>
             {["SLOC", "MCA"].map((p) => {
@@ -2345,7 +2379,8 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
               );
             })}
           </div>
-        </div>
+        </div></Gated>
+
 
         <div className="grid gap-5 px-5 py-4 lg:grid-cols-5">
           {/* LEFT COLUMN: work this client now */}
@@ -2687,7 +2722,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
           </Section>
 
           {/* labeled documents */}
-          <Section icon={<FileText size={15} />} title={`Documents${(lead.documents || []).length ? ` (${lead.documents.length})` : ""}`} collapsible defaultOpen={true}>
+          <Gated show={SHOW_IN.documents.includes(phase)} label="documents"><Section icon={<FileText size={15} />} title={`Documents${(lead.documents || []).length ? ` (${lead.documents.length})` : ""}`} collapsible defaultOpen={true}>
             <div className="mb-3 flex flex-wrap items-end gap-2">
               <div className="flex-1 min-w-[140px]">
                 <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400">Label</label>
@@ -2742,11 +2777,11 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
                 )}
               </div>
             )}
-          </Section>
+          </Section></Gated>
 
           {/* lender submissions + responses */}
           {(lead.submissions || []).length > 0 && (
-            <Section icon={<Send size={15} />} title={`Lender submissions (${lead.submissions.length})`} collapsible defaultOpen={true}>
+            <Gated show={SHOW_IN.lenderSubs.includes(phase)} label="lender submissions"><Section icon={<Send size={15} />} title={`Lender submissions (${lead.submissions.length})`} collapsible defaultOpen={true}>
               <div className="flex flex-col gap-2">
                 {lead.submissions.map((s) => {
                   const setSub = (patch) => updateLead(lead.id, { submissions: lead.submissions.map((x) => x.id === s.id ? { ...x, ...patch } : x) });
@@ -2776,11 +2811,11 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
                   );
                 })}
               </div>
-            </Section>
+            </Section></Gated>
           )}
 
           {/* send to credit repair (Pipedrive) */}
-          <Section icon={<RefreshCw size={15} className="text-fuchsia-600" />} title="Credit Repair referral" collapsible defaultOpen={["declined", "offer_cr", "referred_cr", "credit"].includes(lead.status)}>
+          <Gated show={SHOW_IN.creditRepair.includes(phase)} label="credit repair referral"><Section icon={<RefreshCw size={15} className="text-fuchsia-600" />} title="Credit Repair referral" collapsible defaultOpen={["declined", "offer_cr", "referred_cr", "credit"].includes(lead.status)}>
             <p className="mb-2 text-sm text-slate-500">Creates this client in the Credit Repair Pipedrive with a copy of their credit report and funding history, then moves them to Referred to Credit Repair.</p>
             {(() => {
               const docs = lead.documents || [];
@@ -2802,8 +2837,8 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
                 </>
               );
             })()}
-          </Section>
-          <Section icon={<FileText size={15} />} title="Credit report" collapsible defaultOpen={["interested", "report_pulled", "submitted", "pre_approved"].includes(lead.status)}>
+          </Section></Gated>
+          <Gated show={SHOW_IN.creditReport.includes(phase)} label="credit report"><Section icon={<FileText size={15} />} title="Credit report" collapsible defaultOpen={["interested", "report_pulled", "submitted", "pre_approved"].includes(lead.status)}>
             <div className="flex flex-wrap items-center gap-2">
               <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-2 text-sm font-medium text-white hover:bg-slate-900">
                 <Upload size={15} /> {uploading ? "Uploading..." : lead.reportPath ? "Replace PDF" : "Upload PDF"}
@@ -2831,10 +2866,10 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
                 {reportPulledMsg && <span className="text-xs font-medium text-emerald-600">{reportPulledMsg}</span>}
               </div>
             </div>
-          </Section>
+          </Section></Gated>
 
           {/* application (after pre-approval, if they want more) */}
-          <Section icon={<FileText size={15} />} title="Application" collapsible defaultOpen={["report_pulled","app_sent","pre_approved"].includes(lead.status)}>
+          <Gated show={SHOW_IN.application.includes(phase)} label="application"><Section icon={<FileText size={15} />} title="Application" collapsible defaultOpen={["report_pulled","app_sent","pre_approved"].includes(lead.status)}>
             {lead.status === "pre_approved" && (
               <div className="mb-2 rounded-md bg-teal-50 px-2.5 py-1.5 text-xs font-medium text-teal-700 ring-1 ring-inset ring-teal-200">
                 Pre-approved. If the client wants more than Torro offered, send the full application so they can sign and upload bank statements.
@@ -2852,16 +2887,16 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
               <div className="mt-2 rounded-md bg-purple-50 px-2.5 py-1.5 text-xs font-medium text-purple-700 ring-1 ring-inset ring-purple-200">Application sent. Auto follow-ups are chasing the signed app. Submit to Torro when it's back.</div>
             )}
             <p className="mt-2 text-xs text-slate-400">Send the application, then mark it sent to move the client into Application Sent and start the chase sequence. The client signs and uploads their bank statements, voided check, license, and report in the form.</p>
-          </Section>
+          </Section></Gated>
 
           {/* submit to funder */}
-          <Section icon={<Send size={15} />} title={`Submit to ${config.funderName || "funder"}`}>
+          <Gated show={SHOW_IN.submitFunder.includes(phase)} label="submit to funder"><Section icon={<Send size={15} />} title={`Submit to ${config.funderName || "funder"}`}>
             <button onClick={submitToFunder} className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-700"><Send size={15} /> Email report to {config.funderName || "funder"}</button>
             <p className="mt-2 text-xs text-slate-500">Opens an email to {config.funderEmail} with the subject set to the client's name. If you uploaded the report, a 7 day download link is included; otherwise attach the PDF yourself.</p>
             <div className="mt-2 rounded-md bg-slate-50 px-2.5 py-1.5 text-xs text-slate-600 ring-1 ring-inset ring-slate-200">
               Just send Torro the report to start. They send back a pre-approval. The full application only goes out later if the client wants more funding.
             </div>
-          </Section>
+          </Section></Gated>
 
           {/* outcome from Torro (after submitted) */}
           {["submitted", "pre_approved", "contracts_out", "funded", "commission_paid", "declined"].includes(lead.status) && (

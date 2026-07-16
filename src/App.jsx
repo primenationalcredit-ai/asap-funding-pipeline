@@ -1490,6 +1490,10 @@ function Dashboard({ userEmail }) {
 
   const handleSent = useCallback((sent) => {
     setCompose((c) => {
+      if (c && !c.lead) {
+        // Standalone message to any number, nothing to log against a client.
+        return null;
+      }
       if (c) {
         const sentTo = (sent && sent.to) || c.to || null;
         const alt = sent && sent.altRecipient;
@@ -1721,7 +1725,7 @@ function Dashboard({ userEmail }) {
               onGoFollowups={() => setTab("followups")} />
           )}
           {tab === "followups" && <Followups dueList={dueList} config={config} onOpen={setProfileId} openCompose={setCompose} updateLead={updateLead} />}
-          {tab === "inbox" && <Conversations leads={leads} comms={comms} unreadLeadIds={unreadLeadIds} onSend={sendReply} onAddNote={addNote} onOpen={setProfileId} markRead={markRead} markAllRead={markAllRead} templates={templates} config={config} />}
+          {tab === "inbox" && <Conversations leads={leads} comms={comms} unreadLeadIds={unreadLeadIds} onSend={sendReply} onAddNote={addNote} onOpen={setProfileId} markRead={markRead} markAllRead={markAllRead} templates={templates} config={config} openCompose={setCompose} />}
           {tab === "activities" && <Activities activities={activities} leads={leads} onOpen={setProfileId} completeActivity={completeActivity} deleteActivity={deleteActivity} />}
           {tab === "messaging" && <Messaging templates={templates} persistTemplates={persistTemplates} cadences={cadences} persistCadences={persistCadences} />}
           {tab === "commissions" && <Commissions leads={leads} onOpen={setProfileId} />}
@@ -2021,8 +2025,8 @@ function ComposeModal({ compose, onClose, onSent, templates = [], config = {} })
   const applyTemplate = (id) => {
     const t = templates.find((x) => x.id === id);
     if (!t) return;
-    if (channel === "email") setSubject(fillTokens(t.subject, lead, config));
-    setBody(fillTokens(t.body, lead, config));
+    if (channel === "email") setSubject(fillTokens(t.subject, lead || {}, config));
+    setBody(fillTokens(t.body, lead || {}, config));
   };
   const sendViaApp = async () => {
     if (!toAddr.trim()) { alert("Enter a number or email to send to."); return; }
@@ -3818,7 +3822,8 @@ function Conversation({ lead, comms, onSend, onAddNote, templates = [], config =
 }
 
 // GHL-style inbox: leads with messages on the left, the thread + reply on the right
-function Conversations({ leads, comms, unreadLeadIds, onSend, onAddNote, onOpen, markRead, markAllRead, templates = [], config = {} }) {
+function Conversations({ leads, comms, unreadLeadIds, onSend, onAddNote, onOpen, markRead, markAllRead, templates = [], config = {}, openCompose }) {
+  const newText = () => openCompose && openCompose({ lead: null, channel: "sms", to: "", subject: "", body: "", kind: "message" });
   const withMsgs = useMemo(() => {
     const latest = {};
     for (const c of comms) {
@@ -3838,16 +3843,23 @@ function Conversations({ leads, comms, unreadLeadIds, onSend, onAddNote, onOpen,
 
   if (withMsgs.length === 0) {
     return (
-      <div className="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50 py-14 text-center">
-        <MessageSquare size={28} className="mx-auto text-slate-300" />
-        <div className="mt-2 text-sm font-medium text-slate-600">No conversations yet</div>
-        <div className="mt-1 text-sm text-slate-400">Texts and emails you send, and replies you receive, show up here.</div>
+      <div className="mt-4">
+        <div className="mb-3 flex justify-end"><button onClick={newText} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700"><MessageSquare size={15} /> New text</button></div>
+        <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 py-14 text-center">
+          <MessageSquare size={28} className="mx-auto text-slate-300" />
+          <div className="mt-2 text-sm font-medium text-slate-600">No conversations yet</div>
+          <div className="mt-1 text-sm text-slate-400">Texts and emails you send, and replies you receive, show up here. Use New text to message any number.</div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="mt-4 grid gap-3 md:grid-cols-[320px_1fr]">
+    <div className="mt-4">
+      <div className="mb-3 flex items-center justify-end">
+        <button onClick={newText} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700"><MessageSquare size={15} /> New text</button>
+      </div>
+      <div className="grid gap-3 md:grid-cols-[320px_1fr]">
       <div className="flex max-h-[560px] flex-col overflow-y-auto rounded-xl border border-slate-200 bg-white">
         {unreadCount > 0 && (
           <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2">
@@ -3884,6 +3896,7 @@ function Conversations({ leads, comms, unreadLeadIds, onSend, onAddNote, onOpen,
             <Conversation lead={selected} comms={comms} onSend={onSend} onAddNote={onAddNote} templates={templates} config={config} />
           </>
         )}
+      </div>
       </div>
     </div>
   );
@@ -4092,8 +4105,11 @@ function Applications({ leads, lenders = [], onOpen, onDelete }) {
               <div className="flex flex-wrap items-center gap-2">
                 <button onClick={() => onOpen(lead.id)} className="text-base font-bold text-blue-700 hover:underline">{lead.businessName || lead.name || "Unknown"}</button>
                 <span className="text-sm text-slate-400">{lead.name}</span>
+                {docs.length > 0
+                  ? <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-700">✓ Completed by client</span>
+                  : <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-700">Sent, waiting on client</span>}
                 <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">{stLabel(lead.status)}</span>
-                {submittedAt > 0 && <span className="ml-auto text-xs text-slate-400">Submitted {fmtDateTime(submittedAt).split(",")[0]}</span>}
+                {submittedAt > 0 && <span className="ml-auto text-xs text-slate-400">{docs.length > 0 ? "Received" : "Sent"} {fmtDateTime(submittedAt).split(",")[0]}</span>}
               </div>
               <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
                 <span className="font-semibold uppercase tracking-wide text-slate-400">Docs:</span>

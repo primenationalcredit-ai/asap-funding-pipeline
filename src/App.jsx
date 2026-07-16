@@ -5,6 +5,7 @@ import {
   X, Eye, EyeOff, KeyRound, Upload, ExternalLink, Building2, CalendarClock,
   ListChecks, Pencil, Save, LogOut, Lock, LayoutGrid, DollarSign, Menu,
   RefreshCw,
+  Bell, BellOff,
 } from "lucide-react";
 import { supabase } from "./supabaseClient.js";
 
@@ -1340,6 +1341,49 @@ function Dashboard({ userEmail }) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("active");
   const [profileId, setProfileId] = useState(null);
+  // New-message alerts: sound + browser notification + tab-title flash for Lydia and the team.
+  const [soundOn, setSoundOn] = useState(() => { try { return localStorage.getItem("asap_sound") !== "off"; } catch { return true; } });
+  const soundOnRef = useRef(soundOn);
+  useEffect(() => { soundOnRef.current = soundOn; try { localStorage.setItem("asap_sound", soundOn ? "on" : "off"); } catch {} }, [soundOn]);
+  const titleFlash = useRef(null);
+  useEffect(() => {
+    if (typeof Notification !== "undefined" && Notification.permission === "default") { try { Notification.requestPermission(); } catch {} }
+  }, []);
+  const playBeep = useCallback(() => {
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      const ctx = new Ctx();
+      const o = ctx.createOscillator(); const g = ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      o.type = "sine"; o.frequency.value = 880;
+      g.gain.setValueAtTime(0.0001, ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.35);
+      o.start(); o.stop(ctx.currentTime + 0.36);
+      o.onended = () => ctx.close();
+    } catch {}
+  }, []);
+  const notifyNewMessage = useCallback((row) => {
+    if (soundOnRef.current) playBeep();
+    // Tab-title flash so it's obvious even on another tab
+    const original = "ASAP Funding";
+    let on = true, count = 0;
+    if (titleFlash.current) clearInterval(titleFlash.current);
+    titleFlash.current = setInterval(() => {
+      document.title = on ? "\ud83d\udd14 New message" : original; on = !on;
+      if (++count > 10) { clearInterval(titleFlash.current); document.title = original; }
+    }, 700);
+    const clear = () => { if (titleFlash.current) { clearInterval(titleFlash.current); document.title = original; } window.removeEventListener("focus", clear); };
+    window.addEventListener("focus", clear);
+    // Browser notification (works even when the tab is in the background)
+    try {
+      if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+        const n = new Notification("New message received", { body: (row.body || "").slice(0, 120) || "A client just replied.", tag: "asap-msg" });
+        n.onclick = () => { window.focus(); n.close(); };
+      }
+    } catch {}
+  }, [playBeep]);
   // Shareable deal links: keep the open profile in sync with the URL hash (#/lead/<id>).
   useEffect(() => {
     const applyHash = () => {
@@ -1421,7 +1465,10 @@ function Dashboard({ userEmail }) {
     })();
     const channel = supabase.channel("leads-stream")
       .on("postgres_changes", { event: "*", schema: "public", table: "leads" }, () => debouncedRefetch("leads", refetchLeads))
-      .on("postgres_changes", { event: "*", schema: "public", table: "communications" }, () => debouncedRefetch("comms", refetchComms, 800))
+      .on("postgres_changes", { event: "*", schema: "public", table: "communications" }, (payload) => {
+        if (payload.eventType === "INSERT" && payload.new && payload.new.direction === "in") notifyNewMessage(payload.new);
+        debouncedRefetch("comms", refetchComms, 800);
+      })
       .on("postgres_changes", { event: "*", schema: "public", table: "activities" }, () => debouncedRefetch("acts", refetchActivities, 800))
       .subscribe((s) => setLive(s === "SUBSCRIBED"));
     return () => { supabase.removeChannel(channel); };
@@ -1729,7 +1776,12 @@ function Dashboard({ userEmail }) {
             {tab === "inbox" && unreadLeadIds.size > 0 && <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700">{unreadLeadIds.size} unread</span>}
             {tab === "applications" && newAppsCount > 0 && <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">{newAppsCount} to send</span>}
           </div>
-          <button onClick={() => { setTab("pipeline"); setShowAdd(true); }} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-500"><Plus size={16} /> <span className="hidden sm:inline">Add client</span></button>
+          <div className="flex items-center gap-2">
+            <button onClick={() => { setSoundOn((v) => !v); if (!soundOn) playBeep(); }} title={soundOn ? "New-message sound is ON (click to mute)" : "New-message sound is OFF (click to turn on)"} className={`rounded-lg p-2 ${soundOn ? "text-blue-600 hover:bg-blue-50" : "text-slate-300 hover:bg-slate-100"}`}>
+              {soundOn ? <Bell size={18} /> : <BellOff size={18} />}
+            </button>
+            <button onClick={() => { setTab("pipeline"); setShowAdd(true); }} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-500"><Plus size={16} /> <span className="hidden sm:inline">Add client</span></button>
+          </div>
         </header>
 
         <div className="px-5 pb-10">

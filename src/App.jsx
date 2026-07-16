@@ -1583,12 +1583,20 @@ function Dashboard({ userEmail }) {
   ), [leads, cadences, templates, repliedIds]);
 
   const filtered = useMemo(() => {
-    const q = query.toLowerCase();
+    const q = query.toLowerCase().trim();
+    const qDigits = q.replace(/\D/g, "");
     return leads.filter((l) => {
       if (filter === "active" && ["funded", "commission_paid", "dead", "credit_repair", "not_interested"].includes(l.status)) return false;
       if (filter !== "active" && filter !== "all" && l.status !== filter) return false;
       if (!q) return true;
-      return (l.name + l.phone + l.email + l.notes + l.source + l.businessName + l.opportunityName + l.desiredAmount + l.monthlyRevenue + l.creditScore + l.timeInBusiness + l.tags).toLowerCase().includes(q);
+      const hay = (l.name + l.phone + l.email + l.notes + l.source + l.businessName + l.opportunityName + l.desiredAmount + l.monthlyRevenue + l.creditScore + l.timeInBusiness + l.tags).toLowerCase();
+      if (hay.includes(q)) return true;
+      // Phone: match on digits only, so "(904) 762-3986", "904-762-3986", "9047623986" all work.
+      if (qDigits.length >= 3) {
+        const phoneDigits = (l.phone || "").replace(/\D/g, "");
+        if (phoneDigits.includes(qDigits)) return true;
+      }
+      return false;
     }).sort((a, b) => (b.lastTouchAt || b.createdAt) - (a.lastTouchAt || a.createdAt));
   }, [leads, query, filter]);
 
@@ -1821,6 +1829,17 @@ function Pipeline({ leads, allLeads, allCount, dueList, stats, config, query, se
       {showAdd && <AddForm onAdd={(d) => { addLead(d); setShowAdd(false); }} onCancel={() => setShowAdd(false)} />}
 
       {view === "board" ? (
+        q ? (
+          /* Searching: show all matches across every board, no tab needed */
+          <>
+            <div className="mb-3 flex items-center gap-2 text-sm text-slate-500">
+              <Search size={14} /> {leads.length} result{leads.length !== 1 ? "s" : ""} across all stages for "{query}"
+              <button onClick={() => setQuery("")} className="ml-1 rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500 hover:bg-slate-200">Clear</button>
+            </div>
+            {leads.length === 0 ? <div className="rounded-xl border border-dashed border-slate-200 py-10 text-center text-sm text-slate-400">No clients match "{query}".</div>
+              : <div className="flex flex-col gap-2">{leads.map((l) => <LeadRow key={l.id} lead={l} onOpen={() => onOpen(l.id)} cadences={cadences} templates={templates} config={config} logTouch={logTouch} updateLead={updateLead} openCompose={openCompose} />)}</div>}
+          </>
+        ) : (
         <>
           {/* board switcher */}
           <div className="mb-3 flex flex-wrap gap-1.5">
@@ -1862,6 +1881,7 @@ function Pipeline({ leads, allLeads, allCount, dueList, stats, config, query, se
           )}
           <p className="mt-2 px-1 text-xs text-slate-400">Drag a card to a new column to move that lead. Click a card to open the full profile.</p>
         </>
+        )
       ) : (
         <>
           <div className="mb-3 flex flex-wrap gap-1.5">

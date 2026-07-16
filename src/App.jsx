@@ -3893,6 +3893,25 @@ function Conversations({ leads, comms, unreadLeadIds, onSend, onAddNote, onOpen,
               <button onClick={() => onOpen(selected.id)} className="text-sm font-bold text-slate-800 hover:text-blue-700">{leadTitle(selected)}</button>
               <StagePill status={selected.status} />
             </div>
+            {(() => {
+              const bits = [
+                ["Business", selected.businessName],
+                ["Rev/mo", selected.monthlyRevenue],
+                ["In biz", selected.timeInBusiness],
+                ["Score", selected.creditScore],
+                ["Wants", selected.desiredAmount],
+                ["Use", selected.fundingPurpose],
+                ["Phone", selected.phone],
+              ].filter(([, v]) => v);
+              return (
+                <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600 ring-1 ring-slate-100">
+                  {bits.length === 0 && <span className="italic text-slate-400">No business info captured yet, open the file to add it.</span>}
+                  {bits.map(([k, v]) => <span key={k}><span className="text-slate-400">{k}:</span> <b className="text-slate-700">{v}</b></span>)}
+                  {selected.product && <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${selected.product === "SLOC" ? "bg-indigo-100 text-indigo-700" : "bg-orange-100 text-orange-700"}`}>{selected.product}</span>}
+                  {selected.lenderTag && <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">{selected.lenderTag}</span>}
+                </div>
+              );
+            })()}
             <Conversation lead={selected} comms={comms} onSend={onSend} onAddNote={onAddNote} templates={templates} config={config} />
           </>
         )}

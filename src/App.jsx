@@ -1491,7 +1491,9 @@ function Dashboard({ userEmail }) {
   const handleSent = useCallback((sent) => {
     setCompose((c) => {
       if (c) {
-        logTouch(c.lead.id, c.channel, c.kind, c.extra || {});
+        const sentTo = (sent && sent.to) || c.to || null;
+        const alt = sent && sent.altRecipient;
+        logTouch(c.lead.id, c.channel, c.kind, { ...(c.extra || {}), ...(alt ? { note: `Sent to alternate ${c.channel === "sms" ? "number" : "email"}: ${sentTo}` } : {}) });
         // keep a full copy of what went out, so the thread reads like a conversation
         if (sent && sent.viaApp) {
           supabase.from("communications").insert({
@@ -1499,8 +1501,8 @@ function Dashboard({ userEmail }) {
             direction: "out",
             channel: c.channel,
             subject: sent.subject || null,
-            body: sent.body || "",
-            to_addr: c.to || null,
+            body: (alt ? `[to ${sentTo}] ` : "") + (sent.body || ""),
+            to_addr: sentTo,
             by_user: userEmail,
           }).then(({ error }) => { if (!error) refetchComms(); });
         }
@@ -2010,8 +2012,12 @@ function ComposeModal({ compose, onClose, onSent, templates = [], config = {} })
   const { lead, channel, to, subject: subj0, body: body0 } = compose;
   const [subject, setSubject] = useState(subj0 || "");
   const [body, setBody] = useState(body0 || "");
+  const [toAddr, setToAddr] = useState(to || "");
   const [busy, setBusy] = useState(false);
   const picks = templates.filter((t) => t.channel === channel);
+  const onFile = (to || "").replace(/\D/g, "");
+  const typed = (toAddr || "").replace(/\D/g, "");
+  const differs = channel === "sms" ? (onFile && typed && onFile !== typed) : (to && toAddr && to !== toAddr);
   const applyTemplate = (id) => {
     const t = templates.find((x) => x.id === id);
     if (!t) return;
@@ -2019,8 +2025,9 @@ function ComposeModal({ compose, onClose, onSent, templates = [], config = {} })
     setBody(fillTokens(t.body, lead, config));
   };
   const sendViaApp = async () => {
+    if (!toAddr.trim()) { alert("Enter a number or email to send to."); return; }
     setBusy(true);
-    try { await sendMessage(channel, to, subject, body); onSent({ viaApp: true, subject, body }); }
+    try { await sendMessage(channel, toAddr, subject, body); onSent({ viaApp: true, subject, body, to: toAddr, altRecipient: differs }); }
     catch (e) { alert("Could not send via app: " + e.message + "\n\nYou can still copy the message and send it manually."); }
     finally { setBusy(false); }
   };
@@ -2030,12 +2037,19 @@ function ComposeModal({ compose, onClose, onSent, templates = [], config = {} })
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5">
           <div className="flex items-center gap-2 font-bold">
             {channel === "sms" ? <MessageSquare size={16} className="text-blue-600" /> : <Mail size={16} className="text-blue-600" />}
-            {channel === "sms" ? "Text" : "Email"} {lead.name || ""}
+            {channel === "sms" ? "Text" : "Email"} {lead?.name || ""}
           </div>
           <button onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"><X size={20} /></button>
         </div>
         <div className="space-y-3 px-5 py-4">
-          <div className="text-xs text-slate-500">To: <span className="font-mono text-slate-700">{to || "(missing)"}</span></div>
+          <div>
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400">To ({channel === "sms" ? "phone number" : "email"})</label>
+            <input value={toAddr} onChange={(e) => setToAddr(e.target.value)} placeholder={channel === "sms" ? "e.g. 904-762-3986" : "name@email.com"} className={inputCls} />
+            <div className="mt-1 flex items-center gap-2 text-xs">
+              {to && <button onClick={() => setToAddr(to)} className="rounded bg-slate-100 px-2 py-0.5 font-medium text-slate-500 hover:bg-slate-200">Use {lead?.name ? lead.name + "'s" : "the"} number on file</button>}
+              {differs && <span className="text-amber-600">Sending to a different {channel === "sms" ? "number" : "email"} than what's on file.</span>}
+            </div>
+          </div>
           {picks.length > 0 && (
             <div>
               <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400">Insert a saved template</label>
@@ -2064,7 +2078,7 @@ function ComposeModal({ compose, onClose, onSent, templates = [], config = {} })
           <p className="text-xs text-slate-400">Copy this into {channel === "sms" ? "RingCentral" : "Outlook"} and send it, then mark it sent so the stage and follow-ups update. Once your keys are set, use Send via app to do it in one click.</p>
           <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-100 pt-3">
             <button onClick={sendViaApp} disabled={busy} className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-2 text-sm font-medium text-blue-700 ring-1 ring-blue-300 hover:bg-blue-50 disabled:opacity-40"><Send size={15} /> {busy ? "Sending..." : "Send via app"}</button>
-            <button onClick={() => onSent({ viaApp: true, subject, body })} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"><Check size={15} /> Mark as sent</button>
+            <button onClick={() => onSent({ viaApp: true, subject, body, to: toAddr, altRecipient: differs })} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"><Check size={15} /> Mark as sent</button>
           </div>
         </div>
       </div>

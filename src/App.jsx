@@ -1340,6 +1340,23 @@ function Dashboard({ userEmail }) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("active");
   const [profileId, setProfileId] = useState(null);
+  // Shareable deal links: keep the open profile in sync with the URL hash (#/lead/<id>).
+  useEffect(() => {
+    const applyHash = () => {
+      const m = window.location.hash.match(/#\/lead\/([\w-]+)/);
+      if (m) setProfileId(m[1]);
+    };
+    applyHash();
+    window.addEventListener("hashchange", applyHash);
+    return () => window.removeEventListener("hashchange", applyHash);
+  }, []);
+  useEffect(() => {
+    if (profileId) {
+      if (!window.location.hash.includes(profileId)) window.history.replaceState(null, "", `#/lead/${profileId}`);
+    } else if (window.location.hash.startsWith("#/lead/")) {
+      window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    }
+  }, [profileId]);
   const [compose, setCompose] = useState(null);
   const [live, setLive] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
@@ -2132,6 +2149,7 @@ function Gated({ show, label, children }) {
 
 function Profile({ lead, config, templates, cadences, onClose, updateLead, removeLead, logTouch, openCompose, userEmail, lenders = [], comms = [], activities = [], addActivity, completeActivity, deleteActivity, sendReply, addNote, markRead }) {
   const phase = phaseOf(lead.status);
+  const [linkCopied, setLinkCopied] = useState(false);
   const EDITABLE = ["name", "phone", "email", "notes", "loanProgram", "product", "lenderTag", "confirmedFields", "desiredAmount", "fundingPurpose", "fundingTimeline", "monthlyRevenue", "creditScore", "timeInBusiness",
     "businessName", "businessType", "einStatus", "bestTime", "nextStep", "myscoreiqUsername", "myscoreiqPassword", "ssnLast4", "fundedAmount", "commissionAmount", "declineReason"];
   const [draft, setDraft] = useState(lead);
@@ -2330,6 +2348,9 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
         {/* back bar */}
         <div className="sticky top-0 z-20 flex items-center gap-2 border-b border-slate-200 bg-white px-5 py-2.5">
           <button onClick={onClose} className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-semibold text-slate-600 hover:bg-slate-100"><ChevronDown size={16} className="rotate-90" /> Back to pipeline</button>
+          <button onClick={() => { const url = `${window.location.origin}${window.location.pathname}#/lead/${lead.id}`; navigator.clipboard?.writeText(url).then(() => { setLinkCopied(true); setTimeout(() => setLinkCopied(false), 2000); }); }} className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-semibold text-blue-600 hover:bg-blue-50" title="Copy a link to this client to share with your team">
+            {linkCopied ? <><Check size={15} /> Link copied</> : <><Copy size={15} /> Copy link</>}
+          </button>
           {savedAt > 0 && <span className="ml-auto inline-flex items-center gap-1 text-xs font-medium text-blue-600"><Check size={13} /> Saved</span>}
         </div>
         {/* journey stepper */}

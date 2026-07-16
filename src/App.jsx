@@ -2386,11 +2386,11 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
           {/* LEFT COLUMN: work this client now */}
           <div className="space-y-5 lg:col-span-3">
 
-          {/* Interested: the only two next steps are report link or application (or both) */}
-          {lead.status === "interested" && (
+          {/* Interested / just-sent: the two next steps are report link or application (or both) */}
+          {["interested", "app_sent"].includes(lead.status) && (
             <div className="rounded-xl border-2 border-sky-200 bg-sky-50 p-4">
-              <div className="mb-0.5 text-sm font-bold text-sky-900">They're interested, send the next step</div>
-              <p className="mb-3 text-xs text-sky-700">Send the report link so they can pull their credit, the application, or both.</p>
+              <div className="mb-0.5 text-sm font-bold text-sky-900">{lead.status === "app_sent" ? "Send anything else they need" : "They're interested, send the next step"}</div>
+              <p className="mb-3 text-xs text-sky-700">Send the report link so they can pull their credit, the application, or both. You can send by text and email.</p>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="rounded-lg bg-white p-3 ring-1 ring-sky-100">
                   <div className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-slate-800"><KeyRound size={15} className="text-amber-500" /> Send Report Link</div>

@@ -2386,6 +2386,30 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
           {/* LEFT COLUMN: work this client now */}
           <div className="space-y-5 lg:col-span-3">
 
+          {/* Interested: the only two next steps are report link or application (or both) */}
+          {lead.status === "interested" && (
+            <div className="rounded-xl border-2 border-sky-200 bg-sky-50 p-4">
+              <div className="mb-0.5 text-sm font-bold text-sky-900">They're interested, send the next step</div>
+              <p className="mb-3 text-xs text-sky-700">Send the report link so they can pull their credit, the application, or both.</p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-lg bg-white p-3 ring-1 ring-sky-100">
+                  <div className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-slate-800"><KeyRound size={15} className="text-amber-500" /> Send Report Link</div>
+                  <div className="flex gap-2">
+                    <button disabled={!lead.phone} onClick={() => openCompose({ lead, channel: "sms", to: lead.phone, subject: "", body: fillTokens((poolTemplates(templates, "int_sms")[0]?.body) || "{{first}}, here's the link to pull your report so we can see what you qualify for: {{link}}", lead, config), kind: "link" })} className={`flex-1 rounded-lg px-3 py-2 text-sm font-semibold ${lead.phone ? "bg-blue-600 text-white hover:bg-blue-700" : "bg-slate-100 text-slate-300"}`}><MessageSquare size={14} className="mr-1 inline" />Text</button>
+                    <button disabled={!lead.email} onClick={() => openCompose({ lead, channel: "email", to: lead.email, subject: fillTokens((poolTemplates(templates, "int_email")[0]?.subject) || "Your report link", lead, config), body: fillTokens((poolTemplates(templates, "int_email")[0]?.body) || "{{link}}", lead, config), kind: "link" })} className={`flex-1 rounded-lg px-3 py-2 text-sm font-semibold ${lead.email ? "bg-white text-blue-700 ring-1 ring-blue-300 hover:bg-blue-50" : "bg-slate-100 text-slate-300 ring-1 ring-slate-200"}`}><Mail size={14} className="mr-1 inline" />Email</button>
+                  </div>
+                </div>
+                <div className="rounded-lg bg-white p-3 ring-1 ring-sky-100">
+                  <div className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-slate-800"><FileText size={15} className="text-blue-600" /> Send Application</div>
+                  <div className="flex gap-2">
+                    <button disabled={!lead.phone} onClick={() => openCompose({ lead, channel: "sms", to: lead.phone, subject: "", body: fillTokens((templates.find(t => t.id === "app_sms")?.body) || APP_SMS_DEFAULT, lead, config), kind: "link" })} className={`flex-1 rounded-lg px-3 py-2 text-sm font-semibold ${lead.phone ? "bg-blue-600 text-white hover:bg-blue-700" : "bg-slate-100 text-slate-300"}`}><MessageSquare size={14} className="mr-1 inline" />Text</button>
+                    <button disabled={!lead.email} onClick={() => openCompose({ lead, channel: "email", to: lead.email, subject: fillTokens((templates.find(t => t.id === "app_email")?.subject) || APP_EMAIL_SUBJECT_DEFAULT, lead, config), body: fillTokens((templates.find(t => t.id === "app_email")?.body) || APP_EMAIL_DEFAULT, lead, config), kind: "link" })} className={`flex-1 rounded-lg px-3 py-2 text-sm font-semibold ${lead.email ? "bg-white text-blue-700 ring-1 ring-blue-300 hover:bg-blue-50" : "bg-slate-100 text-slate-300 ring-1 ring-slate-200"}`}><Mail size={14} className="mr-1 inline" />Email</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* what happened on this call */}
           <div className="rounded-xl border border-slate-200 bg-white p-4">
             <div className="mb-2 flex items-center gap-1.5 text-sm font-bold text-slate-800"><Phone size={15} className="text-blue-600" /> What happened on this call? <span className="text-rose-500">*</span></div>

@@ -1437,6 +1437,21 @@ function Dashboard({ userEmail }) {
     return () => { clearInterval(id); document.removeEventListener("visibilitychange", onVisible); window.removeEventListener("focus", onVisible); };
   }, [refetchComms, refetchLeads]);
 
+  // Fire the new-message alert whenever a newer inbound appears in comms (realtime OR poll).
+  const lastInboundRef = useRef(null);
+  useEffect(() => {
+    if (!comms || comms.length === 0) return;
+    let newest = null;
+    for (const c of comms) {
+      if (c.direction !== "in") continue;
+      const t = new Date(c.at).getTime();
+      if (!newest || t > newest.t) newest = { t, c };
+    }
+    if (!newest) return;
+    if (lastInboundRef.current === null) { lastInboundRef.current = newest.t; return; }
+    if (newest.t > lastInboundRef.current) { lastInboundRef.current = newest.t; notifyNewMessage(newest.c); }
+  }, [comms, notifyNewMessage]);
+
   // Debounce realtime reloads so a burst of changes (or our own autosaves)
   // coalesces into one refetch instead of re-rendering on every keystroke-save.
   const refetchTimers = useRef({});
@@ -1466,10 +1481,7 @@ function Dashboard({ userEmail }) {
     })();
     const channel = supabase.channel("leads-stream")
       .on("postgres_changes", { event: "*", schema: "public", table: "leads" }, () => debouncedRefetch("leads", refetchLeads))
-      .on("postgres_changes", { event: "*", schema: "public", table: "communications" }, (payload) => {
-        if (payload.eventType === "INSERT" && payload.new && payload.new.direction === "in") notifyNewMessage(payload.new);
-        debouncedRefetch("comms", refetchComms, 800);
-      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "communications" }, () => debouncedRefetch("comms", refetchComms, 800))
       .on("postgres_changes", { event: "*", schema: "public", table: "activities" }, () => debouncedRefetch("acts", refetchActivities, 800))
       .subscribe((s) => setLive(s === "SUBSCRIBED"));
     return () => { supabase.removeChannel(channel); };
@@ -2197,6 +2209,70 @@ const SHOW_IN = {
   application: ["collect", "submit", "close"],
   submitFunder: ["submit", "close"],
 };
+function DealTracker({ lead, activities = [], addActivity, completeActivity, logTouch, addNote, userEmail, config = {} }) {
+  const [statusText, setStatusText] = useState("");
+  const [emailText, setEmailText] = useState("");
+  const [showEmail, setShowEmail] = useState(false);
+  const [customDate, setCustomDate] = useState("");
+  const statusTouches = (lead.touches || []).filter((t) => t.kind === "status").sort((a, b) => b.at - a.at);
+  const current = statusTouches[0];
+  const openActs = (activities || []).filter((a) => a.lead_id === lead.id && !a.done).sort((a, b) => new Date(a.due_at) - new Date(b.due_at));
+  const nextAct = openActs[0];
+  const overdue = nextAct && new Date(nextAct.due_at).getTime() < Date.now();
+  const repName = (email) => { const m = (config.team || []).find((x) => (x.email || "").toLowerCase() === String(email || "").toLowerCase()); return m ? m.first : email; };
+  const saveStatus = () => { if (!statusText.trim()) return; logTouch(lead.id, "status", "status", { note: statusText.trim(), by: userEmail }); setStatusText(""); };
+  const setFollowUp = (days) => { const d = days === "custom" ? new Date(customDate + "T12:00:00").getTime() : Date.now() + days * 86400000; if (isNaN(d)) return; addActivity(lead.id, { type: "call", title: "Follow up on deal", dueAt: d, alarm: true }); setCustomDate(""); };
+  const logEmail = () => { if (!emailText.trim()) return; addNote(lead, "[Email] " + emailText.trim()); setEmailText(""); setShowEmail(false); };
+  return (
+    <div className="rounded-xl border-2 border-indigo-200 bg-indigo-50/40 p-4">
+      <div className="mb-2 flex items-center gap-1.5 text-sm font-bold text-indigo-900"><Clock size={15} /> Deal tracker</div>
+      <div className="mb-3">
+        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Current status</div>
+        {current ? (
+          <div className="mt-0.5 text-sm text-slate-800">{current.note} <span className="text-xs text-slate-400">— {repName(current.by)}, {fmtDateTime(current.at)}</span></div>
+        ) : <div className="mt-0.5 text-sm text-slate-400">No status logged yet.</div>}
+        <div className="mt-1.5 flex gap-2">
+          <input value={statusText} onChange={(e) => setStatusText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") saveStatus(); }} placeholder="Update status (e.g. Offer $75k 12mo, waiting on client to accept)" className="flex-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm" />
+          <button onClick={saveStatus} className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-700">Update</button>
+        </div>
+      </div>
+      <div className="rounded-lg bg-white p-3 ring-1 ring-indigo-100">
+        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Next follow-up</div>
+        {nextAct ? (
+          <div className="mt-0.5 flex items-center gap-2">
+            <span className={`text-sm font-bold ${overdue ? "text-rose-600" : "text-slate-800"}`}>{overdue ? "\u26a0 Overdue: " : ""}{fmtDateTime(new Date(nextAct.due_at).getTime())}</span>
+            <button onClick={() => completeActivity(nextAct.id, true)} className="ml-auto rounded-md bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-200">Done</button>
+          </div>
+        ) : (
+          <div className="mt-1 rounded-md bg-amber-50 px-2.5 py-1.5 text-xs font-semibold text-amber-700 ring-1 ring-inset ring-amber-200">{"\u26a0"} No follow-up set. Set one so this deal doesn't slip.</div>
+        )}
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          {!nextAct && <button onClick={() => setFollowUp(2)} className="rounded-md bg-amber-500 px-2.5 py-1 text-xs font-bold text-white hover:bg-amber-600">Set default: 2 days</button>}
+          <button onClick={() => setFollowUp(1)} className="rounded-md bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-200">Tomorrow</button>
+          <button onClick={() => setFollowUp(2)} className="rounded-md bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-200">2 days</button>
+          <button onClick={() => setFollowUp(3)} className="rounded-md bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-200">3 days</button>
+          <input type="date" value={customDate} onChange={(e) => setCustomDate(e.target.value)} className="rounded-md border border-slate-200 px-2 py-1 text-xs" />
+          {customDate && <button onClick={() => setFollowUp("custom")} className="rounded-md bg-slate-700 px-2.5 py-1 text-xs font-semibold text-white">Set</button>}
+        </div>
+        <p className="mt-1.5 text-[11px] text-slate-400">Follow-ups here ring as an alarm until you snooze or mark done.</p>
+      </div>
+      <div className="mt-2">
+        {!showEmail ? (
+          <button onClick={() => setShowEmail(true)} className="text-xs font-medium text-indigo-600 hover:underline">+ Log email conversation</button>
+        ) : (
+          <div className="rounded-lg bg-white p-2 ring-1 ring-indigo-100">
+            <textarea value={emailText} onChange={(e) => setEmailText(e.target.value)} rows={3} placeholder="Paste the email thread or latest reply to save it to this deal's timeline" className="w-full rounded border border-slate-200 px-2 py-1.5 text-sm" />
+            <div className="mt-1 flex gap-2">
+              <button onClick={logEmail} className="rounded-md bg-indigo-600 px-3 py-1 text-sm font-semibold text-white">Save to timeline</button>
+              <button onClick={() => { setShowEmail(false); setEmailText(""); }} className="rounded-md px-3 py-1 text-sm text-slate-500">Cancel</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function AlarmCenter({ activities = [], userEmail, completeActivity, snoozeActivity, onOpen, leads = [] }) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 5000); return () => clearInterval(t); }, []);
@@ -2555,6 +2631,10 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
         <div className="grid gap-5 px-5 py-4 lg:grid-cols-5">
           {/* LEFT COLUMN: work this client now */}
           <div className="space-y-5 lg:col-span-3">
+
+          {["submitted", "denied", "pre_approved", "contracts_out", "agreement_signed", "getting_approvals"].includes(lead.status) && (
+            <DealTracker lead={lead} activities={activities} addActivity={addActivity} completeActivity={completeActivity} logTouch={logTouch} addNote={addNote} userEmail={userEmail} config={config} />
+          )}
 
           {/* Interested / just-sent: the two next steps are report link or application (or both) */}
           {["interested", "app_sent"].includes(lead.status) && (

@@ -6,6 +6,7 @@ import {
   ListChecks, Pencil, Save, LogOut, Lock, LayoutGrid, DollarSign, Menu,
   RefreshCw,
   Bell, BellOff,
+  BellRing,
 } from "lucide-react";
 import { supabase } from "./supabaseClient.js";
 
@@ -1593,9 +1594,15 @@ function Dashboard({ userEmail }) {
     const { error } = await supabase.from("activities").insert({
       lead_id: leadId, type: act.type, title: act.title || null, notes: act.notes || null,
       due_at: new Date(act.dueAt).toISOString(), created_by: userEmail, assigned_to: act.assignedTo || userEmail,
+      alarm: !!act.alarm,
     });
     if (error) setErr(error.message); else refetchActivities();
   }, [userEmail, refetchActivities]);
+
+  const snoozeActivity = useCallback(async (id, mins) => {
+    const { error } = await supabase.from("activities").update({ due_at: new Date(Date.now() + mins * 60000).toISOString() }).eq("id", id);
+    if (error) setErr(error.message); else refetchActivities();
+  }, [refetchActivities]);
 
   const completeActivity = useCallback(async (id, done = true) => {
     const { error } = await supabase.from("activities")
@@ -1812,6 +1819,7 @@ function Dashboard({ userEmail }) {
       )}
 
       {compose && <ComposeModal compose={compose} onClose={() => setCompose(null)} onSent={handleSent} templates={templates} config={config} />}
+      <AlarmCenter activities={activities} userEmail={userEmail} completeActivity={completeActivity} snoozeActivity={snoozeActivity} onOpen={setProfileId} leads={leads} />
     </div>
   );
 }
@@ -2189,6 +2197,57 @@ const SHOW_IN = {
   application: ["collect", "submit", "close"],
   submitFunder: ["submit", "close"],
 };
+function AlarmCenter({ activities = [], userEmail, completeActivity, snoozeActivity, onOpen, leads = [] }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 5000); return () => clearInterval(t); }, []);
+  const due = (activities || []).filter((a) => a.alarm && !a.done && new Date(a.due_at).getTime() <= now && (a.assigned_to === userEmail || a.assigned_to === "all"));
+  const hasDue = due.length > 0;
+  useEffect(() => {
+    if (!hasDue) return;
+    const beep = () => {
+      try {
+        const Ctx = window.AudioContext || window.webkitAudioContext; if (!Ctx) return;
+        const ctx = new Ctx();
+        [0, 0.28].forEach((offset) => {
+          const o = ctx.createOscillator(), g = ctx.createGain();
+          o.connect(g); g.connect(ctx.destination); o.type = "square"; o.frequency.value = 760;
+          const t0 = ctx.currentTime + offset;
+          g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(0.32, t0 + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.22);
+          o.start(t0); o.stop(t0 + 0.24);
+        });
+        setTimeout(() => { try { ctx.close(); } catch {} }, 800);
+      } catch {}
+    };
+    beep();
+    const t = setInterval(beep, 4000);
+    return () => clearInterval(t);
+  }, [hasDue]);
+  if (!hasDue) return null;
+  return (
+    <div className="fixed inset-x-0 top-0 z-[100] flex flex-col gap-px shadow-lg">
+      {due.map((a) => {
+        const lead = leads.find((l) => l.id === a.lead_id);
+        return (
+          <div key={a.id} className="flex flex-wrap items-center gap-2 bg-rose-600 px-4 py-2.5 text-white">
+            <BellRing size={18} className="animate-pulse" />
+            <span className="font-bold">Call due:</span>
+            <span className="font-semibold">{a.title || "Scheduled call"}</span>
+            {lead && <button onClick={() => onOpen(a.lead_id)} className="rounded bg-white/20 px-2 py-0.5 text-sm font-semibold hover:bg-white/30">{lead.name || lead.businessName} →</button>}
+            <span className="text-sm text-rose-100">was due {fmtDateTime(new Date(a.due_at).getTime())}</span>
+            <div className="ml-auto flex items-center gap-1.5">
+              <span className="text-xs text-rose-100">Snooze:</span>
+              <button onClick={() => snoozeActivity(a.id, 5)} className="rounded bg-white/20 px-2 py-1 text-xs font-bold hover:bg-white/30">5m</button>
+              <button onClick={() => snoozeActivity(a.id, 15)} className="rounded bg-white/20 px-2 py-1 text-xs font-bold hover:bg-white/30">15m</button>
+              <button onClick={() => snoozeActivity(a.id, 30)} className="rounded bg-white/20 px-2 py-1 text-xs font-bold hover:bg-white/30">30m</button>
+              <button onClick={() => completeActivity(a.id, true)} className="rounded bg-white px-3 py-1 text-xs font-bold text-rose-700 hover:bg-rose-50">Done</button>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function Gated({ show, label, children }) {
   const [open, setOpen] = useState(false);
   if (show || open) return children;
@@ -2690,7 +2749,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
           <Conversation lead={lead} comms={comms} onSend={sendReply} onAddNote={addNote} templates={templates} config={config} compact />
 
           {/* scheduled calls and tasks */}
-          <ActivityPanel lead={lead} activities={leadActivities} addActivity={addActivity} completeActivity={completeActivity} deleteActivity={deleteActivity} />
+          <ActivityPanel lead={lead} activities={leadActivities} addActivity={addActivity} completeActivity={completeActivity} deleteActivity={deleteActivity} config={config} userEmail={userEmail} />
 
           {/* automation control */}
           <div className={`rounded-xl border px-4 py-3 ${lead.automationPaused ? "border-amber-200 bg-amber-50" : "border-slate-200 bg-white"}`}>
@@ -3610,20 +3669,23 @@ function actBucket(a) {
   return "later";
 }
 
-function ActivityPanel({ lead, activities, addActivity, completeActivity, deleteActivity }) {
+function ActivityPanel({ lead, activities, addActivity, completeActivity, deleteActivity, config = {}, userEmail }) {
   const [open, setOpen] = useState(false);
   const [type, setType] = useState("call");
   const [title, setTitle] = useState("");
   const [when, setWhen] = useState("");
   const [notes, setNotes] = useState("");
+  const [alarm, setAlarm] = useState(false);
+  const [assignedTo, setAssignedTo] = useState("");
+  const team = (() => { const seen = new Set(); return (config.team || []).filter((m) => { const e = (m.email || "").trim().toLowerCase(); if (!e || !m.first || seen.has(e)) return false; seen.add(e); return true; }); })();
 
   const openActs = activities.filter((a) => !a.done).sort((a, b) => new Date(a.due_at) - new Date(b.due_at));
   const doneActs = activities.filter((a) => a.done);
 
   const save = () => {
     if (!when) return;
-    addActivity(lead.id, { type, title: title || ACT_TYPES.find((t) => t.key === type).label, dueAt: new Date(when).getTime(), notes });
-    setTitle(""); setWhen(""); setNotes(""); setOpen(false);
+    addActivity(lead.id, { type, title: title || ACT_TYPES.find((t) => t.key === type).label, dueAt: new Date(when).getTime(), notes, alarm, assignedTo: assignedTo || userEmail });
+    setTitle(""); setWhen(""); setNotes(""); setAlarm(false); setAssignedTo(""); setOpen(false);
   };
 
   // default to tomorrow 10am when opening the form
@@ -3659,6 +3721,21 @@ function ActivityPanel({ lead, activities, addActivity, completeActivity, delete
           </div>
           <div className="mt-2"><Labeled label="Title"><input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Call back about the report" className={inputCls} /></Labeled></div>
           <div className="mt-2"><Labeled label="Notes (optional)"><input value={notes} onChange={(e) => setNotes(e.target.value)} className={inputCls} /></Labeled></div>
+          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+            <Labeled label="Assign to">
+              <select value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} className={inputCls}>
+                <option value="">Me</option>
+                {team.map((m) => <option key={m.email} value={m.email}>{m.first}</option>)}
+                <option value="all">Everyone</option>
+              </select>
+            </Labeled>
+            <div className="flex items-end">
+              <label className={`flex w-full cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold ${alarm ? "border-rose-300 bg-rose-50 text-rose-700" : "border-slate-200 bg-white text-slate-600"}`}>
+                <input type="checkbox" checked={alarm} onChange={(e) => setAlarm(e.target.checked)} className="h-4 w-4 accent-rose-600" />
+                <BellRing size={15} /> Alarm alert (rings until dismissed)
+              </label>
+            </div>
+          </div>
           <div className="mt-2 flex justify-end gap-2">
             <button onClick={() => setOpen(false)} className="rounded-lg px-3 py-1.5 text-sm font-medium text-slate-500 hover:bg-slate-100">Cancel</button>
             <button onClick={save} disabled={!when} className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-40">Save</button>

@@ -8,6 +8,7 @@ import {
   Bell, BellOff,
   BellRing,
   TrendingUp,
+  Ban,
 } from "lucide-react";
 import { supabase } from "./supabaseClient.js";
 
@@ -2377,11 +2378,12 @@ function BoardCard({ lead, onOpen, cadences, templates, config, openCompose, upd
         <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${SOURCE_TONE[normalizeSource(lead.source)] || SOURCE_TONE.Unknown}`}>{normalizeSource(lead.source)}</span>
         {lead.product && <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${lead.product === "SLOC" ? "bg-indigo-100 text-indigo-700" : "bg-orange-100 text-orange-700"}`}>{lead.product}</span>}
         {lead.lenderTag && <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">{lead.lenderTag}</span>}
+        {lead.optedOut && <span className="inline-flex items-center gap-0.5 rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-bold text-rose-700"><Ban size={10} /> DND</span>}
       </div>
       <div className="mt-2 flex items-center gap-1" onClick={stop}>
         <a href={telHref(lead.phone)} onClick={() => lead.phone && updateLead(lead.id, lead.status === "new" ? { status: "called" } : {})} title="Call" className={`rounded-md p-1.5 ${lead.phone ? "bg-slate-100 text-slate-600 hover:bg-slate-200" : "pointer-events-none bg-slate-50 text-slate-300"}`}><Phone size={13} /></a>
-        <button disabled={!lead.phone} onClick={() => openCompose({ lead, channel: "sms", to: lead.phone, subject: "", body: fillTokens(tplSms?.body || "{{link}}", lead, config), kind: "link" })} title="Text" className={`rounded-md p-1.5 ${lead.phone ? "bg-blue-600 text-white hover:bg-blue-700" : "bg-slate-50 text-slate-300"}`}><MessageSquare size={13} /></button>
-        <button disabled={!lead.email} onClick={() => openCompose({ lead, channel: "email", to: lead.email, subject: fillTokens(tplEmail?.subject || "", lead, config), body: fillTokens(tplEmail?.body || "{{link}}", lead, config), kind: "link" })} title="Email" className={`rounded-md p-1.5 ${lead.email ? "bg-white text-blue-700 ring-1 ring-blue-300 hover:bg-blue-50" : "bg-slate-50 text-slate-300"}`}><Mail size={13} /></button>
+        <button disabled={!lead.phone || lead.optedOut} onClick={() => openCompose({ lead, channel: "sms", to: lead.phone, subject: "", body: fillTokens(tplSms?.body || "{{link}}", lead, config), kind: "link" })} title={lead.optedOut ? "Do Not Contact" : "Text"} className={`rounded-md p-1.5 ${lead.phone && !lead.optedOut ? "bg-blue-600 text-white hover:bg-blue-700" : "bg-slate-50 text-slate-300"}`}><MessageSquare size={13} /></button>
+        <button disabled={!lead.email || lead.optedOut} onClick={() => openCompose({ lead, channel: "email", to: lead.email, subject: fillTokens(tplEmail?.subject || "", lead, config), body: fillTokens(tplEmail?.body || "{{link}}", lead, config), kind: "link" })} title={lead.optedOut ? "Do Not Contact" : "Email"} className={`rounded-md p-1.5 ${lead.email && !lead.optedOut ? "bg-white text-blue-700 ring-1 ring-blue-300 hover:bg-blue-50" : "bg-slate-50 text-slate-300"}`}><Mail size={13} /></button>
       </div>
       <div className="mt-2" onClick={stop}>
         <label className="mb-0.5 block text-[10px] font-semibold uppercase tracking-wide text-slate-400">Move to</label>
@@ -2527,9 +2529,14 @@ function ComposeModal({ compose, onClose, onSent, templates = [], config = {} })
             <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={channel === "email" ? 9 : 4} className={inputCls} />
           </div>
           <p className="text-xs text-slate-400">Copy this into {channel === "sms" ? "RingCentral" : "Outlook"} and send it, then mark it sent so the stage and follow-ups update. Once your keys are set, use Send via app to do it in one click.</p>
+          {lead?.optedOut && (
+            <div className="flex items-center gap-2 rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
+              <Ban size={16} /> This lead is on Do Not Contact. Sending is blocked. Remove DND on their profile if you truly need to reach them.
+            </div>
+          )}
           <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-100 pt-3">
-            <button onClick={sendViaApp} disabled={busy} className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-2 text-sm font-medium text-blue-700 ring-1 ring-blue-300 hover:bg-blue-50 disabled:opacity-40"><Send size={15} /> {busy ? "Sending..." : "Send via app"}</button>
-            <button onClick={() => onSent({ viaApp: true, subject, body, to: toAddr, altRecipient: differs })} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"><Check size={15} /> Mark as sent</button>
+            <button onClick={sendViaApp} disabled={busy || lead?.optedOut} className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-2 text-sm font-medium text-blue-700 ring-1 ring-blue-300 hover:bg-blue-50 disabled:opacity-40"><Send size={15} /> {busy ? "Sending..." : "Send via app"}</button>
+            <button onClick={() => onSent({ viaApp: true, subject, body, to: toAddr, altRecipient: differs })} disabled={lead?.optedOut} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-40"><Check size={15} /> Mark as sent</button>
           </div>
         </div>
       </div>
@@ -3200,6 +3207,20 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
           <ActivityPanel lead={lead} activities={leadActivities} addActivity={addActivity} completeActivity={completeActivity} deleteActivity={deleteActivity} config={config} userEmail={userEmail} />
 
           {/* automation control */}
+          {/* Do Not Contact: hard stop on all texting + emailing (manual and automated) */}
+          <div className={`rounded-xl border px-4 py-3 ${lead.optedOut ? "border-rose-300 bg-rose-50" : "border-slate-200 bg-white"}`}>
+            <div className="flex flex-wrap items-center gap-2">
+              <Ban size={16} className={lead.optedOut ? "text-rose-600" : "text-slate-400"} />
+              <div>
+                <div className="text-sm font-bold text-slate-800">{lead.optedOut ? "Do Not Contact is ON" : "Contact allowed"}</div>
+                <div className="text-xs text-slate-500">{lead.optedOut ? "All texts and emails are blocked for this lead." : "Turn on to stop all outreach immediately."}</div>
+              </div>
+              <button onClick={() => updateLead(lead.id, lead.optedOut ? { optedOut: false } : { optedOut: true, automationPaused: true })} className={`ml-auto rounded-lg px-3 py-1.5 text-sm font-semibold ${lead.optedOut ? "bg-white text-rose-700 ring-1 ring-rose-300 hover:bg-rose-50" : "bg-rose-600 text-white hover:bg-rose-700"}`}>
+                {lead.optedOut ? "Allow contact" : "Stop all outreach"}
+              </button>
+            </div>
+          </div>
+
           <div className={`rounded-xl border px-4 py-3 ${lead.automationPaused ? "border-amber-200 bg-amber-50" : "border-slate-200 bg-white"}`}>
             <div className="flex flex-wrap items-center gap-2">
               <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Automated follow-ups</div>

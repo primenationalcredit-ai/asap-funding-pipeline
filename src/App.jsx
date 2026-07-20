@@ -1500,16 +1500,16 @@ function Dashboard({ userEmail }) {
     setLeads(data.map(rowToLead));
   }, []);
 
-  // Live messages: poll every 15s so inbound texts/emails appear without a manual refresh,
-  // and refresh immediately when you switch back to the tab.
+  // Live updates: poll every 15s so inbound texts/emails, new leads, and server-created
+  // alarms (like new-lead alerts) appear without a manual refresh, and refresh on tab focus.
   useEffect(() => {
-    const tick = () => { if (!document.hidden) refetchComms(); };
+    const tick = () => { if (!document.hidden) { refetchComms(); refetchActivities(); refetchLeads(); } };
     const id = setInterval(tick, 15000);
-    const onVisible = () => { if (!document.hidden) { refetchComms(); refetchLeads(); } };
+    const onVisible = () => { if (!document.hidden) { refetchComms(); refetchActivities(); refetchLeads(); } };
     document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("focus", onVisible);
     return () => { clearInterval(id); document.removeEventListener("visibilitychange", onVisible); window.removeEventListener("focus", onVisible); };
-  }, [refetchComms, refetchLeads]);
+  }, [refetchComms, refetchActivities, refetchLeads]);
 
   // Fire the new-message alert whenever a newer inbound appears in comms (realtime OR poll).
   const lastInboundRef = useRef(null);
@@ -2671,7 +2671,7 @@ function AlarmCenter({ activities = [], userEmail, completeActivity, snoozeActiv
         return (
           <div key={a.id} className="flex flex-wrap items-center gap-2 bg-rose-600 px-4 py-2.5 text-white">
             <BellRing size={18} className="animate-pulse" />
-            <span className="font-bold">Call due:</span>
+            <span className="font-bold">{/^new lead/i.test(a.title || "") ? "\ud83c\udd95 New lead" : "Call due:"}</span>
             <span className="font-semibold">{a.title || "Scheduled call"}</span>
             {lead && <button onClick={() => onOpen(a.lead_id)} className="rounded bg-white/20 px-2 py-0.5 text-sm font-semibold hover:bg-white/30">{lead.name || lead.businessName} →</button>}
             <span className="text-sm text-rose-100">was due {fmtDateTime(new Date(a.due_at).getTime())}</span>

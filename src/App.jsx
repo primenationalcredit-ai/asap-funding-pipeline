@@ -2373,12 +2373,11 @@ function BoardCard({ lead, onOpen, cadences, templates, config, openCompose, upd
           {lead.commissionAmount ? <span className="font-semibold text-blue-700">{money(lead.commissionAmount)} comm</span> : lead.desiredAmount ? <span>Wants {lead.desiredAmount}</span> : null}
         </div>
       )}
-      {(lead.product || lead.lenderTag) && (
-        <div className="mt-1.5 flex flex-wrap gap-1" onClick={stop}>
-          {lead.product && <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${lead.product === "SLOC" ? "bg-indigo-100 text-indigo-700" : "bg-orange-100 text-orange-700"}`}>{lead.product}</span>}
-          {lead.lenderTag && <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">{lead.lenderTag}</span>}
-        </div>
-      )}
+      <div className="mt-1.5 flex flex-wrap gap-1" onClick={stop}>
+        <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${SOURCE_TONE[normalizeSource(lead.source)] || SOURCE_TONE.Unknown}`}>{normalizeSource(lead.source)}</span>
+        {lead.product && <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${lead.product === "SLOC" ? "bg-indigo-100 text-indigo-700" : "bg-orange-100 text-orange-700"}`}>{lead.product}</span>}
+        {lead.lenderTag && <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">{lead.lenderTag}</span>}
+      </div>
       <div className="mt-2 flex items-center gap-1" onClick={stop}>
         <a href={telHref(lead.phone)} onClick={() => lead.phone && updateLead(lead.id, lead.status === "new" ? { status: "called" } : {})} title="Call" className={`rounded-md p-1.5 ${lead.phone ? "bg-slate-100 text-slate-600 hover:bg-slate-200" : "pointer-events-none bg-slate-50 text-slate-300"}`}><Phone size={13} /></a>
         <button disabled={!lead.phone} onClick={() => openCompose({ lead, channel: "sms", to: lead.phone, subject: "", body: fillTokens(tplSms?.body || "{{link}}", lead, config), kind: "link" })} title="Text" className={`rounded-md p-1.5 ${lead.phone ? "bg-blue-600 text-white hover:bg-blue-700" : "bg-slate-50 text-slate-300"}`}><MessageSquare size={13} /></button>
@@ -2910,6 +2909,10 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
             <div className="flex items-center gap-2">
               <input value={draft.businessName || ""} onChange={set("businessName")} placeholder="Business name"
                 className="min-w-0 flex-1 rounded-md bg-transparent px-1 -mx-1 text-lg font-bold text-slate-900 outline-none hover:bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-200 placeholder:font-semibold placeholder:text-slate-300" />
+              <span className="inline-flex shrink-0 items-center gap-1" onClick={stop}>
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">From</span>
+                <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${SOURCE_TONE[normalizeSource(lead.source)] || SOURCE_TONE.Unknown}`}>{normalizeSource(lead.source)}</span>
+              </span>
               <StagePill status={lead.status} />
             </div>
             <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm">
@@ -2918,9 +2921,9 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
                   className="min-w-0 rounded-md bg-transparent px-1 -mx-1 font-medium text-slate-700 outline-none hover:bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-200 placeholder:text-slate-300" />
               </span>
               {lead.phone && <a href={telHref(lead.phone)} className="font-mono text-xs text-slate-400 hover:text-blue-600">{lead.phone}</a>}
-              <span className="inline-flex items-center gap-1">
-                <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${SOURCE_TONE[normalizeSource(lead.source)] || SOURCE_TONE.Unknown}`}>{normalizeSource(lead.source)}</span>
-                <select value={SOURCE_CHOICES.includes(normalizeSource(lead.source)) ? normalizeSource(lead.source) : "Other"} onChange={(e) => updateLead(lead.id, { source: e.target.value })} onClick={stop} title="Lead source" className="cursor-pointer rounded border-0 bg-transparent p-0 text-[11px] text-slate-400 hover:text-blue-600 focus:outline-none focus:ring-0">
+              <span className="inline-flex items-center gap-1" onClick={stop}>
+                <span className="text-[10px] uppercase tracking-wide text-slate-300">source</span>
+                <select value={SOURCE_CHOICES.includes(normalizeSource(lead.source)) ? normalizeSource(lead.source) : "Other"} onChange={(e) => updateLead(lead.id, { source: e.target.value })} title="Change lead source" className="cursor-pointer rounded border-0 bg-transparent p-0 text-[11px] text-slate-400 hover:text-blue-600 focus:outline-none focus:ring-0">
                   {SOURCE_CHOICES.map((s) => <option key={s} value={s}>{s}</option>)}
                 </select>
               </span>

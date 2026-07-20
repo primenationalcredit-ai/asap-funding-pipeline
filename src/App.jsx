@@ -1938,38 +1938,49 @@ function QuickStart() {
   );
 }
 
+// Board groups shown in the tracker (mirrors the original 5-column layout)
+const TGROUPS = [
+  { key: "new_working", label: "New / Working", dot: "bg-slate-400", bg: "", stages: ["new","docs_incomplete","docs_in","underwriting","approved","contracts_out","in_final"] },
+  { key: "credit_partner", label: "Credit Partner", dot: "bg-amber-500", bg: "bg-amber-50/60", stages: ["credit_partner"] },
+  { key: "credit_repair", label: "Credit Repair", dot: "bg-violet-500", bg: "", stages: ["cr_pitched","cr_scheduled","cr_purchased"] },
+  { key: "won", label: "Won", dot: "bg-emerald-500", bg: "", stages: ["funded"] },
+  { key: "lost", label: "Lost", dot: "bg-rose-500", bg: "", stages: ["dnq","declined","merchant_decline","killed_final","pitched_no_sale"] },
+];
+const groupOfStage = (k) => (TGROUPS.find((g) => g.stages.includes(k)) || TGROUPS[0]).key;
+const stageLabel = (k) => (ORIG_STAGES.find((s) => s.key === k) || { label: k }).label;
+const docCount = (l) => (l.documents || []).length;
+const docEventsForLead = (l) => (l.documents || []).map((d) => (typeof d.uploadedAt === "number" ? d.uploadedAt : (d.uploadedAt ? new Date(d.uploadedAt).getTime() : null))).filter(Boolean);
+const startOfMonth = (d) => { const x = new Date(d); x.setDate(1); x.setHours(0,0,0,0); return x.getTime(); };
+const endOfMonth = (d) => { const x = new Date(d); x.setMonth(x.getMonth()+1, 1); x.setHours(0,0,0,0); return x.getTime(); };
+const sameDay = (a, b) => { const x=new Date(a), y=new Date(b); return x.getFullYear()===y.getFullYear() && x.getMonth()===y.getMonth() && x.getDate()===y.getDate(); };
+
 function TrackerCard({ lead, onOpen, onMove, config }) {
-  const stage = ORIG_STAGES.find((s) => s.key === origStageOf(lead));
+  const skey = origStageOf(lead);
   const rep = origReport(lead);
   const daysLeft = origReportDaysLeft(rep);
   const stale = daysLeft !== null && daysLeft < 0;
   const lowFico = rep && rep.fico && Number(rep.fico) < MIN_FICO;
   const since = origStageSince(lead);
-  const daysInStage = since ? Math.floor((Date.now() - since) / 86400000) : null;
-  const repName = (email) => { const m = (config.team || []).find((x) => (x.email || "").toLowerCase() === String(email || "").toLowerCase()); return m ? m.first : (email || "").split("@")[0]; };
-  const amount = lead.desiredAmount || lead.fundedAmount;
+  const days = since ? Math.floor((Date.now() - since) / 86400000) : null;
+  const repName = (e) => { const m = (config.team || []).find((x) => (x.email||"").toLowerCase() === String(e||"").toLowerCase()); return m ? (m.first + (m.last ? " " + m.last : "")) : (e||"").split("@")[0]; };
   return (
-    <div className="rounded-lg bg-white p-2.5 shadow-sm ring-1 ring-slate-200 hover:ring-blue-300">
-      <button onClick={() => onOpen(lead.id)} className="block w-full truncate text-left text-sm font-bold text-slate-800 hover:text-blue-700">{leadTitle(lead)}</button>
-      {lead.name && lead.businessName && <div className="truncate text-xs text-slate-400">{lead.name}</div>}
-      <div className="mt-1.5 flex flex-wrap items-center gap-1">
-        {lead.product && <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${lead.product === "SLOC" ? "bg-indigo-100 text-indigo-700" : "bg-orange-100 text-orange-700"}`}>{lead.product}</span>}
-        {amount ? <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">{money(amount)}</span> : null}
-        {rep && rep.fico ? (
-          <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${lowFico ? "bg-rose-100 text-rose-700" : "bg-emerald-100 text-emerald-700"}`}>FICO {rep.fico}{lowFico ? " ⛔" : ""}</span>
-        ) : lead.creditScore ? (
-          <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500" title="Stated score from intake, not a pulled report">~{lead.creditScore} stated</span>
-        ) : null}
+    <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm hover:border-blue-300">
+      <button onClick={() => onOpen(lead.id)} className="block w-full truncate text-left text-[15px] font-bold text-slate-800 hover:text-blue-700">{leadTitle(lead)}</button>
+      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+        {lead.product && <span className={`rounded px-1.5 py-0.5 text-[11px] font-semibold ${lead.product === "SLOC" ? "bg-indigo-100 text-indigo-700" : "bg-emerald-100 text-emerald-700"}`}>{lead.product}</span>}
+        {lead.lenderTag && <span className="rounded px-1.5 py-0.5 text-[11px] font-medium text-violet-600">{"\u2192 " + lead.lenderTag}</span>}
       </div>
-      {rep && rep.rd && (
-        <div className={`mt-1 text-[10px] font-semibold ${stale ? "text-rose-600" : daysLeft <= 2 ? "text-amber-600" : "text-slate-400"}`}>
-          {stale ? `Report expired ${-daysLeft}d ago — re-pull` : `Report valid ${daysLeft}d more`}
-        </div>
-      )}
-      {lowFico && <div className="mt-1 rounded bg-rose-50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700">Under {MIN_FICO} — pitch credit repair, don't submit</div>}
-      <div className="mt-2 flex items-center justify-between gap-1">
-        <span className="text-[10px] text-slate-400">{repName(lead.ownerEmail)}{daysInStage !== null ? ` · ${daysInStage}d here` : ""}</span>
-        <select value={stage.key} onChange={(e) => onMove(lead, e.target.value)} onClick={(e) => e.stopPropagation()} className="max-w-[130px] rounded border border-slate-200 bg-slate-50 px-1 py-0.5 text-[11px] text-slate-600">
+      <div className="mt-1.5 flex flex-wrap items-center gap-1 text-[12px] text-slate-500">
+        <span className="font-semibold text-blue-600">{"\u2713 " + docCount(lead) + " doc" + (docCount(lead) === 1 ? "" : "s")}</span>
+        <span className="text-slate-300">\u00b7</span>
+        <span>{repName(lead.ownerEmail) || "Unassigned"}</span>
+        {days !== null && <><span className="text-slate-300">\u00b7</span><span>{days}d</span></>}
+      </div>
+      {rep && rep.fico ? (
+        <div className={`mt-1 text-[11px] font-semibold ${lowFico ? "text-rose-600" : "text-emerald-600"}`}>FICO {rep.fico}{lowFico ? " \u26d4 under " + MIN_FICO : ""}{rep.rd ? (stale ? " \u00b7 report expired" : " \u00b7 " + daysLeft + "d left") : ""}</div>
+      ) : null}
+      <div className="mt-1.5">
+        <select value={skey} onChange={(e) => onMove(lead, e.target.value)} onClick={(e) => e.stopPropagation()} className="cursor-pointer rounded border-0 bg-transparent p-0 text-[12px] text-slate-500 hover:text-blue-600 focus:outline-none focus:ring-0">
           {ORIG_GROUPS.map(([g, label]) => (
             <optgroup key={g} label={label}>
               {ORIG_STAGES.filter((s) => s.group === g).map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
@@ -1981,97 +1992,177 @@ function TrackerCard({ lead, onOpen, onMove, config }) {
   );
 }
 
-function Tracker({ leads, config, onOpen, logTouch, userEmail }) {
-  const [productFilter, setProductFilter] = useState("all");
-  const [ownerFilter, setOwnerFilter] = useState("all");
-  const move = (lead, stageKey) => logTouch(lead.id, "orig_stage", "orig_stage", { note: stageKey, by: userEmail });
-  const owners = (() => { const set = new Map(); leads.forEach((l) => { if (l.ownerEmail) set.set(l.ownerEmail, true); }); return Array.from(set.keys()); })();
-  const repName = (email) => { const m = (config.team || []).find((x) => (x.email || "").toLowerCase() === String(email || "").toLowerCase()); return m ? m.first : (email || "").split("@")[0]; };
+function StatCard({ n, label, tone }) {
+  const c = { slate: "text-slate-800", green: "text-emerald-600", red: "text-rose-600", blue: "text-blue-600", purple: "text-violet-600", amber: "text-amber-600" }[tone] || "text-slate-800";
+  return (
+    <div className="min-w-[120px] flex-1 rounded-xl border border-slate-200 bg-white px-4 py-3">
+      <div className={`text-2xl font-bold ${c}`}>{n}</div>
+      <div className="mt-0.5 text-xs text-slate-500">{label}</div>
+    </div>
+  );
+}
 
+function Tracker({ leads, config, onOpen, logTouch, userEmail }) {
+  const [view, setView] = useState("pipeline");
+  const [monthOffset, setMonthOffset] = useState(0);
+  const [product, setProduct] = useState("all");
+  const move = (lead, stageKey) => logTouch(lead.id, "orig_stage", "orig_stage", { note: stageKey, by: userEmail });
+  const repName = (e) => { const m = (config.team || []).find((x) => (x.email||"").toLowerCase() === String(e||"").toLowerCase()); return m ? (m.first + (m.last ? " " + m.last : "")) : (e||"").split("@")[0]; };
+
+  const monthDate = (() => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() + monthOffset); return d; })();
+  const mStart = startOfMonth(monthDate), mEnd = endOfMonth(monthDate);
+  const monthLabel = monthDate.toLocaleDateString(undefined, { month: "long", year: "numeric" }) + (monthOffset === 0 ? " (current)" : "");
+  const daysInMonth = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0).getDate();
+
+  const counts = { all: leads.length, MCA: leads.filter((l) => l.product === "MCA").length, SLOC: leads.filter((l) => l.product === "SLOC").length, cr: leads.filter((l) => groupOfStage(origStageOf(l)) === "credit_repair").length };
   const shown = leads.filter((l) => {
-    if (productFilter !== "all" && (l.product || "") !== productFilter) return false;
-    if (ownerFilter !== "all" && (l.ownerEmail || "") !== ownerFilter) return false;
+    if (product === "MCA") return l.product === "MCA";
+    if (product === "SLOC") return l.product === "SLOC";
+    if (product === "cr") return groupOfStage(origStageOf(l)) === "credit_repair";
     return true;
   });
-  const byStage = {};
-  ORIG_STAGES.forEach((s) => { byStage[s.key] = []; });
-  shown.forEach((l) => { const k = origStageOf(l); (byStage[k] || byStage.new).push(l); });
 
-  // leaderboard: funded + credit-repair wins this calendar month, by owner
-  const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
-  const wins = {};
-  shown.forEach((l) => {
-    const k = origStageOf(l);
-    const since = origStageSince(l);
-    if (!since || since < monthStart.getTime()) return;
-    const owner = l.ownerEmail || "(unassigned)";
-    wins[owner] = wins[owner] || { funded: 0, scheduled: 0, purchased: 0, docs_in: 0 };
-    if (k === "funded") wins[owner].funded++;
-    if (k === "cr_scheduled") wins[owner].scheduled++;
-    if (k === "cr_purchased") wins[owner].purchased++;
-    if (k === "docs_in") wins[owner].docs_in++;
-  });
+  const byGroup = {}; TGROUPS.forEach((g) => (byGroup[g.key] = []));
+  shown.forEach((l) => byGroup[groupOfStage(origStageOf(l))].push(l));
+
+  // pipeline stats
+  const wonLeads = byGroup.won, lostLeads = byGroup.lost;
+  const wonN = wonLeads.length, lostN = lostLeads.length;
+  const winRate = wonN + lostN > 0 ? Math.round((wonN / (wonN + lostN)) * 100) : 0;
+  const wonValue = wonLeads.reduce((s, l) => s + (Number(l.fundedAmount) || Number(l.desiredAmount) || 0), 0);
+  const scheduledN = shown.filter((l) => origStageOf(l) === "cr_scheduled").length;
+  const boughtN = shown.filter((l) => origStageOf(l) === "cr_purchased").length;
+
+  // leaderboard: doc events in month
+  const evtsAll = [];
+  shown.forEach((l) => docEventsForLead(l).forEach((at) => { if (at >= mStart && at < mEnd) evtsAll.push({ at, owner: l.ownerEmail || "(unassigned)", leadId: l.id }); }));
+  const docsToday = evtsAll.filter((e) => sameDay(e.at, Date.now())).length;
+  const docsMonth = evtsAll.length;
+  const workedDays = new Set(evtsAll.map((e) => new Date(e.at).getDate())).size;
+  const dailyAvg = workedDays > 0 ? (docsMonth / workedDays).toFixed(1) : "0";
+  const leads2plus = shown.filter((l) => docEventsForLead(l).filter((at) => at >= mStart && at < mEnd).length >= 2).length;
+  const chasing = shown.filter((l) => origStageOf(l) === "docs_incomplete").length;
+  const perDay = Array.from({ length: daysInMonth }, (_, i) => evtsAll.filter((e) => new Date(e.at).getDate() === i + 1).length);
+  const maxDay = Math.max(1, ...perDay);
+
+  // agent board
+  const agents = {};
+  shown.forEach((l) => { const o = l.ownerEmail || "(unassigned)"; agents[o] = agents[o] || { leadsIn: 0, docs: 0, docsToday: 0, days: new Set(), won: 0, value: 0 }; agents[o].leadsIn++; if (groupOfStage(origStageOf(l)) === "won") { agents[o].won++; agents[o].value += Number(l.fundedAmount) || Number(l.desiredAmount) || 0; } });
+  evtsAll.forEach((e) => { agents[e.owner] = agents[e.owner] || { leadsIn: 0, docs: 0, docsToday: 0, days: new Set(), won: 0, value: 0 }; agents[e.owner].docs++; agents[e.owner].days.add(new Date(e.at).getDate()); if (sameDay(e.at, Date.now())) agents[e.owner].docsToday++; });
+  const agentRows = Object.entries(agents).map(([email, a]) => ({ email, ...a, days: a.days.size })).sort((x, y) => y.docs - x.docs);
+  const closerRows = agentRows.filter((a) => a.won > 0).sort((x, y) => y.won - x.won);
+
+  const th = "px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-400";
+  const td = "px-3 py-2.5 text-sm text-slate-700";
 
   return (
-    <div className="mt-4">
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <div className="text-lg font-bold text-slate-800">Origination tracker</div>
-        <div className="ml-auto flex items-center gap-2">
-          <select value={productFilter} onChange={(e) => setProductFilter(e.target.value)} className="rounded-lg border border-slate-200 px-2 py-1.5 text-sm">
-            <option value="all">All products</option>
-            <option value="SLOC">SLOC</option>
-            <option value="MCA">MCA</option>
-          </select>
-          <select value={ownerFilter} onChange={(e) => setOwnerFilter(e.target.value)} className="rounded-lg border border-slate-200 px-2 py-1.5 text-sm">
-            <option value="all">All reps</option>
-            {owners.map((o) => <option key={o} value={o}>{repName(o)}</option>)}
-          </select>
+    <div className="mt-2">
+      {/* controls */}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5">
+          <button onClick={() => setView("pipeline")} className={`rounded-md px-3 py-1.5 text-sm font-semibold ${view === "pipeline" ? "bg-slate-900 text-white" : "text-slate-600"}`}>Pipeline</button>
+          <button onClick={() => setView("leaderboard")} className={`rounded-md px-3 py-1.5 text-sm font-semibold ${view === "leaderboard" ? "bg-slate-900 text-white" : "text-slate-600"}`}>Leaderboard</button>
+        </div>
+        <div className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-1 py-0.5">
+          <button onClick={() => setMonthOffset((m) => m - 1)} className="rounded p-1 text-slate-400 hover:bg-slate-100"><ChevronDown size={16} className="rotate-90" /></button>
+          <span className="px-2 text-sm font-semibold text-slate-700">{monthLabel}</span>
+          <button onClick={() => setMonthOffset((m) => Math.min(0, m + 1))} disabled={monthOffset >= 0} className="rounded p-1 text-slate-400 hover:bg-slate-100 disabled:opacity-30"><ChevronDown size={16} className="-rotate-90" /></button>
         </div>
       </div>
 
-      {/* this-month progress */}
-      {Object.keys(wins).length > 0 && (
-        <div className="mb-4 rounded-xl border border-slate-200 bg-white p-3">
-          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">This month's progress (moved into stage this month)</div>
-          <div className="flex flex-wrap gap-3">
-            {Object.entries(wins).map(([owner, w]) => (
-              <div key={owner} className="rounded-lg bg-slate-50 px-3 py-2 ring-1 ring-slate-100">
-                <div className="text-sm font-bold text-slate-700">{repName(owner)}</div>
-                <div className="mt-0.5 flex gap-3 text-xs text-slate-500">
-                  <span><b className="text-emerald-600">{w.funded}</b> funded</span>
-                  <span><b className="text-blue-600">{w.docs_in}</b> docs in</span>
-                  <span><b className="text-fuchsia-600">{w.scheduled}</b> CR sched</span>
-                  <span><b className="text-emerald-600">{w.purchased}</b> CR bought</span>
+      {/* product tabs */}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        {[["all", "All", counts.all], ["MCA", "MCA", counts.MCA], ["SLOC", "SLOC", counts.SLOC], ["cr", "Credit Repair", counts.cr]].map(([k, label, n]) => (
+          <button key={k} onClick={() => setProduct(k)} className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold ${product === k ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"}`}>{label} <span className={product === k ? "text-slate-300" : "text-slate-400"}>{n}</span></button>
+        ))}
+      </div>
+
+      {view === "pipeline" ? (
+        <>
+          <div className="mb-5 flex flex-wrap gap-2.5">
+            <StatCard n={shown.length} label="Leads In" tone="slate" />
+            <StatCard n={byGroup.new_working.length} label="In Pipeline" tone="slate" />
+            <StatCard n={wonN} label="Won" tone="green" />
+            <StatCard n={lostN} label="Lost" tone="red" />
+            <StatCard n={winRate + "%"} label="Win Rate" tone="slate" />
+            <StatCard n={money(wonValue)} label="Won Value" tone="green" />
+            <StatCard n={scheduledN} label="Scheduled" tone="blue" />
+            <StatCard n={boughtN} label="Actually Bought" tone="purple" />
+          </div>
+          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-5">
+            {TGROUPS.map((g) => (
+              <div key={g.key} className={`rounded-xl border border-slate-200 ${g.bg || "bg-white"} p-3`}>
+                <div className="mb-3 flex items-center justify-between">
+                  <span className="inline-flex items-center gap-1.5 text-sm font-bold text-slate-700"><span className={`h-2 w-2 rounded-full ${g.dot}`} /> {g.label}</span>
+                  <span className="text-xs font-bold text-slate-400">{byGroup[g.key].length}</span>
+                </div>
+                <div className="flex flex-col gap-2.5">
+                  {byGroup[g.key].length === 0 ? <div className="py-6 text-center text-sm text-slate-300">Nothing here</div>
+                    : byGroup[g.key].map((l) => <TrackerCard key={l.id} lead={l} onOpen={onOpen} onMove={move} config={config} />)}
                 </div>
               </div>
             ))}
           </div>
-        </div>
-      )}
-
-      {ORIG_GROUPS.map(([g, label]) => {
-        const stages = ORIG_STAGES.filter((s) => s.group === g);
-        const total = stages.reduce((n, s) => n + byStage[s.key].length, 0);
-        return (
-          <div key={g} className="mb-5">
-            <div className="mb-2 text-sm font-bold text-slate-500">{label} <span className="text-slate-300">· {total}</span></div>
-            <div className="flex gap-3 overflow-x-auto pb-2">
-              {stages.map((s) => (
-                <div key={s.key} className="flex w-64 shrink-0 flex-col rounded-xl bg-slate-100/70 p-2">
-                  <div className="mb-2 flex items-center justify-between px-1 pt-0.5">
-                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ring-inset ${TONE[s.tone]}`}>{s.label}</span>
-                    <span className="text-xs font-bold text-slate-400">{byStage[s.key].length}</span>
+        </>
+      ) : (
+        <>
+          <div className="mb-5 flex flex-wrap gap-2.5">
+            <StatCard n={docsToday} label="Docs Today" tone="green" />
+            <StatCard n={docsMonth} label={"Docs in " + monthDate.toLocaleDateString(undefined, { month: "long" })} tone="slate" />
+            <StatCard n={workedDays} label="Days Worked" tone="slate" />
+            <StatCard n={dailyAvg} label="Daily Average" tone="slate" />
+            <StatCard n={leads2plus} label="Leads With 2+ Docs" tone="purple" />
+            <StatCard n={chasing} label="Chasing Docs" tone="amber" />
+          </div>
+          <div className="mb-4 rounded-xl border border-slate-200 bg-white p-4">
+            <div className="text-base font-bold text-slate-800">Docs collected per day, {monthDate.toLocaleDateString(undefined, { month: "long", year: "numeric" })}</div>
+            <div className="mb-3 text-xs text-slate-400">Every collection counts, including a second one on the same lead. Green is today.</div>
+            <div className="flex items-end gap-0.5" style={{ height: "150px" }}>
+              {perDay.map((n, i) => {
+                const isToday = monthOffset === 0 && (i + 1) === new Date().getDate();
+                return (
+                  <div key={i} className="flex flex-1 flex-col items-center justify-end" style={{ height: "100%" }} title={`Day ${i + 1}: ${n}`}>
+                    {n > 0 && <div className="mb-0.5 text-[10px] font-semibold text-slate-500">{n}</div>}
+                    <div className={`w-full rounded-t ${isToday ? "bg-emerald-500" : "bg-blue-500"}`} style={{ height: `${Math.max(2, (n / maxDay) * 120)}px` }} />
                   </div>
-                  <div className="flex min-h-8 flex-col gap-2">
-                    {byStage[s.key].map((l) => <TrackerCard key={l.id} lead={l} onOpen={onOpen} onMove={move} config={config} />)}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
+            </div>
+            <div className="mt-1 flex justify-between text-[10px] text-slate-400">
+              {[1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31].filter((d) => d <= daysInMonth).map((d) => <span key={d}>{d}</span>)}
             </div>
           </div>
-        );
-      })}
-      <p className="px-1 text-xs text-slate-400">Use the dropdown on any card to move it through the origination stages. Moves are tracked with dates, so this month's progress above counts what actually happened this month.</p>
+          <div className="mb-4 overflow-hidden rounded-xl border border-slate-200 bg-white">
+            <div className="border-b border-slate-100 p-4"><div className="text-base font-bold text-slate-800">Agent board</div><div className="text-xs text-slate-400">Ranked by docs collected.</div></div>
+            <table className="w-full">
+              <thead><tr className="border-b border-slate-100"><th className={th}>#</th><th className={th}>Agent</th><th className={th}>Docs Today</th><th className={th}>Docs</th><th className={th}>Days</th><th className={th}>Avg / Day</th><th className={th}>Leads In</th><th className={th}>Won</th><th className={th}>Win %</th><th className={th}>Value</th></tr></thead>
+              <tbody>
+                {agentRows.length === 0 ? <tr><td className="p-4 text-sm text-slate-400" colSpan={10}>No activity in {monthDate.toLocaleDateString(undefined, { month: "long", year: "numeric" })}</td></tr>
+                  : agentRows.map((a, i) => (
+                    <tr key={a.email} className="border-b border-slate-50">
+                      <td className={td + " font-bold text-amber-500"}>{i + 1}</td>
+                      <td className={td + " font-bold"}>{repName(a.email)}</td>
+                      <td className={td}>{a.docsToday}</td>
+                      <td className={td + " font-semibold"}>{a.docs}</td>
+                      <td className={td}>{a.days}</td>
+                      <td className={td}>{a.days > 0 ? (a.docs / a.days).toFixed(1) : "0"}</td>
+                      <td className={td}>{a.leadsIn}</td>
+                      <td className={td}>{a.won}</td>
+                      <td className={td}>{a.won + (a.leadsIn - a.won) > 0 ? Math.round((a.won / a.leadsIn) * 100) : 0}%</td>
+                      <td className={td}>{a.value > 0 ? money(a.value) : "\u2014"}</td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+            <div className="border-b border-slate-100 p-4"><div className="text-base font-bold text-slate-800">Closer board</div><div className="text-xs text-slate-400">Ranked by deals won.</div></div>
+            {closerRows.length === 0 ? <div className="p-8 text-center text-sm text-slate-400">Nothing in {monthDate.toLocaleDateString(undefined, { month: "long", year: "numeric" })}</div>
+              : <table className="w-full"><thead><tr className="border-b border-slate-100"><th className={th}>#</th><th className={th}>Agent</th><th className={th}>Won</th><th className={th}>Value</th></tr></thead>
+                <tbody>{closerRows.map((a, i) => (<tr key={a.email} className="border-b border-slate-50"><td className={td + " font-bold text-amber-500"}>{i + 1}</td><td className={td + " font-bold"}>{repName(a.email)}</td><td className={td + " font-semibold"}>{a.won}</td><td className={td}>{a.value > 0 ? money(a.value) : "\u2014"}</td></tr>))}</tbody></table>}
+          </div>
+        </>
+      )}
     </div>
   );
 }

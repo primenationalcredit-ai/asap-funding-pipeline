@@ -755,6 +755,19 @@ function leadPatchToRow(patch) {
 const firstName = (n) => (n || "").trim().split(/\s+/)[0] || "there";
 const leadTitle = (l) => (l.businessName && l.businessName.trim()) || l.name || "Unnamed";
 
+function normalizeSource(s) {
+  const v = String(s || "").toLowerCase().trim();
+  if (!v) return "Unknown";
+  if (v.includes("google") || v.includes("gclid") || v.includes("adwords")) return "Google";
+  if (v.includes("facebook") || v.includes("fb") || v.includes("meta") || v.includes("instagram")) return "Facebook";
+  if (v.includes("direct")) return "Direct";
+  if (v.includes("referr")) return "Referral";
+  if (v.includes("organic") || v.includes("website")) return "Website";
+  return String(s).replace(/\b\w/g, (c) => c.toUpperCase());
+}
+const SOURCE_TONE = { Google: "bg-blue-100 text-blue-700", Facebook: "bg-indigo-100 text-indigo-700", Direct: "bg-slate-100 text-slate-600", Referral: "bg-emerald-100 text-emerald-700", Website: "bg-teal-100 text-teal-700", Unknown: "bg-slate-100 text-slate-400" };
+const SOURCE_CHOICES = ["Google", "Facebook", "Direct", "Referral", "Website", "Other"];
+
 // ---- Origination tracker (folded in from the standalone ASAP tracker) ----
 // Stored with NO database change: the current origination stage is the latest
 // touch of kind "orig_stage"; report score/pull-date ride in touches of kind "orig_report".
@@ -1988,6 +2001,7 @@ function TrackerCard({ lead, onOpen, onMove, config }) {
       <button onClick={() => onOpen(lead.id)} className="block w-full truncate text-left text-[15px] font-bold text-slate-800 hover:text-blue-700">{leadTitle(lead)}</button>
       <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
         {lead.product && <span className={`rounded px-1.5 py-0.5 text-[11px] font-semibold ${lead.product === "SLOC" ? "bg-indigo-100 text-indigo-700" : "bg-emerald-100 text-emerald-700"}`}>{lead.product}</span>}
+        <span className={`rounded px-1.5 py-0.5 text-[11px] font-semibold ${SOURCE_TONE[normalizeSource(lead.source)] || SOURCE_TONE.Unknown}`}>{normalizeSource(lead.source)}</span>
         {lead.lenderTag && <span className="rounded px-1.5 py-0.5 text-[11px] font-medium text-violet-600">{"\u2192 " + lead.lenderTag}</span>}
       </div>
       <div className="mt-1.5 flex flex-wrap items-center gap-1 text-[12px] text-slate-500">
@@ -2180,6 +2194,41 @@ function Tracker({ leads, config, onOpen, logTouch, userEmail }) {
             {closerRows.length === 0 ? <div className="p-8 text-center text-sm text-slate-400">Nothing in {monthDate.toLocaleDateString(undefined, { month: "long", year: "numeric" })}</div>
               : <table className="w-full"><thead><tr className="border-b border-slate-100"><th className={th}>#</th><th className={th}>Agent</th><th className={th}>Won</th><th className={th}>Value</th></tr></thead>
                 <tbody>{closerRows.map((a, i) => (<tr key={a.email} className="border-b border-slate-50"><td className={td + " font-bold text-amber-500"}>{i + 1}</td><td className={td + " font-bold"}>{repName(a.email)}</td><td className={td + " font-semibold"}>{a.won}</td><td className={td}>{a.value > 0 ? money(a.value) : "\u2014"}</td></tr>))}</tbody></table>}
+          </div>
+
+          {/* lead source conversion */}
+          <div className="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-white">
+            <div className="border-b border-slate-100 p-4"><div className="text-base font-bold text-slate-800">Lead source board</div><div className="text-xs text-slate-400">Where deals come from, and which sources actually convert. Ranked by leads.</div></div>
+            {(() => {
+              const srcMap = {};
+              shown.forEach((l) => {
+                const s = normalizeSource(l.source);
+                srcMap[s] = srcMap[s] || { leads: 0, sold: 0, lost: 0, value: 0 };
+                srcMap[s].leads++;
+                const g = groupOfStage(origStageOf(l));
+                if (g === "won") { srcMap[s].sold++; srcMap[s].value += Number(l.fundedAmount) || Number(l.desiredAmount) || 0; }
+                if (g === "lost") srcMap[s].lost++;
+              });
+              const rows = Object.entries(srcMap).map(([source, v]) => ({ source, ...v })).sort((a, b) => b.leads - a.leads);
+              if (rows.length === 0) return <div className="p-8 text-center text-sm text-slate-400">No leads yet</div>;
+              return (
+                <table className="w-full">
+                  <thead><tr className="border-b border-slate-100"><th className={th}>Source</th><th className={th}>Leads</th><th className={th}>Sold</th><th className={th}>Lost</th><th className={th}>Conversion</th><th className={th}>Won Value</th></tr></thead>
+                  <tbody>
+                    {rows.map((r) => (
+                      <tr key={r.source} className="border-b border-slate-50">
+                        <td className={td}><span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${SOURCE_TONE[r.source] || SOURCE_TONE.Unknown}`}>{r.source}</span></td>
+                        <td className={td + " font-semibold"}>{r.leads}</td>
+                        <td className={td + " font-semibold text-emerald-600"}>{r.sold}</td>
+                        <td className={td + " text-rose-500"}>{r.lost}</td>
+                        <td className={td + " font-bold"}>{r.leads > 0 ? Math.round((r.sold / r.leads) * 100) : 0}%</td>
+                        <td className={td}>{r.value > 0 ? money(r.value) : "\u2014"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              );
+            })()}
           </div>
         </>
       )}
@@ -2869,6 +2918,12 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
                   className="min-w-0 rounded-md bg-transparent px-1 -mx-1 font-medium text-slate-700 outline-none hover:bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-200 placeholder:text-slate-300" />
               </span>
               {lead.phone && <a href={telHref(lead.phone)} className="font-mono text-xs text-slate-400 hover:text-blue-600">{lead.phone}</a>}
+              <span className="inline-flex items-center gap-1">
+                <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${SOURCE_TONE[normalizeSource(lead.source)] || SOURCE_TONE.Unknown}`}>{normalizeSource(lead.source)}</span>
+                <select value={SOURCE_CHOICES.includes(normalizeSource(lead.source)) ? normalizeSource(lead.source) : "Other"} onChange={(e) => updateLead(lead.id, { source: e.target.value })} onClick={stop} title="Lead source" className="cursor-pointer rounded border-0 bg-transparent p-0 text-[11px] text-slate-400 hover:text-blue-600 focus:outline-none focus:ring-0">
+                  {SOURCE_CHOICES.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </span>
             </div>
           </div>
           <div className="flex items-center gap-2">

@@ -42,6 +42,33 @@ async function rcToken() {
   if (!j.access_token) throw new Error(j.error_description || j.message || "RC auth failed");
   return { server, token: j.access_token };
 }
+async function createRcTask(rc, subject, note) {
+  const chatId = process.env.RC_TASK_CHAT_ID;
+  if (!chatId) return; // not configured, skip quietly
+  const body = { subject: subject.slice(0, 250) };
+  if (process.env.RC_TASK_ASSIGNEE_ID) body.assignees = [{ id: process.env.RC_TASK_ASSIGNEE_ID }];
+  if (note) body.description = note.slice(0, 1000);
+  const r = await fetch(`${rc.server}/team-messaging/v1/chats/${chatId}/tasks`, {
+    method: "POST", headers: { Authorization: `Bearer ${rc.token}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.message || `RC task failed ${r.status}`); }
+}
+
+async function newLeadAlarm(supabase, leadRow, leadId) {
+  const assignee = process.env.NEW_LEAD_ALARM_TO || "all";
+  const who = leadRow.name || leadRow.business_name || "New lead";
+  await supabase.from("activities").insert({
+    lead_id: leadId,
+    type: "call",
+    title: `New lead: ${who} â€” reach out`,
+    notes: "[[alarm]]",
+    due_at: new Date().toISOString(),
+    created_by: "automation",
+    assigned_to: assignee,
+  });
+}
+
 async function sendSms(rc, to, text) {
   const r = await fetch(`${rc.server}/restapi/v1.0/account/~/extension/~/sms`, {
     method: "POST", headers: { Authorization: `Bearer ${rc.token}`, "Content-Type": "application/json" },
@@ -225,6 +252,12 @@ export const handler = async (event) => {
     if (error) throw error;
     // Instant welcome: text + email with the pre-approval hook (weekend-aware). Never blocks the response.
     try { await sendInstantWelcome(supabase, row, data.id); } catch (e) { console.log("[welcome] error", e.message); }
+    try { await newLeadAlarm(supabase, row, data.id); } catch (e) { console.log("[new-lead-alarm] error", e.message); }
+    try {
+      const rc = await rcToken();
+      const parts = [row.phone ? `Phone: ${row.phone}` : "", row.email ? `Email: ${row.email}` : "", row.source ? `Source: ${row.source}` : "", row.desired_amount ? `Wants: ${row.desired_amount}` : ""].filter(Boolean);
+      await createRcTask(rc, `New lead: ${row.name || row.business_name || "Unknown"}`, parts.join("\n") + "\n\nWork it in the portal: https://tranquil-muffin-691d4e.netlify.app");
+    } catch (e) { console.log("[rc-task] error", e.message); }
     try {
       const notifyTo = process.env.NEW_LEAD_NOTIFY_TO || "funding@asapfundingusa.com";
       const nm = row.name || "New lead";
@@ -248,5 +281,6 @@ export const handler = async (event) => {
     return json(500, { error: "Database write failed", detail: String(err.message || err) });
   }
 };
+
 
 

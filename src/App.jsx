@@ -1948,8 +1948,28 @@ const TGROUPS = [
 ];
 const groupOfStage = (k) => (TGROUPS.find((g) => g.stages.includes(k)) || TGROUPS[0]).key;
 const stageLabel = (k) => (ORIG_STAGES.find((s) => s.key === k) || { label: k }).label;
-const docCount = (l) => (l.documents || []).length;
-const docEventsForLead = (l) => (l.documents || []).map((d) => (typeof d.uploadedAt === "number" ? d.uploadedAt : (d.uploadedAt ? new Date(d.uploadedAt).getTime() : null))).filter(Boolean);
+const docCount = (l) => leadDocEvents(l).length;
+// A "doc collected" event can come from an uploaded file, a credit-report upload, or a
+// manual "mark report pulled" touch. Count all three, with a date fallback so nothing is lost.
+function leadDocEvents(l) {
+  const evts = [];
+  const seen = new Set();
+  const push = (at, by) => {
+    if (!at) return;
+    const key = Math.round(at / 60000); // dedupe within the same minute (same collection recorded twice)
+    if (seen.has(key)) return;
+    seen.add(key);
+    evts.push({ at, by: by || l.ownerEmail || "(unassigned)" });
+  };
+  (l.documents || []).forEach((d) => {
+    const at = typeof d.uploadedAt === "number" ? d.uploadedAt : (d.uploadedAt ? new Date(d.uploadedAt).getTime() : (l.reportUploadedAt || l.lastTouchAt || l.createdAt || null));
+    push(at, d.by);
+  });
+  if (l.reportPath && l.reportUploadedAt) push(l.reportUploadedAt, l.ownerEmail);
+  (l.touches || []).forEach((t) => { if (t.kind === "report") push(t.at, t.by); });
+  return evts;
+}
+const docEventsForLead = (l) => leadDocEvents(l).map((e) => e.at);
 const startOfMonth = (d) => { const x = new Date(d); x.setDate(1); x.setHours(0,0,0,0); return x.getTime(); };
 const endOfMonth = (d) => { const x = new Date(d); x.setMonth(x.getMonth()+1, 1); x.setHours(0,0,0,0); return x.getTime(); };
 const sameDay = (a, b) => { const x=new Date(a), y=new Date(b); return x.getFullYear()===y.getFullYear() && x.getMonth()===y.getMonth() && x.getDate()===y.getDate(); };

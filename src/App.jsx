@@ -7,6 +7,7 @@ import {
   RefreshCw,
   Bell, BellOff,
   BellRing,
+  TrendingUp,
 } from "lucide-react";
 import { supabase } from "./supabaseClient.js";
 
@@ -753,6 +754,65 @@ function leadPatchToRow(patch) {
 /* ================================================================== */
 const firstName = (n) => (n || "").trim().split(/\s+/)[0] || "there";
 const leadTitle = (l) => (l.businessName && l.businessName.trim()) || l.name || "Unnamed";
+
+// ---- Origination tracker (folded in from the standalone ASAP tracker) ----
+// Stored with NO database change: the current origination stage is the latest
+// touch of kind "orig_stage"; report score/pull-date ride in touches of kind "orig_report".
+const ORIG_STAGES = [
+  { key: "new", label: "New", tone: "slate", group: "pipeline" },
+  { key: "docs_incomplete", label: "Docs Incomplete", tone: "amber", group: "pipeline" },
+  { key: "docs_in", label: "Docs In", tone: "blue", group: "pipeline" },
+  { key: "underwriting", label: "Underwriting", tone: "indigo", group: "pipeline" },
+  { key: "approved", label: "Approved", tone: "teal", group: "pipeline" },
+  { key: "contracts_out", label: "Contracts Out", tone: "violet", group: "pipeline" },
+  { key: "in_final", label: "In Final", tone: "purple", group: "pipeline" },
+  { key: "funded", label: "Funded", tone: "emerald", group: "pipeline" },
+  { key: "credit_partner", label: "Credit Partner", tone: "orange", group: "rescue" },
+  { key: "cr_pitched", label: "Pitched", tone: "fuchsia", group: "credit_repair" },
+  { key: "cr_scheduled", label: "Scheduled", tone: "pink", group: "credit_repair" },
+  { key: "cr_purchased", label: "Purchased", tone: "emerald", group: "credit_repair" },
+  { key: "dnq", label: "DNQ", tone: "rose", group: "dead" },
+  { key: "declined", label: "Declined", tone: "rose", group: "dead" },
+  { key: "merchant_decline", label: "Merchant Decline", tone: "rose", group: "dead" },
+  { key: "killed_final", label: "Killed in Final", tone: "rose", group: "dead" },
+  { key: "pitched_no_sale", label: "Pitched No Sale", tone: "rose", group: "dead" },
+];
+const ORIG_GROUPS = [
+  ["pipeline", "Origination"],
+  ["rescue", "Credit Partner"],
+  ["credit_repair", "Credit Repair"],
+  ["dead", "Dead"],
+];
+const MIN_FICO = 640;
+const REPORT_DAYS = 7;
+// Default origination stage from the contact-pipeline status, until the user moves it in the tracker.
+const origDefaultFromStatus = (s) => ({
+  funded: "funded", commission_paid: "funded",
+  submitted: "underwriting", pre_approved: "approved", contracts_out: "contracts_out",
+  agreement_signed: "in_final", getting_approvals: "approved",
+  denied: "declined", declined: "declined",
+  report_pulled: "docs_in", app_sent: "docs_incomplete",
+  referred_cr: "cr_pitched", offer_cr: "cr_pitched", credit_repair: "cr_pitched",
+}[s] || "new");
+const origStageOf = (lead) => {
+  const t = (lead.touches || []).filter((x) => x.kind === "orig_stage").sort((a, b) => b.at - a.at)[0];
+  return (t && t.note) || origDefaultFromStatus(lead.status);
+};
+const origStageSince = (lead) => {
+  const t = (lead.touches || []).filter((x) => x.kind === "orig_stage").sort((a, b) => b.at - a.at)[0];
+  return t ? t.at : (lead.createdAt || null);
+};
+// Latest pulled report (real score + pull date), if one was logged in the tracker.
+const origReport = (lead) => {
+  const t = (lead.touches || []).filter((x) => x.kind === "orig_report").sort((a, b) => b.at - a.at)[0];
+  if (!t || !t.note) return null;
+  try { return JSON.parse(t.note); } catch { return null; }
+};
+const origReportDaysLeft = (rep) => {
+  if (!rep || !rep.rd) return null;
+  const pulled = new Date(rep.rd + "T12:00:00").getTime();
+  return Math.ceil((pulled + REPORT_DAYS * 86400000 - Date.now()) / 86400000);
+};
 const leadSubName = (l) => ((l.businessName && l.businessName.trim()) ? l.name : "");
 
 // Stable pseudo-random pick so a given lead+step always shows the same variant
@@ -1731,8 +1791,8 @@ function Dashboard({ userEmail }) {
 
   if (!loaded) return <div className="flex min-h-96 items-center justify-center font-sans text-slate-400">Loading your pipeline...</div>;
 
-  const NAV = [["pipeline", "Pipeline", LayoutGrid], ["inbox", "Inbox", MessageSquare], ["applications", "Applications", FileText], ["activities", "Activities", CalendarClock], ["followups", "Follow-ups", Clock], ["commissions", "Commissions", DollarSign], ["team", "Team", User], ["messaging", "Templates", FileText], ["scripts", "Scripts", ListChecks], ["settings", "Settings", SettingsIcon]];
-  const tabTitle = { pipeline: "Pipeline", inbox: "Inbox", activities: "Activities", followups: "Follow-ups", commissions: "Commissions", team: "Team activity", messaging: "Message templates", scripts: "Call scripts", settings: "Settings" }[tab];
+  const NAV = [["pipeline", "Pipeline", LayoutGrid], ["tracker", "Tracker", TrendingUp], ["inbox", "Inbox", MessageSquare], ["applications", "Applications", FileText], ["activities", "Activities", CalendarClock], ["followups", "Follow-ups", Clock], ["commissions", "Commissions", DollarSign], ["team", "Team", User], ["messaging", "Templates", FileText], ["scripts", "Scripts", ListChecks], ["settings", "Settings", SettingsIcon]];
+  const tabTitle = { pipeline: "Pipeline", tracker: "Origination tracker", inbox: "Inbox", activities: "Activities", followups: "Follow-ups", commissions: "Commissions", team: "Team activity", messaging: "Message templates", scripts: "Call scripts", settings: "Settings" }[tab];
 
   return (
     <div className="flex min-h-screen bg-slate-50 font-sans text-slate-800">
@@ -1814,6 +1874,7 @@ function Dashboard({ userEmail }) {
           )}
           {tab === "followups" && <Followups dueList={dueList} config={config} onOpen={setProfileId} openCompose={setCompose} updateLead={updateLead} />}
           {tab === "inbox" && <Conversations leads={leads} comms={comms} unreadLeadIds={unreadLeadIds} onSend={sendReply} onAddNote={addNote} onOpen={setProfileId} markRead={markRead} markAllRead={markAllRead} templates={templates} config={config} openCompose={setCompose} />}
+          {tab === "tracker" && <Tracker leads={leads} config={config} onOpen={setProfileId} logTouch={logTouch} userEmail={userEmail} />}
           {tab === "activities" && <Activities activities={activities} leads={leads} onOpen={setProfileId} completeActivity={completeActivity} deleteActivity={deleteActivity} />}
           {tab === "messaging" && <Messaging templates={templates} persistTemplates={persistTemplates} cadences={cadences} persistCadences={persistCadences} />}
           {tab === "commissions" && <Commissions leads={leads} onOpen={setProfileId} />}
@@ -1873,6 +1934,144 @@ function QuickStart() {
           </li>
         ))}
       </ol>
+    </div>
+  );
+}
+
+function TrackerCard({ lead, onOpen, onMove, config }) {
+  const stage = ORIG_STAGES.find((s) => s.key === origStageOf(lead));
+  const rep = origReport(lead);
+  const daysLeft = origReportDaysLeft(rep);
+  const stale = daysLeft !== null && daysLeft < 0;
+  const lowFico = rep && rep.fico && Number(rep.fico) < MIN_FICO;
+  const since = origStageSince(lead);
+  const daysInStage = since ? Math.floor((Date.now() - since) / 86400000) : null;
+  const repName = (email) => { const m = (config.team || []).find((x) => (x.email || "").toLowerCase() === String(email || "").toLowerCase()); return m ? m.first : (email || "").split("@")[0]; };
+  const amount = lead.desiredAmount || lead.fundedAmount;
+  return (
+    <div className="rounded-lg bg-white p-2.5 shadow-sm ring-1 ring-slate-200 hover:ring-blue-300">
+      <button onClick={() => onOpen(lead.id)} className="block w-full truncate text-left text-sm font-bold text-slate-800 hover:text-blue-700">{leadTitle(lead)}</button>
+      {lead.name && lead.businessName && <div className="truncate text-xs text-slate-400">{lead.name}</div>}
+      <div className="mt-1.5 flex flex-wrap items-center gap-1">
+        {lead.product && <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${lead.product === "SLOC" ? "bg-indigo-100 text-indigo-700" : "bg-orange-100 text-orange-700"}`}>{lead.product}</span>}
+        {amount ? <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">{money(amount)}</span> : null}
+        {rep && rep.fico ? (
+          <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${lowFico ? "bg-rose-100 text-rose-700" : "bg-emerald-100 text-emerald-700"}`}>FICO {rep.fico}{lowFico ? " ⛔" : ""}</span>
+        ) : lead.creditScore ? (
+          <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500" title="Stated score from intake, not a pulled report">~{lead.creditScore} stated</span>
+        ) : null}
+      </div>
+      {rep && rep.rd && (
+        <div className={`mt-1 text-[10px] font-semibold ${stale ? "text-rose-600" : daysLeft <= 2 ? "text-amber-600" : "text-slate-400"}`}>
+          {stale ? `Report expired ${-daysLeft}d ago — re-pull` : `Report valid ${daysLeft}d more`}
+        </div>
+      )}
+      {lowFico && <div className="mt-1 rounded bg-rose-50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700">Under {MIN_FICO} — pitch credit repair, don't submit</div>}
+      <div className="mt-2 flex items-center justify-between gap-1">
+        <span className="text-[10px] text-slate-400">{repName(lead.ownerEmail)}{daysInStage !== null ? ` · ${daysInStage}d here` : ""}</span>
+        <select value={stage.key} onChange={(e) => onMove(lead, e.target.value)} onClick={(e) => e.stopPropagation()} className="max-w-[130px] rounded border border-slate-200 bg-slate-50 px-1 py-0.5 text-[11px] text-slate-600">
+          {ORIG_GROUPS.map(([g, label]) => (
+            <optgroup key={g} label={label}>
+              {ORIG_STAGES.filter((s) => s.group === g).map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+            </optgroup>
+          ))}
+        </select>
+      </div>
+    </div>
+  );
+}
+
+function Tracker({ leads, config, onOpen, logTouch, userEmail }) {
+  const [productFilter, setProductFilter] = useState("all");
+  const [ownerFilter, setOwnerFilter] = useState("all");
+  const move = (lead, stageKey) => logTouch(lead.id, "orig_stage", "orig_stage", { note: stageKey, by: userEmail });
+  const owners = (() => { const set = new Map(); leads.forEach((l) => { if (l.ownerEmail) set.set(l.ownerEmail, true); }); return Array.from(set.keys()); })();
+  const repName = (email) => { const m = (config.team || []).find((x) => (x.email || "").toLowerCase() === String(email || "").toLowerCase()); return m ? m.first : (email || "").split("@")[0]; };
+
+  const shown = leads.filter((l) => {
+    if (productFilter !== "all" && (l.product || "") !== productFilter) return false;
+    if (ownerFilter !== "all" && (l.ownerEmail || "") !== ownerFilter) return false;
+    return true;
+  });
+  const byStage = {};
+  ORIG_STAGES.forEach((s) => { byStage[s.key] = []; });
+  shown.forEach((l) => { const k = origStageOf(l); (byStage[k] || byStage.new).push(l); });
+
+  // leaderboard: funded + credit-repair wins this calendar month, by owner
+  const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
+  const wins = {};
+  shown.forEach((l) => {
+    const k = origStageOf(l);
+    const since = origStageSince(l);
+    if (!since || since < monthStart.getTime()) return;
+    const owner = l.ownerEmail || "(unassigned)";
+    wins[owner] = wins[owner] || { funded: 0, scheduled: 0, purchased: 0, docs_in: 0 };
+    if (k === "funded") wins[owner].funded++;
+    if (k === "cr_scheduled") wins[owner].scheduled++;
+    if (k === "cr_purchased") wins[owner].purchased++;
+    if (k === "docs_in") wins[owner].docs_in++;
+  });
+
+  return (
+    <div className="mt-4">
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <div className="text-lg font-bold text-slate-800">Origination tracker</div>
+        <div className="ml-auto flex items-center gap-2">
+          <select value={productFilter} onChange={(e) => setProductFilter(e.target.value)} className="rounded-lg border border-slate-200 px-2 py-1.5 text-sm">
+            <option value="all">All products</option>
+            <option value="SLOC">SLOC</option>
+            <option value="MCA">MCA</option>
+          </select>
+          <select value={ownerFilter} onChange={(e) => setOwnerFilter(e.target.value)} className="rounded-lg border border-slate-200 px-2 py-1.5 text-sm">
+            <option value="all">All reps</option>
+            {owners.map((o) => <option key={o} value={o}>{repName(o)}</option>)}
+          </select>
+        </div>
+      </div>
+
+      {/* this-month progress */}
+      {Object.keys(wins).length > 0 && (
+        <div className="mb-4 rounded-xl border border-slate-200 bg-white p-3">
+          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">This month's progress (moved into stage this month)</div>
+          <div className="flex flex-wrap gap-3">
+            {Object.entries(wins).map(([owner, w]) => (
+              <div key={owner} className="rounded-lg bg-slate-50 px-3 py-2 ring-1 ring-slate-100">
+                <div className="text-sm font-bold text-slate-700">{repName(owner)}</div>
+                <div className="mt-0.5 flex gap-3 text-xs text-slate-500">
+                  <span><b className="text-emerald-600">{w.funded}</b> funded</span>
+                  <span><b className="text-blue-600">{w.docs_in}</b> docs in</span>
+                  <span><b className="text-fuchsia-600">{w.scheduled}</b> CR sched</span>
+                  <span><b className="text-emerald-600">{w.purchased}</b> CR bought</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {ORIG_GROUPS.map(([g, label]) => {
+        const stages = ORIG_STAGES.filter((s) => s.group === g);
+        const total = stages.reduce((n, s) => n + byStage[s.key].length, 0);
+        return (
+          <div key={g} className="mb-5">
+            <div className="mb-2 text-sm font-bold text-slate-500">{label} <span className="text-slate-300">· {total}</span></div>
+            <div className="flex gap-3 overflow-x-auto pb-2">
+              {stages.map((s) => (
+                <div key={s.key} className="flex w-64 shrink-0 flex-col rounded-xl bg-slate-100/70 p-2">
+                  <div className="mb-2 flex items-center justify-between px-1 pt-0.5">
+                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ring-inset ${TONE[s.tone]}`}>{s.label}</span>
+                    <span className="text-xs font-bold text-slate-400">{byStage[s.key].length}</span>
+                  </div>
+                  <div className="flex min-h-8 flex-col gap-2">
+                    {byStage[s.key].map((l) => <TrackerCard key={l.id} lead={l} onOpen={onOpen} onMove={move} config={config} />)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+      <p className="px-1 text-xs text-slate-400">Use the dropdown on any card to move it through the origination stages. Moves are tracked with dates, so this month's progress above counts what actually happened this month.</p>
     </div>
   );
 }

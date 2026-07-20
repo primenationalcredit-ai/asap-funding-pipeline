@@ -759,14 +759,14 @@ function normalizeSource(s) {
   const v = String(s || "").toLowerCase().trim();
   if (!v) return "Unknown";
   if (v.includes("google") || v.includes("gclid") || v.includes("adwords")) return "Google";
-  if (v.includes("facebook") || v.includes("fb") || v.includes("meta") || v.includes("instagram")) return "Facebook";
-  if (v.includes("direct")) return "Direct";
+  if (v.includes("facebook") || v.includes("fb ") || v === "fb" || v.includes("fbclid") || v.includes("meta") || v.includes("instagram")) return "Facebook";
+  if (v === "direct" || v.includes("direct traffic")) return "Direct";
   if (v.includes("referr")) return "Referral";
-  if (v.includes("organic") || v.includes("website")) return "Website";
-  return String(s).replace(/\b\w/g, (c) => c.toUpperCase());
+  // Anything else (form names like "...Qualification Form", website URLs, etc.) is not an ad source.
+  return "Unknown";
 }
-const SOURCE_TONE = { Google: "bg-blue-100 text-blue-700", Facebook: "bg-indigo-100 text-indigo-700", Direct: "bg-slate-100 text-slate-600", Referral: "bg-emerald-100 text-emerald-700", Website: "bg-teal-100 text-teal-700", Unknown: "bg-slate-100 text-slate-400" };
-const SOURCE_CHOICES = ["Google", "Facebook", "Direct", "Referral", "Website", "Other"];
+const SOURCE_TONE = { Google: "bg-blue-100 text-blue-700", Facebook: "bg-indigo-100 text-indigo-700", Direct: "bg-slate-100 text-slate-600", Referral: "bg-emerald-100 text-emerald-700", Unknown: "bg-amber-100 text-amber-700" };
+const SOURCE_CHOICES = ["Google", "Facebook", "Direct", "Referral", "Unknown"];
 
 // ---- Origination tracker (folded in from the standalone ASAP tracker) ----
 // Stored with NO database change: the current origination stage is the latest
@@ -1894,7 +1894,7 @@ function Dashboard({ userEmail }) {
           {tab === "applications" && <Applications leads={leads} lenders={lenders} onOpen={setProfileId} onDelete={removeLead} />}
           {tab === "team" && <Team leads={leads} onOpen={setProfileId} config={config} />}
           {tab === "scripts" && <Scripts />}
-          {tab === "settings" && <Settings config={config} persistConfig={persistConfig} lenders={lenders} persistLenders={persistLenders} />}
+          {tab === "settings" && <Settings config={config} persistConfig={persistConfig} lenders={lenders} persistLenders={persistLenders} leads={leads} updateLead={updateLead} />}
         </div>
       </main>
 
@@ -3927,11 +3927,64 @@ function Scripts() {
 /* ================================================================== */
 /*  Settings                                                          */
 /* ================================================================== */
-function Settings({ config, persistConfig, lenders = [], persistLenders }) {
+function Settings({ config, persistConfig, lenders = [], persistLenders, leads = [], updateLead }) {
   const [draft, setDraft] = useState(config);
   const [saved, setSaved] = useState(false);
   const set = (k) => (e) => setDraft({ ...draft, [k]: e.target.value });
   const save = async () => { await persistConfig(draft); setSaved(true); setTimeout(() => setSaved(false), 1600); };
+
+  // --- Import lead sources from a GHL opportunities CSV ---
+  const [srcPreview, setSrcPreview] = useState(null); // { matches:[{lead,source}], counts:{}, unmatched:n }
+  const [srcBusy, setSrcBusy] = useState(false);
+  const [srcDone, setSrcDone] = useState("");
+  const last10 = (p) => String(p || "").replace(/\D/g, "").slice(-10);
+  const parseCsv = (text) => {
+    const rows = []; let row = [], cur = "", q = false;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (q) { if (c === '"') { if (text[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += c; }
+      else if (c === '"') q = true;
+      else if (c === ",") { row.push(cur); cur = ""; }
+      else if (c === "\n" || c === "\r") { if (c === "\r" && text[i + 1] === "\n") i++; row.push(cur); rows.push(row); row = []; cur = ""; }
+      else cur += c;
+    }
+    if (cur !== "" || row.length) { row.push(cur); rows.push(row); }
+    return rows.filter((r) => r.length > 1);
+  };
+  const onCsv = async (file) => {
+    if (!file) return;
+    setSrcDone(""); setSrcPreview(null);
+    const text = await file.text();
+    const rows = parseCsv(text);
+    if (rows.length < 2) { setSrcDone("Could not read that file."); return; }
+    const head = rows[0].map((h) => h.trim().toLowerCase());
+    const iPhone = head.indexOf("phone"), iEmail = head.indexOf("email"), iSrc = head.indexOf("source");
+    if (iSrc < 0 || (iPhone < 0 && iEmail < 0)) { setSrcDone("That CSV needs a 'source' column and a phone or email column."); return; }
+    // index leads by phone/email
+    const byPhone = new Map(), byEmail = new Map();
+    leads.forEach((l) => { const p = last10(l.phone); if (p.length === 10) byPhone.set(p, l); if (l.email) byEmail.set(l.email.trim().toLowerCase(), l); });
+    const matches = new Map(); let unmatched = 0;
+    for (let r = 1; r < rows.length; r++) {
+      const row = rows[r];
+      const src = normalizeSource(iSrc >= 0 ? row[iSrc] : "");
+      if (src === "Unknown") continue;
+      let lead = null;
+      if (iPhone >= 0) lead = byPhone.get(last10(row[iPhone]));
+      if (!lead && iEmail >= 0) lead = byEmail.get(String(row[iEmail] || "").trim().toLowerCase());
+      if (!lead) { unmatched++; continue; }
+      if (normalizeSource(lead.source) !== src) matches.set(lead.id, { lead, source: src });
+    }
+    const counts = {};
+    matches.forEach(({ source }) => { counts[source] = (counts[source] || 0) + 1; });
+    setSrcPreview({ matches: Array.from(matches.values()), counts, unmatched });
+  };
+  const applySources = async () => {
+    if (!srcPreview) return;
+    setSrcBusy(true);
+    let done = 0;
+    for (const m of srcPreview.matches) { try { await updateLead(m.lead.id, { source: m.source }); done++; } catch {} }
+    setSrcBusy(false); setSrcDone(`Updated ${done} lead${done === 1 ? "" : "s"}.`); setSrcPreview(null);
+  };
 
   const [newLender, setNewLender] = useState({ name: "", email: "", cc: "" });
   const team = draft.team || [];
@@ -3970,6 +4023,32 @@ function Settings({ config, persistConfig, lenders = [], persistLenders }) {
           <button onClick={save} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"><Send size={15} /> Save</button>
           {saved && <span className="inline-flex items-center gap-1 text-sm font-medium text-blue-600"><Check size={15} /> Saved</span>}
         </div>
+      </div>
+
+      {/* Import lead sources from a GHL opportunities CSV */}
+      <div className="rounded-xl border border-slate-200 bg-white p-4">
+        <h3 className="mb-1 flex items-center gap-1.5 text-sm font-bold text-slate-800"><TrendingUp size={15} className="text-blue-600" /> Import lead sources</h3>
+        <p className="mb-3 text-xs text-slate-500">Upload your GoHighLevel opportunities export (CSV). It matches each row to a lead by phone or email and sets the real source (Facebook, Google, Direct). Only leads whose source would change are touched.</p>
+        <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-900">
+          <input type="file" accept=".csv,text/csv" className="hidden" onChange={(e) => onCsv(e.target.files?.[0])} />
+          Choose CSV file
+        </label>
+        {srcDone && <span className="ml-3 text-sm font-medium text-emerald-600">{srcDone}</span>}
+        {srcPreview && (
+          <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <div className="text-sm font-semibold text-slate-700">Ready to update {srcPreview.matches.length} lead{srcPreview.matches.length === 1 ? "" : "s"}:</div>
+            <div className="mt-1 flex flex-wrap gap-2 text-xs">
+              {Object.entries(srcPreview.counts).map(([s, n]) => <span key={s} className={`rounded-full px-2 py-0.5 font-semibold ${SOURCE_TONE[s] || SOURCE_TONE.Unknown}`}>{n} → {s}</span>)}
+              {srcPreview.matches.length === 0 && <span className="text-slate-400">Nothing to change (sources already set or no matches found).</span>}
+            </div>
+            {srcPreview.unmatched > 0 && <div className="mt-1 text-xs text-slate-400">{srcPreview.unmatched} CSV row(s) had no matching lead in the app.</div>}
+            {srcPreview.matches.length > 0 && (
+              <button disabled={srcBusy} onClick={applySources} className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
+                {srcBusy ? "Updating..." : "Apply sources"}
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Team: who works leads, and the name their messages send under */}

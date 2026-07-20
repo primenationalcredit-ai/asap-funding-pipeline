@@ -95,6 +95,17 @@ async function sendInstantWelcome(supabase, leadRow, leadId) {
 }
 
 // First non-empty value across a list of objects, trying each key in order
+function normalizeSource(s) {
+  const v = String(s || "").toLowerCase().trim();
+  if (!v) return "Unknown";
+  if (v.includes("google") || v.includes("gclid") || v.includes("adwords")) return "Google";
+  if (v.includes("facebook") || v.includes("fb") || v.includes("meta") || v.includes("instagram")) return "Facebook";
+  if (v.includes("direct")) return "Direct";
+  if (v.includes("referr")) return "Referral";
+  if (v.includes("organic") || v.includes("website")) return "Website";
+  return String(s).replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 function pickFrom(objs, keys) {
   for (const o of objs) {
     if (!o) continue;
@@ -140,7 +151,7 @@ function normalize(payload) {
     // top level phone is E.164 (+1...), prefer it over the formatted customData copy
     phone: fmtPhone(pickFrom([top, cd, con], ["phone", "phone_number", "phoneNumber"])),
     email: pickFrom([top, cd, con], ["email", "email_address", "emailAddress"]),
-    source: pickFrom([top, cd], ["contact_source", "source", "lead_source", "leadSource", "utm_source"]),
+    source: normalizeSource(pickFrom([top, cd], ["contact_source", "source", "lead_source", "leadSource", "opportunity_source", "opportunitySource", "utm_source", "attributionSource"])),
     tags: pickFrom([top, cd], ["tags"]),
     // opportunity / qualification fields (from customData mapping)
     opportunity_name: pickFrom([cd, top], ["opportunity_name", "opportunityName"]),
@@ -237,4 +248,5 @@ export const handler = async (event) => {
     return json(500, { error: "Database write failed", detail: String(err.message || err) });
   }
 };
+
 

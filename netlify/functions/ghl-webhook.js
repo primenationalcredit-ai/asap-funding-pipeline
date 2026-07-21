@@ -251,6 +251,7 @@ export const handler = async (event) => {
 
   const ev = String(lead.event || "").toLowerCase();
   const tags = String(lead.tags || "").toLowerCase();
+  console.log("[ghl-in]", JSON.stringify({ event: lead.event || "", tags: lead.tags || "", contact: lead.ghl_contact_id || "", name: lead.name || "", topKeys: Object.keys(payload || {}), cdKeys: Object.keys((payload && payload.customData) || {}) }));
   const isComplete = tags.includes("funding-complete");
   const isIncomplete = tags.includes("funding-incomplete");
 

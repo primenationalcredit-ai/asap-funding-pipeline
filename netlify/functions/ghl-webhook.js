@@ -319,12 +319,15 @@ export const handler = async (event) => {
     if (error) throw error;
     // funding-incomplete (Step 1 only): save the lead and send NOTHING here.
     // The booking sequence (on complete) and abandon nudge (on partial_abandoned) handle messaging.
+    // funding-incomplete = save only (send nothing). funding-complete = booking sequence handles it.
+    // Only a plain new lead (no funnel tags) gets the instant welcome.
     const sendWelcome = !isIncomplete && !isComplete;
     if (sendWelcome) {
       try { await sendInstantWelcome(supabase, row, data.id); } catch (e) { console.log("[welcome] error", e.message); }
     }
-    // Instant welcome: text + email with the pre-approval hook (weekend-aware). Never blocks the response.
-    try { await sendInstantWelcome(supabase, row, data.id); } catch (e) { console.log("[welcome] error", e.message); }
+    if (isComplete) {
+      try { await newLeadAlarm(supabase, { ...row, name: `APP COMPLETE: ${row.name || ""}` }, data.id); } catch (e) {}
+    }
     try { await newLeadAlarm(supabase, row, data.id); } catch (e) { console.log("[new-lead-alarm] error", e.message); }
     try {
       const rc = await rcToken();

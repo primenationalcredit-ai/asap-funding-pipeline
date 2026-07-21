@@ -85,6 +85,28 @@ async function sendEmail(to, subject, text) {
   if (r.status !== 202) { const t = await r.text(); throw new Error(`Email failed ${r.status}: ${t}`); }
 }
 
+// Come-back-and-finish nudge when a lead abandons after Step 1.
+async function sendAbandonNudge(supabase, lead) {
+  const first = (lead.name || "").trim().split(/\s+/)[0] || "there";
+  const link = "https://asapfundingusa.com/";
+  const comms = [];
+  const { hr } = centralParts();
+  const createdMs = lead.created_at ? Date.parse(lead.created_at) : Date.now();
+  const mayText = createdMs >= Date.parse("2026-07-21T00:00:00-05:00");
+  if (mayText && lead.phone && hr >= 8 && hr < 21) {
+    const smsText = `${first}, it is Joe with ASAP. You started your application but did not finish. Pick up right where you left off here: ${link}`;
+    try { const rc = await rcToken(); await sendSms(rc, lead.phone, smsText); comms.push({ lead_id: lead.id, direction: "out", channel: "sms", body: smsText, to_addr: lead.phone, by_user: "automation" }); }
+    catch (e) { console.log("[abandon] sms", e.message); }
+  }
+  if (lead.email) {
+    const subject = `${first}, finish your application`;
+    const emailText = `Hi ${first},\n\nYou started your application with us but did not finish. It only takes a minute to complete, and you can pick up right where you left off:\n\n${link}\n\nTalk soon,\nJoe\nASAP Funding USA`;
+    try { await sendEmail(lead.email, subject, emailText); comms.push({ lead_id: lead.id, direction: "out", channel: "email", subject, body: emailText, to_addr: lead.email, by_user: "automation" }); }
+    catch (e) { console.log("[abandon] email", e.message); }
+  }
+  if (comms.length) { try { await supabase.from("communications").insert(comms); await supabase.from("leads").update({ last_touch_at: new Date().toISOString() }).eq("id", lead.id); } catch (e) {} }
+}
+
 // Fire an instant welcome text + email the moment a new lead lands.
 async function sendInstantWelcome(supabase, leadRow, leadId) {
   const first = (leadRow.name || "").trim().split(/\s+/)[0] || "there";
@@ -174,6 +196,9 @@ function normalize(payload) {
 
   return {
     ghl_contact_id: pickFrom([top, cd, con], ["contact_id", "contactId", "id"]),
+    event: pickFrom([cd, top], ["event", "event_type", "eventType"]),
+    opportunity_id: pickFrom([cd, top], ["opportunity_id", "opportunityId"]),
+    start_time: pickFrom([cd, top], ["start_time", "startTime", "appointment_time", "appointmentTime"]),
     name,
     // top level phone is E.164 (+1...), prefer it over the formatted customData copy
     phone: fmtPhone(pickFrom([top, cd, con], ["phone", "phone_number", "phoneNumber"])),
@@ -224,32 +249,79 @@ export const handler = async (event) => {
 
   const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
-  try {
-    if (lead.ghl_contact_id) {
-      const { data: existing } = await supabase
-        .from("leads").select("id").eq("ghl_contact_id", lead.ghl_contact_id).maybeSingle();
+  const ev = String(lead.event || "").toLowerCase();
+  const tags = String(lead.tags || "").toLowerCase();
+  const isComplete = tags.includes("funding-complete");
+  const isIncomplete = tags.includes("funding-incomplete");
 
-      if (existing) {
-        // Re-send: enrich only. Only write fields that arrived non-empty, so a
-        // later "completed" submission fills in blanks without wiping anything,
-        // and an incomplete re-send never erases existing data. Never touches
-        // status, touches, or link_sent_at, so the lead stays where you moved it.
-        const enrich = { raw: payload };
-        for (const f of DATA_FIELDS) if (lead[f]) enrich[f] = lead[f];
-        const { error } = await supabase.from("leads").update(enrich).eq("id", existing.id);
-        if (error) throw error;
-        return json(200, { ok: true, action: "updated", id: existing.id });
-      }
+  try {
+    // Look up any existing lead by contact id (used by every branch)
+    let existing = null;
+    if (lead.ghl_contact_id) {
+      const r = await supabase.from("leads").select("*").eq("ghl_contact_id", lead.ghl_contact_id).maybeSingle();
+      existing = r.data || null;
     }
 
+    // ---- EVENT: call booked -> stop nudges, record the appointment ----
+    if (ev === "call_booked") {
+      if (existing) {
+        await supabase.from("leads").update({
+          booking_state: "booked",
+          appointment_at: lead.start_time || null,
+          automationPaused: true,
+          last_touch_at: new Date().toISOString(),
+          touches: [...(existing.touches || []), { at: Date.now(), kind: "call_booked", at_time: lead.start_time || "", auto: true }],
+          raw: payload,
+        }).eq("id", existing.id);
+        try { await newLeadAlarm(supabase, { ...existing, name: `CALL BOOKED: ${existing.name || ""}` }, existing.id); } catch (e) { console.log("[booked-alarm]", e.message); }
+        return json(200, { ok: true, action: "call_booked", id: existing.id });
+      }
+      return json(200, { ok: true, action: "call_booked_no_lead" });
+    }
+
+    // ---- EVENT: partial abandoned -> come-back nudge ----
+    if (ev === "partial_abandoned") {
+      if (existing && !existing.optedOut && existing.booking_state !== "booked") {
+        try { await sendAbandonNudge(supabase, existing); } catch (e) { console.log("[abandon]", e.message); }
+      }
+      return json(200, { ok: true, action: "partial_abandoned", id: existing ? existing.id : null });
+    }
+
+    // ---- Existing lead re-send (enrich), plus complete -> start booking sequence ----
+    if (existing) {
+      const enrich = { raw: payload };
+      for (const f of DATA_FIELDS) if (lead[f]) enrich[f] = lead[f];
+      // On completion: start the booking-nudge sequence ONCE (idempotent).
+      if (isComplete && existing.booking_state !== "booked" && existing.booking_state !== "pending") {
+        enrich.booking_state = "pending";
+        enrich.booking_started_at = new Date().toISOString();
+        enrich.booking_nudge_stage = 0;
+        enrich.status = existing.status === "new" ? "app_sent" : existing.status;
+      }
+      const { error } = await supabase.from("leads").update(enrich).eq("id", existing.id);
+      if (error) throw error;
+      if (isComplete && enrich.booking_state === "pending") {
+        try { await newLeadAlarm(supabase, { ...existing, name: `APP COMPLETE: ${existing.name || ""}` }, existing.id); } catch (e) {}
+      }
+      return json(200, { ok: true, action: isComplete ? "completed" : "updated", id: existing.id });
+    }
+
+    // ---- New lead (first time we have seen this contact) ----
     const row = { ...Object.fromEntries(DATA_FIELDS.map((f) => [f, lead[f]])) };
     row.ghl_contact_id = lead.ghl_contact_id || null;
-    row.status = "new";
+    row.status = isComplete ? "app_sent" : "new";
     row.touches = [];
     row.raw = payload;
+    if (isComplete) { row.booking_state = "pending"; row.booking_started_at = new Date().toISOString(); row.booking_nudge_stage = 0; }
 
     const { data, error } = await supabase.from("leads").insert(row).select().single();
     if (error) throw error;
+    // funding-incomplete (Step 1 only): save the lead and send NOTHING here.
+    // The booking sequence (on complete) and abandon nudge (on partial_abandoned) handle messaging.
+    const sendWelcome = !isIncomplete && !isComplete;
+    if (sendWelcome) {
+      try { await sendInstantWelcome(supabase, row, data.id); } catch (e) { console.log("[welcome] error", e.message); }
+    }
     // Instant welcome: text + email with the pre-approval hook (weekend-aware). Never blocks the response.
     try { await sendInstantWelcome(supabase, row, data.id); } catch (e) { console.log("[welcome] error", e.message); }
     try { await newLeadAlarm(supabase, row, data.id); } catch (e) { console.log("[new-lead-alarm] error", e.message); }

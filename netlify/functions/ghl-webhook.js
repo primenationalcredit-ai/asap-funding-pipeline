@@ -300,7 +300,8 @@ export const handler = async (event) => {
         enrich.status = existing.status === "new" ? "app_sent" : existing.status;
       }
       const { error } = await supabase.from("leads").update(enrich).eq("id", existing.id);
-      if (error) throw error;
+      if (error) { console.log("[update-fail]", JSON.stringify({ msg: error.message, details: error.details, code: error.code })); throw error; }
+      console.log("[update-ok]", JSON.stringify({ id: existing.id, isComplete, booking_state: enrich.booking_state || existing.booking_state || null }));
       if (isComplete && enrich.booking_state === "pending") {
         try { await newLeadAlarm(supabase, { ...existing, name: `APP COMPLETE: ${existing.name || ""}` }, existing.id); } catch (e) {}
       }
@@ -316,7 +317,8 @@ export const handler = async (event) => {
     if (isComplete) { row.booking_state = "pending"; row.booking_started_at = new Date().toISOString(); row.booking_nudge_stage = 0; }
 
     const { data, error } = await supabase.from("leads").insert(row).select().single();
-    if (error) throw error;
+    if (error) { console.log("[insert-fail]", JSON.stringify({ msg: error.message, details: error.details, hint: error.hint, code: error.code, row: Object.keys(row) })); throw error; }
+    console.log("[insert-ok]", JSON.stringify({ id: data.id, isComplete, booking_state: row.booking_state || null }));
     // funding-incomplete (Step 1 only): save the lead and send NOTHING here.
     // The booking sequence (on complete) and abandon nudge (on partial_abandoned) handle messaging.
     // funding-incomplete = save only (send nothing). funding-complete = booking sequence handles it.

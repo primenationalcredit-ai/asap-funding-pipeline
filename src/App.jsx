@@ -1644,9 +1644,23 @@ function Dashboard({ userEmail }) {
   }, []);
 
   const removeLead = useCallback(async (id) => {
-    setLeads((prev) => prev.filter((l) => l.id !== id));
+    let removed = null;
+    setLeads((prev) => {
+      removed = prev.find((l) => l.id === id) || removed;
+      return prev.filter((l) => l.id !== id);
+    });
     setProfileId((p) => (p === id ? null : p));
-    await supabase.from("leads").delete().eq("id", id);
+
+    // Activities and messages point back at the lead, so they have to go first
+    // or Postgres refuses the delete and the card reappears on the next poll.
+    try { await supabase.from("activities").delete().eq("lead_id", id); } catch { /* best effort */ }
+    try { await supabase.from("communications").delete().eq("lead_id", id); } catch { /* best effort */ }
+
+    const { error } = await supabase.from("leads").delete().eq("id", id);
+    if (error) {
+      setErr(`Could not delete that client: ${error.message}`);
+      if (removed) setLeads((prev) => (prev.some((l) => l.id === id) ? prev : [removed, ...prev]));
+    }
   }, []);
 
   const handleSent = useCallback((sent) => {

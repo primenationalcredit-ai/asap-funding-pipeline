@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from "react"
 import {
   Phone, MessageSquare, Mail, Copy, Check, Plus, Search, Settings as SettingsIcon,
   Clock, Trash2, User, FileText, Send, AlertCircle, ChevronDown, Zap, Wifi,
-  X, Eye, EyeOff, KeyRound, Upload, ExternalLink, Building2, CalendarClock,
+  X, Eye, EyeOff, KeyRound, Upload, ExternalLink, Building2, CalendarClock, CalendarDays,
   ListChecks, Pencil, Save, LogOut, Lock, LayoutGrid, DollarSign, Menu,
   RefreshCw,
   Bell, BellOff,
@@ -1686,6 +1686,11 @@ function Dashboard({ userEmail }) {
     if (error) setErr(error.message); else refetchActivities();
   }, [userEmail, refetchActivities]);
 
+  const updateActivity = useCallback(async (id, patch) => {
+    const { error } = await supabase.from("activities").update(patch).eq("id", id);
+    if (error) setErr(error.message); else refetchActivities();
+  }, [refetchActivities]);
+
   const snoozeActivity = useCallback(async (id, mins) => {
     const { error } = await supabase.from("activities").update({ due_at: new Date(Date.now() + mins * 60000).toISOString() }).eq("id", id);
     if (error) setErr(error.message); else refetchActivities();
@@ -1806,7 +1811,7 @@ function Dashboard({ userEmail }) {
 
   if (!loaded) return <div className="flex min-h-96 items-center justify-center font-sans text-slate-400">Loading your pipeline...</div>;
 
-  const NAV = [["pipeline", "Pipeline", LayoutGrid], ["tracker", "Tracker", TrendingUp], ["inbox", "Inbox", MessageSquare], ["applications", "Applications", FileText], ["activities", "Activities", CalendarClock], ["followups", "Follow-ups", Clock], ["commissions", "Commissions", DollarSign], ["team", "Team", User], ["messaging", "Templates", FileText], ["scripts", "Scripts", ListChecks], ["settings", "Settings", SettingsIcon]];
+  const NAV = [["pipeline", "Pipeline", LayoutGrid], ["tracker", "Tracker", TrendingUp], ["inbox", "Inbox", MessageSquare], ["applications", "Applications", FileText], ["activities", "Activities", CalendarClock], ["calendar", "Calendar", CalendarDays], ["followups", "Follow-ups", Clock], ["commissions", "Commissions", DollarSign], ["team", "Team", User], ["messaging", "Templates", FileText], ["scripts", "Scripts", ListChecks], ["settings", "Settings", SettingsIcon]];
   const tabTitle = { pipeline: "Pipeline", tracker: "Origination tracker", inbox: "Inbox", activities: "Activities", followups: "Follow-ups", commissions: "Commissions", team: "Team activity", messaging: "Message templates", scripts: "Call scripts", settings: "Settings" }[tab];
 
   return (
@@ -1891,6 +1896,7 @@ function Dashboard({ userEmail }) {
           {tab === "inbox" && <Conversations leads={leads} comms={comms} unreadLeadIds={unreadLeadIds} onSend={sendReply} onAddNote={addNote} onOpen={setProfileId} markRead={markRead} markAllRead={markAllRead} templates={templates} config={config} openCompose={setCompose} />}
           {tab === "tracker" && <Tracker leads={leads} config={config} onOpen={setProfileId} logTouch={logTouch} userEmail={userEmail} />}
           {tab === "activities" && <Activities activities={activities} leads={leads} onOpen={setProfileId} completeActivity={completeActivity} deleteActivity={deleteActivity} />}
+          {tab === "calendar" && <Calendar activities={activities} leads={leads} config={config} userEmail={userEmail} onOpen={setProfileId} addActivity={addActivity} updateActivity={updateActivity} deleteActivity={deleteActivity} />}
           {tab === "messaging" && <Messaging templates={templates} persistTemplates={persistTemplates} cadences={cadences} persistCadences={persistCadences} />}
           {tab === "commissions" && <Commissions leads={leads} onOpen={setProfileId} />}
           {tab === "applications" && <Applications leads={leads} lenders={lenders} onOpen={setProfileId} onDelete={removeLead} />}
@@ -2644,6 +2650,23 @@ function AlarmCenter({ activities = [], userEmail, completeActivity, snoozeActiv
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 5000); return () => clearInterval(t); }, []);
   const due = (activities || []).filter((a) => a.alarm && !a.done && new Date(a.due_at).getTime() <= now && (a.assigned_to === userEmail || a.assigned_to === "all"));
   const hasDue = due.length > 0;
+  // Ask once for desktop-notification permission so reminders pop up even
+  // when the CRM tab is in the background.
+  useEffect(() => {
+    try { if ("Notification" in window && Notification.permission === "default") Notification.requestPermission().catch(() => {}); } catch {}
+  }, []);
+  const notified = useRef(new Set());
+  useEffect(() => {
+    if (!("Notification" in window) || Notification.permission !== "granted") return;
+    for (const a of due) {
+      if (notified.current.has(a.id)) continue;
+      notified.current.add(a.id);
+      try {
+        const n = new Notification(a.title || "ASAP CRM reminder", { body: "Open the CRM to see details.", tag: String(a.id), requireInteraction: true });
+        n.onclick = () => { try { window.focus(); if (a.lead_id) onOpen(a.lead_id); n.close(); } catch {} };
+      } catch {}
+    }
+  }, [due, onOpen]);
   useEffect(() => {
     if (!hasDue) return;
     const beep = () => {
@@ -4205,6 +4228,7 @@ const ACT_TYPES = [
   { key: "call", label: "Call" },
   { key: "followup", label: "Follow-up" },
   { key: "meeting", label: "Meeting" },
+  { key: "appointment", label: "Appointment" },
   { key: "task", label: "Task" },
 ];
 
@@ -4616,6 +4640,225 @@ function Conversations({ leads, comms, unreadLeadIds, onSend, onAddNote, onOpen,
         )}
       </div>
       </div>
+    </div>
+  );
+}
+
+/* ---------------- Calendar ---------------- */
+
+function ApptModal({ onClose, onSave, leads, team, userEmail, editing }) {
+  const pad = (n) => String(n).padStart(2, "0");
+  const start = editing ? new Date(editing.due_at) : new Date(Date.now() + 3600000);
+  const [leadId, setLeadId] = useState(editing?.lead_id || "");
+  const [q, setQ] = useState("");
+  const [date, setDate] = useState(`${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`);
+  const [time, setTime] = useState(`${pad(start.getHours())}:${pad(start.getMinutes())}`);
+  const [owner, setOwner] = useState(editing?.assigned_to || userEmail || "");
+  const [title, setTitle] = useState(editing?.title || "");
+  const [note, setNote] = useState(editing?.notes || "");
+
+  const matches = useMemo(() => {
+    const s = q.trim().toLowerCase();
+    const pool = leads || [];
+    if (!s) return pool.slice(0, 6);
+    return pool.filter((l) => `${l.name || ""} ${l.businessName || ""} ${l.phone || ""} ${l.email || ""}`.toLowerCase().includes(s)).slice(0, 6);
+  }, [q, leads]);
+  const picked = (leads || []).find((l) => l.id === leadId);
+
+  const save = () => {
+    const when = new Date(`${date}T${time}:00`);
+    if (isNaN(when.getTime())) return;
+    onSave({
+      id: editing?.id,
+      lead_id: leadId || null,
+      title: title || (picked ? `Call with ${picked.name || picked.businessName || "client"}` : "Appointment"),
+      notes: note || null,
+      due_at: when.toISOString(),
+      assigned_to: owner || userEmail || "all",
+    });
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-[90] flex items-start justify-center overflow-y-auto bg-slate-900/50 p-4">
+      <div className="mt-10 w-full max-w-lg rounded-xl bg-white p-4 shadow-xl">
+        <div className="flex items-center justify-between">
+          <h3 className="text-base font-bold text-slate-800">{editing ? "Edit appointment" : "New appointment"}</h3>
+          <button onClick={onClose} className="rounded p-1 text-slate-400 hover:bg-slate-100"><X size={18} /></button>
+        </div>
+
+        <div className="mt-3">
+          <Labeled label="Client">
+            {picked ? (
+              <div className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2">
+                <span className="text-sm font-semibold text-slate-700">{picked.name || picked.businessName}</span>
+                <button onClick={() => { setLeadId(""); setQ(""); }} className="ml-auto text-xs font-semibold text-blue-600 hover:underline">change</button>
+              </div>
+            ) : (
+              <>
+                <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, phone, email" className={inputCls} />
+                <div className="mt-1 max-h-40 overflow-y-auto rounded-lg border border-slate-100">
+                  {matches.map((l) => (
+                    <button key={l.id} onClick={() => setLeadId(l.id)} className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-blue-50">
+                      <span className="font-medium text-slate-700">{l.name || l.businessName || "(no name)"}</span>
+                      <span className="ml-auto text-xs text-slate-400">{l.phone || l.email || ""}</span>
+                    </button>
+                  ))}
+                  {!matches.length && <div className="px-3 py-2 text-xs text-slate-400">No matches</div>}
+                </div>
+              </>
+            )}
+          </Labeled>
+        </div>
+
+        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+          <Labeled label="Date"><input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={inputCls} /></Labeled>
+          <Labeled label="Time"><input type="time" value={time} onChange={(e) => setTime(e.target.value)} className={inputCls} /></Labeled>
+        </div>
+
+        <div className="mt-2"><Labeled label="Title"><input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Call with client" className={inputCls} /></Labeled></div>
+        <div className="mt-2"><Labeled label="Notes (optional)"><input value={note} onChange={(e) => setNote(e.target.value)} className={inputCls} /></Labeled></div>
+
+        <div className="mt-2">
+          <Labeled label="Owner">
+            <select value={owner} onChange={(e) => setOwner(e.target.value)} className={inputCls}>
+              <option value={userEmail || ""}>Me</option>
+              {(team || []).map((m) => <option key={m.email} value={m.email}>{m.first}{m.last ? " " + m.last : ""}</option>)}
+              <option value="all">Everyone</option>
+            </select>
+          </Labeled>
+        </div>
+
+        <div className="mt-4 flex justify-end gap-2">
+          <button onClick={onClose} className="rounded-lg px-3 py-2 text-sm font-medium text-slate-500 hover:bg-slate-100">Cancel</button>
+          <button onClick={save} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500">{editing ? "Save changes" : "Add appointment"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Calendar({ activities = [], leads = [], config = {}, userEmail, onOpen, addActivity, updateActivity, deleteActivity }) {
+  const team = config.team || [];
+  const [cursor, setCursor] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
+  const [selected, setSelected] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), d.getDate()); });
+  const [modal, setModal] = useState(null); // null | {} | {editing}
+  const [who, setWho] = useState("all");
+
+  const appts = useMemo(() => (activities || []).filter((a) => a.type === "appointment" && !a.done), [activities]);
+  const visible = useMemo(() => who === "all" ? appts : appts.filter((a) => a.assigned_to === who), [appts, who]);
+
+  const leadName = (id) => { const l = (leads || []).find((x) => x.id === id); return l ? (l.name || l.businessName || "(no name)") : ""; };
+  const ownerName = (e) => { if (!e || e === "all") return "Everyone"; const m = team.find((x) => (x.email || "").toLowerCase() === String(e).toLowerCase()); return m ? m.first : String(e).split("@")[0]; };
+  const sameDay = (ms, d) => { const x = new Date(ms); return x.getFullYear() === d.getFullYear() && x.getMonth() === d.getMonth() && x.getDate() === d.getDate(); };
+
+  const byDay = useMemo(() => {
+    const m = new Map();
+    for (const a of visible) { const d = new Date(a.due_at); const k = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`; if (!m.has(k)) m.set(k, []); m.get(k).push(a); }
+    for (const v of m.values()) v.sort((x, y) => new Date(x.due_at) - new Date(y.due_at));
+    return m;
+  }, [visible]);
+
+  const cells = useMemo(() => {
+    const first = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
+    const startPad = first.getDay();
+    const days = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0).getDate();
+    const out = [];
+    for (let i = 0; i < startPad; i++) out.push(null);
+    for (let i = 1; i <= days; i++) out.push(new Date(cursor.getFullYear(), cursor.getMonth(), i));
+    return out;
+  }, [cursor]);
+
+  const dayList = useMemo(() => {
+    const k = `${selected.getFullYear()}-${selected.getMonth()}-${selected.getDate()}`;
+    return byDay.get(k) || [];
+  }, [byDay, selected]);
+
+  const upcoming = useMemo(() => visible.filter((a) => new Date(a.due_at).getTime() >= Date.now()).sort((x, y) => new Date(x.due_at) - new Date(y.due_at)).slice(0, 8), [visible]);
+
+  const save = (row) => {
+    if (row.id) updateActivity(row.id, { title: row.title, notes: row.notes, due_at: row.due_at, assigned_to: row.assigned_to, lead_id: row.lead_id });
+    else addActivity(row.lead_id, { type: "appointment", title: row.title, notes: row.notes, dueAt: new Date(row.due_at).getTime(), alarm: false, assignedTo: row.assigned_to });
+  };
+
+  const monthLabel = cursor.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  const timeOf = (a) => new Date(a.due_at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <button onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1))} className="rounded-lg border border-slate-200 px-2 py-1.5 text-sm hover:bg-slate-50">‹</button>
+        <h2 className="text-lg font-bold text-slate-800">{monthLabel}</h2>
+        <button onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1))} className="rounded-lg border border-slate-200 px-2 py-1.5 text-sm hover:bg-slate-50">›</button>
+        <button onClick={() => { const d = new Date(); setCursor(new Date(d.getFullYear(), d.getMonth(), 1)); setSelected(new Date(d.getFullYear(), d.getMonth(), d.getDate())); }} className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">Today</button>
+        <select value={who} onChange={(e) => setWho(e.target.value)} className="rounded-lg border border-slate-200 px-2 py-1.5 text-sm">
+          <option value="all">Everyone</option>
+          {team.map((m) => <option key={m.email} value={m.email}>{m.first}</option>)}
+        </select>
+        <button onClick={() => setModal({})} className="ml-auto inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-500"><Plus size={16} /> Appointment</button>
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-white p-3">
+        <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-bold uppercase tracking-wide text-slate-400">
+          {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => <div key={d} className="py-1">{d}</div>)}
+        </div>
+        <div className="grid grid-cols-7 gap-1">
+          {cells.map((d, i) => {
+            if (!d) return <div key={`p${i}`} />;
+            const k = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+            const list = byDay.get(k) || [];
+            const isToday = sameDay(Date.now(), d);
+            const isSel = sameDay(d.getTime(), selected);
+            return (
+              <button key={k} onClick={() => setSelected(d)}
+                className={`flex min-h-[62px] flex-col rounded-lg border p-1 text-left transition ${isSel ? "border-blue-500 bg-blue-50" : "border-slate-100 hover:bg-slate-50"}`}>
+                <span className={`text-xs font-bold ${isToday ? "text-blue-600" : "text-slate-600"}`}>{d.getDate()}</span>
+                {list.slice(0, 2).map((a) => (
+                  <span key={a.id} className="mt-0.5 truncate rounded bg-emerald-100 px-1 text-[10px] font-semibold text-emerald-800">{timeOf(a)} {leadName(a.lead_id) || a.title}</span>
+                ))}
+                {list.length > 2 && <span className="mt-0.5 text-[10px] font-semibold text-slate-400">+{list.length - 2} more</span>}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-white p-4">
+        <h3 className="text-sm font-bold text-slate-700">{selected.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}</h3>
+        {!dayList.length && <p className="mt-2 text-sm text-slate-400">No appointments this day.</p>}
+        <div className="mt-2 space-y-2">
+          {dayList.map((a) => (
+            <div key={a.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
+              <span className="rounded bg-emerald-600 px-2 py-0.5 text-xs font-bold text-white">{timeOf(a)}</span>
+              <span className="text-sm font-semibold text-slate-800">{a.title || "Appointment"}</span>
+              {a.lead_id && <button onClick={() => onOpen(a.lead_id)} className="text-xs font-semibold text-blue-600 hover:underline">{leadName(a.lead_id)} →</button>}
+              <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[11px] font-semibold text-slate-600">{ownerName(a.assigned_to)}</span>
+              {a.notes && <span className="w-full text-xs text-slate-500">{a.notes}</span>}
+              <div className="ml-auto flex gap-1">
+                <button onClick={() => setModal({ editing: a })} className="rounded p-1.5 text-slate-400 hover:bg-white hover:text-slate-600"><Pencil size={14} /></button>
+                <button onClick={() => { if (confirm("Delete this appointment?")) deleteActivity(a.id); }} className="rounded p-1.5 text-slate-400 hover:bg-white hover:text-rose-600"><Trash2 size={14} /></button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-white p-4">
+        <h3 className="text-sm font-bold text-slate-700">Coming up</h3>
+        {!upcoming.length && <p className="mt-2 text-sm text-slate-400">Nothing scheduled yet.</p>}
+        <div className="mt-2 space-y-1.5">
+          {upcoming.map((a) => (
+            <div key={a.id} className="flex flex-wrap items-center gap-2 text-sm">
+              <span className="w-40 shrink-0 text-xs font-semibold text-slate-500">{new Date(a.due_at).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })} {timeOf(a)}</span>
+              <span className="font-medium text-slate-700">{a.title || "Appointment"}</span>
+              {a.lead_id && <button onClick={() => onOpen(a.lead_id)} className="text-xs font-semibold text-blue-600 hover:underline">{leadName(a.lead_id)} →</button>}
+              <span className="ml-auto rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">{ownerName(a.assigned_to)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {modal && <ApptModal onClose={() => setModal(null)} onSave={save} leads={leads} team={team} userEmail={userEmail} editing={modal.editing} />}
     </div>
   );
 }

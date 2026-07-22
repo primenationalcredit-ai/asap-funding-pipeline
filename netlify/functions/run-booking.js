@@ -59,6 +59,98 @@ function bookingLink(lead) {
   return cid ? `${BOOK_URL}?cid=${encodeURIComponent(cid)}` : BOOK_URL;
 }
 
+// ---- Appointment reminders: 5 minutes before every booked call ----
+const REMIND_MIN = 5;
+
+async function rcTask(rc, subject, note) {
+  const chatId = process.env.RC_TASK_CHAT_ID;
+  if (!chatId) return;
+  const body = { subject: String(subject).slice(0, 250) };
+  if (process.env.RC_TASK_ASSIGNEE_ID) body.assignees = [{ id: process.env.RC_TASK_ASSIGNEE_ID }];
+  if (note) body.description = String(note).slice(0, 1000);
+  const r = await fetch(`${rc.server}/team-messaging/v1/chats/${chatId}/tasks`, {
+    method: "POST", headers: { Authorization: `Bearer ${rc.token}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.message || `RC task ${r.status}`); }
+}
+
+async function rcPost(rc, text) {
+  const chatId = process.env.RC_TASK_CHAT_ID;
+  if (!chatId) return;
+  const r = await fetch(`${rc.server}/team-messaging/v1/chats/${chatId}/posts`, {
+    method: "POST", headers: { Authorization: `Bearer ${rc.token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ text: String(text).slice(0, 1000) }),
+  });
+  if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.message || `RC post ${r.status}`); }
+}
+
+function fmtCentral(ms) {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Chicago", weekday: "short", month: "short", day: "numeric",
+    hour: "numeric", minute: "2-digit", hour12: true,
+  }).format(new Date(ms));
+}
+
+async function appointmentReminders(supabase) {
+  const now = Date.now();
+  const windowEnd = now + (REMIND_MIN + 1) * 60000; // fire in the 5-to-6-min-out window
+
+  const { data: appts, error } = await supabase
+    .from("activities").select("*")
+    .eq("type", "appointment")
+    .is("reminded_at", null)
+    .gte("due_at", new Date(now).toISOString())
+    .lte("due_at", new Date(windowEnd).toISOString())
+    .limit(50);
+  if (error) { console.log("[appt] query fail", error.message); return { reminded: 0 }; }
+  const pending = (appts || []).filter((a) => !a.done);
+  if (!pending.length) return { reminded: 0 };
+
+  let rc = null, reminded = 0;
+  for (const a of pending) {
+    const startMs = Date.parse(a.due_at);
+    const who = a.assigned_to && a.assigned_to !== "all" ? a.assigned_to : (process.env.APPT_OWNER_EMAIL || "");
+    let lead = null;
+    if (a.lead_id) {
+      const r = await supabase.from("leads").select("name,phone,email,business_name").eq("id", a.lead_id).maybeSingle();
+      lead = r.data || null;
+    }
+    const client = (lead && (lead.name || lead.business_name)) || a.title || "client";
+    const when = fmtCentral(startMs);
+    const subject = `Appointment in ${REMIND_MIN} min: ${client}`;
+    const note = `${when} Central\nClient: ${client}${lead && lead.phone ? `\nPhone: ${lead.phone}` : ""}${lead && lead.email ? `\nEmail: ${lead.email}` : ""}`;
+
+    // 1) RingCentral task + chat post
+    try { if (!rc) rc = await rcToken(); await rcTask(rc, subject, note); } catch (e) { console.log("[appt] rc task fail", e.message); }
+    try { if (rc) await rcPost(rc, `Reminder: call with ${client} starts in ${REMIND_MIN} minutes (${when} Central).`); } catch (e) { console.log("[appt] rc post fail", e.message); }
+
+    // 2) Email the owner
+    if (who && who.includes("@")) {
+      try {
+        await sendEmail(who, subject, `Heads up, your call with ${client} starts in about ${REMIND_MIN} minutes.\n\n${note}\n\nASAP Funding USA`);
+      } catch (e) { console.log("[appt] email fail", e.message); }
+    }
+
+    // 3) In-app alarm so the CRM flashes and beeps
+    try {
+      await supabase.from("activities").insert({
+        lead_id: a.lead_id || null,
+        type: "call",
+        title: `Appointment in ${REMIND_MIN} min: ${client}`,
+        alarm: true,
+        due_at: new Date(now).toISOString(),
+        created_by: "automation",
+        assigned_to: a.assigned_to || "all",
+      });
+    } catch (e) { console.log("[appt] alarm fail", e.message); }
+
+    await supabase.from("activities").update({ reminded_at: new Date(now).toISOString() }).eq("id", a.id);
+    reminded++;
+  }
+  return { reminded };
+}
+
 async function run() {
   const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
   const now = Date.now();
@@ -123,7 +215,13 @@ async function run() {
   }
 
   if (comms.length) { try { await supabase.from("communications").insert(comms); } catch (e) { console.log("[booking] comm log fail", e.message); } }
-  return { ok: true, scanned: (leads || []).length, nudged1, nudged2, expired: done, skipped, quiet };
+
+  // Appointment reminders run on every pass, independent of quiet hours,
+  // because a booked call needs its heads-up whenever it is scheduled.
+  let appt = { reminded: 0 };
+  try { appt = await appointmentReminders(supabase); } catch (e) { console.log("[appt] fail", e.message); }
+
+  return { ok: true, scanned: (leads || []).length, nudged1, nudged2, expired: done, skipped, quiet, apptReminded: appt.reminded };
 }
 
 // Cross-invocation throttle: warm Lambdas share module memory, so many browser

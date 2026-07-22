@@ -61,11 +61,34 @@ async function newLeadAlarm(supabase, leadRow, leadId) {
   await supabase.from("activities").insert({
     lead_id: leadId,
     type: "call",
-    title: `New lead: ${who} â€” reach out`,
-    notes: "[[alarm]]",
+    title: `New lead: ${who} - reach out`,
+    alarm: true,
     due_at: new Date().toISOString(),
     created_by: "automation",
     assigned_to: assignee,
+  });
+}
+
+// Creates the calendar appointment row when a lead books a call.
+// Calendar reads activities where type = "appointment".
+async function createAppointment(supabase, leadId, startTime, leadName) {
+  if (!startTime) return;
+  const when = new Date(startTime);
+  if (isNaN(when.getTime())) return;
+  const owner = process.env.APPT_OWNER_EMAIL || process.env.NEW_LEAD_ALARM_TO || "all";
+  // Don't double-book the same slot for the same lead
+  const { data: dupe } = await supabase.from("activities")
+    .select("id").eq("lead_id", leadId).eq("type", "appointment")
+    .eq("due_at", when.toISOString()).maybeSingle();
+  if (dupe) return;
+  await supabase.from("activities").insert({
+    lead_id: leadId,
+    type: "appointment",
+    title: `Call with ${leadName || "client"}`,
+    alarm: false,
+    due_at: when.toISOString(),
+    created_by: "automation",
+    assigned_to: owner,
   });
 }
 
@@ -266,14 +289,17 @@ export const handler = async (event) => {
     // ---- EVENT: call booked -> stop nudges, record the appointment ----
     if (ev === "call_booked") {
       if (existing) {
-        await supabase.from("leads").update({
+        const { error: bookErr } = await supabase.from("leads").update({
           booking_state: "booked",
           appointment_at: lead.start_time || null,
-          automationPaused: true,
+          automation_paused: true,
           last_touch_at: new Date().toISOString(),
           touches: [...(existing.touches || []), { at: Date.now(), kind: "call_booked", at_time: lead.start_time || "", auto: true }],
           raw: payload,
         }).eq("id", existing.id);
+        if (bookErr) console.log("[booked-fail]", bookErr.message, bookErr.code || "");
+        else console.log("[booked-ok]", JSON.stringify({ id: existing.id, at: lead.start_time || null }));
+        try { await createAppointment(supabase, existing.id, lead.start_time, existing.name); } catch (e) { console.log("[appt-create]", e.message); }
         try { await newLeadAlarm(supabase, { ...existing, name: `CALL BOOKED: ${existing.name || ""}` }, existing.id); } catch (e) { console.log("[booked-alarm]", e.message); }
         return json(200, { ok: true, action: "call_booked", id: existing.id });
       }
@@ -282,7 +308,7 @@ export const handler = async (event) => {
 
     // ---- EVENT: partial abandoned -> come-back nudge ----
     if (ev === "partial_abandoned") {
-      if (existing && !existing.optedOut && existing.booking_state !== "booked") {
+      if (existing && !existing.opted_out && existing.booking_state !== "booked") {
         try { await sendAbandonNudge(supabase, existing); } catch (e) { console.log("[abandon]", e.message); }
       }
       return json(200, { ok: true, action: "partial_abandoned", id: existing ? existing.id : null });

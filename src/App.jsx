@@ -79,7 +79,7 @@ const DEFAULT_CONFIG = {
   autoSnoozeDays: 3,
   emailSignature: "Joe Mahlow\nASAP Funding USA\nfunding@asapfundingusa.com",
   autoSendEnabled: false,
-  autoSendStages: ["voicemail", "interested", "callback"],
+  autoSendStages: ["voicemail", "waiting_reports", "callback"],
 };
 
 const DEFAULT_TEMPLATES = [
@@ -575,7 +575,7 @@ const DEFAULT_CADENCES = {
     { day: 275, pool: "breakup_email" },
     { day: 305, pool: "breakup_sms" },
   ],
-  interested: [
+  waiting_reports: [
     { day: 0, pool: "int_sms" },
     { day: 0, pool: "int_email" },
     { day: 1, pool: "acct_sms" },
@@ -984,7 +984,7 @@ const STAGE_PLAYBOOK = {
     "Send the due follow-up texts and emails (they drive a callback).",
     "When they respond, log the call and move them to Interested.",
   ],
-  interested: [
+  waiting_reports: [
     "Send the MyScoreIQ link so they can pull their report (Text link / Email link).",
     "Next day, send the 'did you create your account?' follow-up.",
     "If they cannot access MyScoreIQ, send the SmartCredit backup link.",
@@ -1050,7 +1050,7 @@ function nextStepFor(lead) {
   switch (lead.status) {
     case "new": return { text: "Call them. Log what happens below and the right campaign starts on its own.", tone: "slate" };
     case "voicemail": return { text: "Couldn't reach them. Callback texts and emails are going out. Try them again, or send the next when due.", tone: "amber" };
-    case "interested": return { text: "They're in. Send the MyScoreIQ link so they can pull their report and get pre-approved.", tone: "sky" };
+    case "waiting_reports": return { text: "Report link sent. Chase them until the report comes back, then send the application.", tone: "sky" };
     case "callback": return { text: "Reconnect when you agreed. Reminder messages are running until you reach them.", tone: "violet" };
     case "not_interested": return { text: "Parked. Light check-ins go out in case their timing changes.", tone: "orange" };
     case "check_back": return { text: "Needs funding but wants to pause. Gentle check-ins go out every 30 days. Snooze or set a reminder for when they said to circle back.", tone: "blue" };
@@ -1676,7 +1676,7 @@ function Dashboard({ userEmail }) {
         const appUrl = (config.appLink || APP_LINK_DEFAULT || "").toLowerCase();
         const bodyLc = String((sent && sent.body) || c.body || "").toLowerCase();
         const sentApp = (appUrl && bodyLc.includes(appUrl)) || bodyLc.includes("apply.html");
-        const early = ["new", "voicemail", "interested", "callback", "check_back", "report_pulled"];
+        const early = ["new", "voicemail", "callback", "check_back", "appointment_booked", "waiting_reports", "app_sent", "report_pulled"];
         if (sentApp && early.includes(c.lead.status)) {
           supabase.from("leads").update({ status: "app_sent" }).eq("id", c.lead.id).then(() => {});
           setLeads((prev) => prev.map((l) => l.id === c.lead.id ? { ...l, status: "app_sent" } : l));
@@ -2440,7 +2440,7 @@ function BoardCard({ lead, onOpen, cadences, templates, config, openCompose, upd
         return (
           <div className={`mt-1 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-bold ${past ? "bg-slate-100 text-slate-500" : "bg-emerald-100 text-emerald-800"}`}>
             <CalendarDays size={11} />
-            {t.toLocaleDateString(undefined, { month: "short", day: "numeric" })} at {t.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
+            {apptDate(t, { month: "short", day: "numeric" })} at {apptTime(t)} MT
           </div>
         );
       })()}
@@ -2814,7 +2814,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
     let at = Date.now();
     if (reportDate) { const d = new Date(reportDate + "T12:00:00"); if (!isNaN(d)) at = d.getTime(); }
     logTouch(lead.id, "report", "report", { by, manual: true, at });
-    if (["new", "voicemail", "interested", "callback", "check_back"].includes(lead.status)) updateLead(lead.id, { status: "report_pulled" });
+    if (["new", "voicemail", "callback", "check_back", "appointment_booked", "waiting_reports", "app_sent"].includes(lead.status)) updateLead(lead.id, { status: "report_pulled" });
     const who = (config.team || []).find((m) => (m.email || "").toLowerCase() === by.toLowerCase());
     setReportPulledMsg(`Credit report pull logged${who ? " for " + who.first : ""}.`);
     setTimeout(() => setReportPulledMsg(""), 3000);
@@ -2920,7 +2920,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
       setLenderMsg(`Sent ${j.sent} files to ${j.to}`);
       setLenderEmail(""); setLenderNote(""); setLenderCc(""); setLenderName("");
       // Auto-advance the stage: once a package is sent to a lender, they're Submitted.
-      if (["new", "voicemail", "interested", "callback", "appointment_booked", "check_back", "waiting_reports", "report_pulled", "app_sent", "app_received", "app_reports_received"].includes(lead.status)) {
+      if (["new", "voicemail", "callback", "appointment_booked", "check_back", "waiting_reports", "report_pulled", "app_sent", "app_received", "app_reports_received"].includes(lead.status)) {
         updateLead(lead.id, { status: "submitted", lenderTag: lenderName || j.to || lead.lenderTag });
       } else if (lenderName && !lead.lenderTag) {
         updateLead(lead.id, { lenderTag: lenderName });
@@ -2965,7 +2965,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
   })();
   // Leaving a voicemail only sends outreach leads into the voicemail cadence; deeper in the
   // pipeline it just logs the call so the client is not yanked back to an outreach stage.
-  const lvmStage = ["new", "voicemail", "interested", "callback", "not_interested", ""].includes(lead.status) ? "voicemail" : null;
+  const lvmStage = ["new", "voicemail", "callback", "not_interested", "appointment_booked", "waiting_reports", ""].includes(lead.status) ? "voicemail" : null;
 
   const submitToFunder = async () => {
     let link = "";
@@ -3105,10 +3105,10 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
             <DealTracker lead={lead} activities={activities} addActivity={addActivity} completeActivity={completeActivity} logTouch={logTouch} addNote={addNote} userEmail={userEmail} config={config} />
           )}
 
-          {/* Interested / just-sent: the two next steps are report link or application (or both) */}
-          {["interested", "app_sent"].includes(lead.status) && (
+          {/* Early phase: the two next steps are report link or application (or both) */}
+          {["new", "voicemail", "callback", "check_back", "appointment_booked", "waiting_reports", "app_sent"].includes(lead.status) && (
             <div className="rounded-xl border-2 border-sky-200 bg-sky-50 p-4">
-              <div className="mb-0.5 text-sm font-bold text-sky-900">{lead.status === "app_sent" ? "Send anything else they need" : "They're interested, send the next step"}</div>
+              <div className="mb-0.5 text-sm font-bold text-sky-900">{["app_sent", "waiting_reports"].includes(lead.status) ? "Send anything else they need" : "Send the next step"}</div>
               <p className="mb-3 text-xs text-sky-700">Send the report link so they can pull their credit, the application, or both. You can send by text and email.</p>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="rounded-lg bg-white p-3 ring-1 ring-sky-100">
@@ -3595,7 +3595,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
               );
             })()}
           </Section></Gated>
-          <Gated show={SHOW_IN.creditReport.includes(phase)} label="credit report"><Section icon={<FileText size={15} />} title="Credit report" collapsible defaultOpen={["interested", "report_pulled", "submitted", "pre_approved"].includes(lead.status)}>
+          <Gated show={SHOW_IN.creditReport.includes(phase)} label="credit report"><Section icon={<FileText size={15} />} title="Credit report" collapsible defaultOpen={["waiting_reports", "report_pulled", "submitted", "pre_approved"].includes(lead.status)}>
             <div className="flex flex-wrap items-center gap-2">
               <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-2 text-sm font-medium text-white hover:bg-slate-900">
                 <Upload size={15} /> {uploading ? "Uploading..." : lead.reportPath ? "Replace PDF" : "Upload PDF"}
@@ -3888,7 +3888,7 @@ const POOL_LABELS = {
 };
 
 function CadenceEditor({ templates, cadences, persistCadences }) {
-  const [stage, setStage] = useState("interested");
+  const [stage, setStage] = useState("waiting_reports");
   const steps = cadences[stage] || [];
   const pools = [...new Set(templates.map((t) => t.pool).filter(Boolean))];
   const poolLabel = (p) => (POOL_LABELS[p] || p) + ` (${poolTemplates(templates, p).length})`;
@@ -3963,7 +3963,7 @@ const OBJECTIONS = ["Objection: why do you need my credit?", "Objection: is this
 const STAGE_SCRIPTS = {
   new: { lead: ["Cold call open", "Warm / inbound", "Voicemail"], hint: "First contact. Open, then drive to the report link." },
   voicemail: { lead: ["Voicemail", "Cold call open"], hint: "Left a voicemail. Keep trying; use the opener when they pick up." },
-  interested: { lead: ["Warm / inbound", "After they pull it"], hint: "They engaged. Get the report pulled, then walk options." },
+  waiting_reports: { lead: ["Warm / inbound", "After they pull it"], hint: "Report link is out. Chase the report, then walk options." },
   callback: { lead: ["Warm / inbound", "Cold call open"], hint: "They asked you to call back. Reconnect and move to the report." },
   report_pulled: { lead: ["After they pull it"], hint: "Report is in. Walk their options and decide the loan program." },
   app_sent: { lead: ["After they pull it"], hint: "Application sent. Chase the signed app back." },
@@ -4808,6 +4808,12 @@ function ApptModal({ onClose, onSave, leads, team, userEmail, editing }) {
   );
 }
 
+// The team runs on Mountain time, so appointments always display in MT
+// regardless of what timezone the browser happens to be in.
+const APPT_TZ = "America/Denver";
+const apptTime = (d) => new Date(d).toLocaleTimeString("en-US", { timeZone: APPT_TZ, hour: "numeric", minute: "2-digit" });
+const apptDate = (d, opts) => new Date(d).toLocaleDateString("en-US", { timeZone: APPT_TZ, ...opts });
+
 const CONFIRM_UI = {
   confirmed: { chip: "bg-emerald-600 text-white", dot: "bg-emerald-100 text-emerald-800", row: "border-emerald-300 bg-emerald-50", label: "Confirmed" },
   sent: { chip: "bg-amber-500 text-white", dot: "bg-amber-100 text-amber-800", row: "border-amber-200 bg-amber-50", label: "Awaiting reply" },
@@ -4859,7 +4865,7 @@ function Calendar({ activities = [], leads = [], config = {}, userEmail, onOpen,
   };
 
   const monthLabel = cursor.toLocaleDateString(undefined, { month: "long", year: "numeric" });
-  const timeOf = (a) => new Date(a.due_at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  const timeOf = (a) => apptTime(a.due_at);
 
   return (
     <div className="space-y-4">
@@ -4906,7 +4912,7 @@ function Calendar({ activities = [], leads = [], config = {}, userEmail, onOpen,
         <div className="mt-2 space-y-2">
           {dayList.map((a) => (
             <div key={a.id} className={`flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 ${(confirmUi(a) || { row: "border-slate-100 bg-slate-50" }).row}`}>
-              <span className="rounded bg-slate-700 px-2 py-0.5 text-xs font-bold text-white">{timeOf(a)}</span>
+              <span className="rounded bg-slate-700 px-2 py-0.5 text-xs font-bold text-white">{timeOf(a)} MT</span>
               <span className="text-sm font-semibold text-slate-800">{a.title || "Appointment"}</span>
               {a.lead_id && <button onClick={() => onOpen(a.lead_id)} className="text-xs font-semibold text-blue-600 hover:underline">{leadName(a.lead_id)} →</button>}
               <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[11px] font-semibold text-slate-600">{ownerName(a.assigned_to)}</span>
@@ -4928,7 +4934,7 @@ function Calendar({ activities = [], leads = [], config = {}, userEmail, onOpen,
         <div className="mt-2 space-y-1.5">
           {upcoming.map((a) => (
             <div key={a.id} className="flex flex-wrap items-center gap-2 text-sm">
-              <span className="w-40 shrink-0 text-xs font-semibold text-slate-500">{new Date(a.due_at).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })} {timeOf(a)}</span>
+              <span className="w-44 shrink-0 text-xs font-semibold text-slate-500">{apptDate(a.due_at, { weekday: "short", month: "short", day: "numeric" })} {timeOf(a)} MT</span>
               <span className="font-medium text-slate-700">{a.title || "Appointment"}</span>
               {a.lead_id && <button onClick={() => onOpen(a.lead_id)} className="text-xs font-semibold text-blue-600 hover:underline">{leadName(a.lead_id)} →</button>}
               {confirmUi(a) && <span className={`ml-auto rounded-full px-2 py-0.5 text-[11px] font-bold ${confirmUi(a).chip}`}>{confirmUi(a).label}</span>}

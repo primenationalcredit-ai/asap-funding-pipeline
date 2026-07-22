@@ -291,6 +291,7 @@ export const handler = async (event) => {
       if (existing) {
         const { error: bookErr } = await supabase.from("leads").update({
           booking_state: "booked",
+          status: "appointment_booked",
           appointment_at: lead.start_time || null,
           automation_paused: true,
           last_touch_at: new Date().toISOString(),
@@ -323,7 +324,7 @@ export const handler = async (event) => {
         enrich.booking_state = "pending";
         enrich.booking_started_at = new Date().toISOString();
         enrich.booking_nudge_stage = 0;
-        enrich.status = existing.status === "new" ? "app_sent" : existing.status;
+        enrich.status = existing.status; // stage only moves on a real event, not on form completion
       }
       const { error } = await supabase.from("leads").update(enrich).eq("id", existing.id);
       if (error) { console.log("[update-fail]", JSON.stringify({ msg: error.message, details: error.details, code: error.code })); throw error; }
@@ -337,7 +338,7 @@ export const handler = async (event) => {
     // ---- New lead (first time we have seen this contact) ----
     const row = { ...Object.fromEntries(DATA_FIELDS.map((f) => [f, lead[f]])) };
     row.ghl_contact_id = lead.ghl_contact_id || null;
-    row.status = isComplete ? "app_sent" : "new";
+    row.status = "new"; // qualifier completion is not an application, booking sequence handles the rest
     row.touches = [];
     row.raw = payload;
     if (isComplete) { row.booking_state = "pending"; row.booking_started_at = new Date().toISOString(); row.booking_nudge_stage = 0; }

@@ -20,11 +20,16 @@ const STAGES = [
   { key: "voicemail", label: "Left Voicemail", tone: "amber" },
   { key: "interested", label: "Interested", tone: "sky" },
   { key: "callback", label: "Call Back", tone: "violet" },
+  { key: "appointment_booked", label: "Appointment Booked", tone: "emerald" },
   { key: "not_interested", label: "Not Interested", tone: "orange" },
   { key: "check_back", label: "Check Back Later", tone: "blue" },
-  { key: "report_pulled", label: "Report Pulled", tone: "teal" },
+  { key: "waiting_reports", label: "Waiting on Reports", tone: "amber" },
+  { key: "report_pulled", label: "Reports Received", tone: "teal" },
   { key: "app_sent", label: "Application Sent", tone: "purple" },
-  { key: "submitted", label: "Submitted", tone: "indigo" },
+  { key: "app_received", label: "Application Received", tone: "indigo" },
+  { key: "submitted", label: "Deal Submitted", tone: "indigo" },
+  { key: "looking_for_partner", label: "Looking for Partner", tone: "orange" },
+  { key: "waiting_for_partner", label: "Waiting for Partner", tone: "amber" },
   { key: "denied", label: "Denied", tone: "rose" },
   { key: "pre_approved", label: "Approved / Offer", tone: "cyan" },
   { key: "contracts_out", label: "Waiting on Signature", tone: "amber" },
@@ -805,7 +810,8 @@ const origDefaultFromStatus = (s) => ({
   submitted: "underwriting", pre_approved: "approved", contracts_out: "contracts_out",
   agreement_signed: "in_final", getting_approvals: "approved",
   denied: "declined", declined: "declined",
-  report_pulled: "docs_in", app_sent: "docs_incomplete",
+  report_pulled: "docs_in", app_sent: "docs_incomplete", app_received: "docs_in",
+  looking_for_partner: "credit_partner", waiting_for_partner: "credit_partner",
   referred_cr: "cr_pitched", offer_cr: "cr_pitched", credit_repair: "cr_pitched",
 }[s] || "new");
 const origStageOf = (lead) => {
@@ -1177,9 +1183,11 @@ const JOURNEY = [
   { key: "new", label: "New", match: ["new", "called"] },
   { key: "contacted", label: "Contacted", match: ["voicemail", "callback", "not_interested"] },
   { key: "interested", label: "Interested", match: ["interested"] },
-  { key: "report", label: "Report", match: ["report_pulled"] },
+  { key: "booked", label: "Booked", match: ["appointment_booked"] },
+  { key: "report", label: "Report", match: ["waiting_reports", "report_pulled"] },
   { key: "app_sent", label: "App Sent", match: ["app_sent"] },
-  { key: "submitted", label: "Submitted", match: ["submitted"] },
+  { key: "app_in", label: "App In", match: ["app_received"] },
+  { key: "submitted", label: "Submitted", match: ["submitted", "looking_for_partner", "waiting_for_partner"] },
   { key: "decision", label: "Decision", match: ["pre_approved", "contracts_out", "declined"] },
   { key: "funded", label: "Funded", match: ["funded", "commission_paid"] },
 ];
@@ -1803,7 +1811,7 @@ function Dashboard({ userEmail }) {
   const newAppsCount = useMemo(() => {
     return leads.filter((l) => {
       const docs = Array.isArray(l.documents) ? l.documents : [];
-      const hasApp = docs.some((d) => /application/i.test((d.label || "") + (d.name || ""))) || ["app_sent", "submitted", "pre_approved", "contracts_out", "funded"].includes(l.status);
+      const hasApp = docs.some((d) => /application/i.test((d.label || "") + (d.name || ""))) || ["app_sent", "app_received", "submitted", "pre_approved", "contracts_out", "funded"].includes(l.status);
       const sentToLender = (Array.isArray(l.submissions) ? l.submissions : []).length > 0;
       return hasApp && !sentToLender;
     }).length;
@@ -1922,8 +1930,8 @@ function Dashboard({ userEmail }) {
 /*  Pipeline                                                          */
 /* ================================================================== */
 const BOARDS = {
-  outreach: { label: "Outreach", stages: ["new", "voicemail", "interested", "callback", "not_interested", "check_back"] },
-  funding: { label: "Funding", stages: ["report_pulled", "app_sent", "submitted", "denied", "pre_approved", "contracts_out", "agreement_signed", "getting_approvals", "funded", "commission_paid"] },
+  outreach: { label: "Outreach", stages: ["new", "voicemail", "interested", "callback", "appointment_booked", "check_back", "not_interested"] },
+  funding: { label: "Funding", stages: ["waiting_reports", "report_pulled", "app_sent", "app_received", "submitted", "looking_for_partner", "waiting_for_partner", "denied", "pre_approved", "contracts_out", "agreement_signed", "getting_approvals", "funded", "commission_paid"] },
   closed: { label: "Closed", stages: ["declined", "offer_cr", "referred_cr", "credit_repair", "dead"] },
 };
 
@@ -2564,8 +2572,10 @@ const LOAN_PROGRAMS = [
 // Stage-driven file: which "phase" a stage belongs to, so the file shows only what matters.
 const PHASE = {
   new: "qualify", voicemail: "qualify", interested: "qualify", callback: "qualify", check_back: "qualify", not_interested: "qualify", dead: "qualify",
-  report_pulled: "collect", app_sent: "collect",
+  appointment_booked: "qualify",
+  waiting_reports: "collect", report_pulled: "collect", app_sent: "collect", app_received: "collect",
   submitted: "submit", denied: "submit", pre_approved: "submit",
+  looking_for_partner: "submit", waiting_for_partner: "submit",
   contracts_out: "close", agreement_signed: "close", getting_approvals: "close", funded: "close", commission_paid: "close",
   declined: "credit_repair", offer_cr: "credit_repair", referred_cr: "credit_repair", credit_repair: "credit_repair",
 };
@@ -2850,7 +2860,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
       setLenderMsg(`Sent ${j.sent} files to ${j.to}`);
       setLenderEmail(""); setLenderNote(""); setLenderCc(""); setLenderName("");
       // Auto-advance the stage: once a package is sent to a lender, they're Submitted.
-      if (["new", "voicemail", "interested", "callback", "check_back", "report_pulled", "app_sent"].includes(lead.status)) {
+      if (["new", "voicemail", "interested", "callback", "appointment_booked", "check_back", "waiting_reports", "report_pulled", "app_sent", "app_received"].includes(lead.status)) {
         updateLead(lead.id, { status: "submitted", lenderTag: lenderName || j.to || lead.lenderTag });
       } else if (lenderName && !lead.lenderTag) {
         updateLead(lead.id, { lenderTag: lenderName });
@@ -2871,7 +2881,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
   const OUTCOME_BTN = { sky:"bg-sky-600 hover:bg-sky-700", violet:"bg-violet-600 hover:bg-violet-700", orange:"bg-orange-500 hover:bg-orange-600", emerald:"bg-emerald-600 hover:bg-emerald-700", fuchsia:"bg-fuchsia-600 hover:bg-fuchsia-700", rose:"bg-rose-500 hover:bg-rose-600" };
   const spokeOutcomes = (() => {
     const s = lead.status;
-    if (["report_pulled", "app_sent", "submitted", "pre_approved", "contracts_out"].includes(s)) return [
+    if (["report_pulled", "app_sent", "app_received", "submitted", "pre_approved", "contracts_out"].includes(s)) return [
       { label: "Moving forward", disp: "Spoke, moving forward", stage: null, c: "emerald" },
       { label: "Offer credit repair", disp: "Spoke, offered credit repair", stage: "offer_cr", c: "fuchsia" },
       { label: "Call back later", disp: "Spoke, call back", stage: null, c: "violet" },
@@ -3116,7 +3126,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
 
 
           {/* best-fit lenders (only once an application is in) */}
-          {lenders.length > 0 && ((lead.documents||[]).some(d => /application/i.test((d.label||"")+(d.name||""))) || ["app_sent","submitted","pre_approved","contracts_out","funded"].includes(lead.status)) && (() => {
+          {lenders.length > 0 && ((lead.documents||[]).some(d => /application/i.test((d.label||"")+(d.name||""))) || ["app_sent","app_received","submitted","pre_approved","contracts_out","funded"].includes(lead.status)) && (() => {
             const ranked = matchLenders(lead, lenders);
             const chip = (s) => s === "pass" ? "bg-emerald-100 text-emerald-700" : s === "fail" ? "bg-rose-100 text-rose-700" : "bg-slate-100 text-slate-500";
             const badge = { fit: ["Best fit", "bg-emerald-600"], maybe: ["Possible", "bg-amber-500"], no: ["Not a fit", "bg-rose-500"] };
@@ -3556,7 +3566,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
           </Section></Gated>
 
           {/* application (after pre-approval, if they want more) */}
-          <Gated show={SHOW_IN.application.includes(phase)} label="application"><Section icon={<FileText size={15} />} title="Application" collapsible defaultOpen={["report_pulled","app_sent","pre_approved"].includes(lead.status)}>
+          <Gated show={SHOW_IN.application.includes(phase)} label="application"><Section icon={<FileText size={15} />} title="Application" collapsible defaultOpen={["report_pulled","app_sent","app_received","pre_approved"].includes(lead.status)}>
             {lead.status === "pre_approved" && (
               <div className="mb-2 rounded-md bg-teal-50 px-2.5 py-1.5 text-xs font-medium text-teal-700 ring-1 ring-inset ring-teal-200">
                 Pre-approved. If the client wants more than Torro offered, send the full application so they can sign and upload bank statements.
@@ -5052,7 +5062,7 @@ function Applications({ leads, lenders = [], onOpen, onDelete }) {
       .map((l) => {
         const docs = Array.isArray(l.documents) ? l.documents : [];
         const appDoc = docs.find((d) => /application/i.test((d.label || "") + (d.name || "")));
-        const hasApp = !!appDoc || ["app_sent", "submitted", "pre_approved", "contracts_out", "funded"].includes(l.status);
+        const hasApp = !!appDoc || ["app_sent", "app_received", "submitted", "pre_approved", "contracts_out", "funded"].includes(l.status);
         return { lead: l, docs, appDoc, submittedAt: appDoc?.uploadedAt || l.lastTouchAt || 0, subs: Array.isArray(l.submissions) ? l.submissions : [], hasApp };
       })
       .filter((a) => a.hasApp)

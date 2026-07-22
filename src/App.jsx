@@ -2884,6 +2884,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
   };
   const [callNote, setCallNote] = useState("");
   const [noteErr, setNoteErr] = useState(false);
+  const [logged, setLogged] = useState("");
   const [docLabel, setDocLabel] = useState("Bank statements");
   const [docBusy, setDocBusy] = useState(false);
   const [lenderOpen, setLenderOpen] = useState(false);
@@ -2976,14 +2977,18 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
   };
 
   const logOutcome = (stage, label) => {
-    if (!callNote.trim()) { setNoteErr(true); return; }
-    const note = callNote.trim();
     const isVoicemail = /voicemail|lvm|no answer/i.test(label);
+    // Nobody has anything to write about a call that was not answered, so a
+    // note is only required when you actually spoke to someone.
+    const note = callNote.trim() || (isVoicemail ? "No answer, left voicemail" : "");
+    if (!note) { setNoteErr(true); return; }
     logTouch(lead.id, "call", "call", { disposition: label, note, by: userEmail, noSnooze: isVoicemail });
     // Put the call note in the activity timeline so it is not buried in the touch log.
     if (addActivity) addActivity(lead.id, { type: "note", title: label, notes: note, dueAt: Date.now(), alarm: false, done: true });
     setCallNote(""); setSpoke(false); setNoteErr(false);
     if (stage) updateLead(lead.id, { status: stage }); // stage null = just log the call, keep current stage
+    setLogged(label);
+    setTimeout(() => setLogged(""), 2500);
   };
 
   // Call outcomes change with where the client is in the pipeline.
@@ -3181,8 +3186,9 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
           {/* what happened on this call */}
           <div className="rounded-xl border border-slate-200 bg-white p-4">
             <div className="mb-2 flex items-center gap-1.5 text-sm font-bold text-slate-800"><Phone size={15} className="text-blue-600" /> What happened on this call? <span className="text-rose-500">*</span></div>
-            <textarea value={callNote} onChange={(e) => { setCallNote(e.target.value); if (e.target.value.trim()) setNoteErr(false); }} rows={2} placeholder="Required: what did you discuss? (logged with your name and the time)" className={`${inputCls} mb-1 ${noteErr ? "border-rose-400 bg-rose-50 ring-2 ring-rose-100" : ""}`} />
+            <textarea value={callNote} onChange={(e) => { setCallNote(e.target.value); if (e.target.value.trim()) setNoteErr(false); }} rows={2} placeholder="What did you discuss? (logged with your name and the time. Not needed for no answer)" className={`${inputCls} mb-1 ${noteErr ? "border-rose-400 bg-rose-50 ring-2 ring-rose-100" : ""}`} />
             {noteErr && <p className="mb-2 text-xs font-medium text-rose-600">Please add a call note before logging the outcome.</p>}
+            {logged && <p className="mb-2 rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 ring-1 ring-inset ring-emerald-200">Logged: {logged}</p>}
             {!spoke ? (
               <div className="flex flex-wrap gap-2">
                 <button onClick={() => logOutcome(lvmStage, "Left voicemail")} className="rounded-lg bg-amber-100 px-3 py-2 text-sm font-semibold text-amber-800 ring-1 ring-inset ring-amber-200 hover:bg-amber-200">No answer / left voicemail</button>

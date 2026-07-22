@@ -1620,10 +1620,13 @@ function Dashboard({ userEmail }) {
       }
       // A real human touch (a logged call, or a note) means we are mid-conversation.
       // Push the next automated message out so we do not blast them.
-      if (kind === "call" || extra.note) {
+      if ((kind === "call" || extra.note) && !extra.noSnooze) {
         const days = Number(autoSnoozeDaysRef.current) || 0;
         if (days > 0) patch.snoozeUntil = now + days * DAY;
       }
+      // A voicemail means nobody picked up, so clear any existing snooze and let
+      // the follow-up text and email go out instead of sitting idle.
+      if (extra.noSnooze) patch.snoozeUntil = null;
       // First person to work the lead (call, message, or note) becomes the owner.
       // Sticky: once set, a later touch by someone else does not steal it.
       if (!l.ownerEmail && userEmail) patch.ownerEmail = userEmail;
@@ -1714,6 +1717,7 @@ function Dashboard({ userEmail }) {
       lead_id: leadId, type: act.type, title: act.title || null, notes: act.notes || null,
       due_at: new Date(act.dueAt).toISOString(), created_by: userEmail, assigned_to: act.assignedTo || userEmail,
       alarm: !!act.alarm,
+      done: !!act.done, done_at: act.done ? new Date().toISOString() : null,
     });
     if (error) setErr(error.message); else refetchActivities();
   }, [userEmail, refetchActivities]);
@@ -2973,7 +2977,11 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
 
   const logOutcome = (stage, label) => {
     if (!callNote.trim()) { setNoteErr(true); return; }
-    logTouch(lead.id, "call", "call", { disposition: label, note: callNote.trim(), by: userEmail });
+    const note = callNote.trim();
+    const isVoicemail = /voicemail|lvm|no answer/i.test(label);
+    logTouch(lead.id, "call", "call", { disposition: label, note, by: userEmail, noSnooze: isVoicemail });
+    // Put the call note in the activity timeline so it is not buried in the touch log.
+    if (addActivity) addActivity(lead.id, { type: "note", title: label, notes: note, dueAt: Date.now(), alarm: false, done: true });
     setCallNote(""); setSpoke(false); setNoteErr(false);
     if (stage) updateLead(lead.id, { status: stage }); // stage null = just log the call, keep current stage
   };

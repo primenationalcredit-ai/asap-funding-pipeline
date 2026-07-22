@@ -92,6 +92,67 @@ function fmtCentral(ms) {
   }).format(new Date(ms));
 }
 
+// ---- Hour-before confirmation: ask the client to confirm the call ----
+const CONFIRM_MIN = 60;
+
+function siteUrl() {
+  return (process.env.APP_URL || process.env.URL || "https://tranquil-muffin-691d4e.netlify.app").replace(/\/+$/, "");
+}
+
+async function appointmentConfirmations(supabase) {
+  const now = Date.now();
+  // Fire for anything starting between 50 and 70 minutes out
+  const lo = new Date(now + 50 * 60000).toISOString();
+  const hi = new Date(now + 70 * 60000).toISOString();
+
+  const { data: rows, error } = await supabase
+    .from("activities").select("*")
+    .eq("type", "appointment")
+    .is("confirm_state", null)
+    .gte("due_at", lo).lte("due_at", hi)
+    .limit(50);
+  if (error) { console.log("[confirm] query fail", error.message); return { asked: 0 }; }
+  const pending = (rows || []).filter((a) => !a.done);
+  if (!pending.length) return { asked: 0 };
+
+  const hr = centralHour(now);
+  const quiet = hr < 8 || hr >= 21;
+  let rc = null, asked = 0;
+
+  for (const a of pending) {
+    if (!a.lead_id) continue;
+    const r = await supabase.from("leads").select("id,name,phone,email,opted_out,business_name").eq("id", a.lead_id).maybeSingle();
+    const lead = r.data;
+    if (!lead || lead.opted_out) continue;
+
+    const token = (globalThis.crypto && crypto.randomUUID) ? crypto.randomUUID() : `${a.id}-${now}`;
+    const first = (lead.name || "").trim().split(/\s+/)[0] || "there";
+    const when = fmtCentral(Date.parse(a.due_at));
+    const yes = `${siteUrl()}/.netlify/functions/confirm-appointment?t=${encodeURIComponent(token)}`;
+
+    let sent = false;
+    if (lead.phone && !quiet) {
+      const sms = `Hi ${first}, this is ASAP confirming your call today at ${when} Central. Reply YES to confirm, or let us know if you need a different time.`;
+      try { if (!rc) rc = await rcToken(); await sendSms(rc, lead.phone, sms); sent = true; }
+      catch (e) { console.log("[confirm] sms fail", a.id, e.message); }
+    }
+    if (lead.email) {
+      const subject = `Confirming your call at ${when} Central`;
+      const text = `Hi ${first},\n\nJust confirming our call coming up at ${when} Central.\n\nClick here to confirm you are good to go:\n${yes}\n\nIf you need a different time, just reply to this email.\n\nTalk soon,\nASAP Funding USA`;
+      try { await sendEmail(lead.email, subject, text); sent = true; }
+      catch (e) { console.log("[confirm] email fail", a.id, e.message); }
+    }
+
+    if (sent) {
+      await supabase.from("activities").update({
+        confirm_state: "sent", confirm_sent_at: new Date(now).toISOString(), confirm_token: token,
+      }).eq("id", a.id);
+      asked++;
+    }
+  }
+  return { asked };
+}
+
 async function appointmentReminders(supabase) {
   const now = Date.now();
   const windowEnd = now + (REMIND_MIN + 1) * 60000; // fire in the 5-to-6-min-out window
@@ -221,7 +282,10 @@ async function run() {
   let appt = { reminded: 0 };
   try { appt = await appointmentReminders(supabase); } catch (e) { console.log("[appt] fail", e.message); }
 
-  return { ok: true, scanned: (leads || []).length, nudged1, nudged2, expired: done, skipped, quiet, apptReminded: appt.reminded };
+  let conf = { asked: 0 };
+  try { conf = await appointmentConfirmations(supabase); } catch (e) { console.log("[confirm] fail", e.message); }
+
+  return { ok: true, scanned: (leads || []).length, nudged1, nudged2, expired: done, skipped, quiet, apptReminded: appt.reminded, confirmAsked: conf.asked };
 }
 
 // Cross-invocation throttle: warm Lambdas share module memory, so many browser

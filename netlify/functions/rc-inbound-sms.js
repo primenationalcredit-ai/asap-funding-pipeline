@@ -111,6 +111,30 @@ export const handler = async (event) => {
     }
     await supabase.from("leads").update(patch).eq("id", lead.id);
 
+    // A "yes" reply confirms the client's upcoming appointment.
+    if (inbound && !patch.opted_out && /^\s*(yes|yea|yeah|yep|y|confirm|confirmed|ok|okay)\b/i.test(text)) {
+      try {
+        const { data: appts } = await supabase
+          .from("activities").select("id, title, assigned_to, lead_id")
+          .eq("lead_id", lead.id).eq("type", "appointment").eq("confirm_state", "sent")
+          .gte("due_at", new Date(Date.now() - 15 * 60000).toISOString())
+          .order("due_at", { ascending: true }).limit(1);
+        const appt = (appts || [])[0];
+        if (appt) {
+          await supabase.from("activities")
+            .update({ confirm_state: "confirmed", confirmed_at: new Date().toISOString() })
+            .eq("id", appt.id);
+          await supabase.from("activities").insert({
+            lead_id: appt.lead_id, type: "call",
+            title: `Confirmed by text: ${appt.title || "appointment"}`,
+            alarm: false, due_at: new Date().toISOString(),
+            created_by: "automation", assigned_to: appt.assigned_to || "all",
+          });
+          console.log("[rc-inbound] appointment confirmed", appt.id);
+        }
+      } catch (e) { console.log("[rc-inbound] confirm fail", e.message); }
+    }
+
     console.log("[rc-inbound]", `matched lead ${lead.id}`, dir, "from", fromNumber, "to", toNumber);
     return { statusCode: 200, body: JSON.stringify({ ok: true, matched: true, direction: dir }) };
   } catch (err) {

@@ -4738,6 +4738,13 @@ function ApptModal({ onClose, onSave, leads, team, userEmail, editing }) {
   );
 }
 
+const CONFIRM_UI = {
+  confirmed: { chip: "bg-emerald-600 text-white", dot: "bg-emerald-100 text-emerald-800", row: "border-emerald-300 bg-emerald-50", label: "Confirmed" },
+  sent: { chip: "bg-amber-500 text-white", dot: "bg-amber-100 text-amber-800", row: "border-amber-200 bg-amber-50", label: "Awaiting reply" },
+  declined: { chip: "bg-rose-600 text-white", dot: "bg-rose-100 text-rose-800", row: "border-rose-300 bg-rose-50", label: "Needs reschedule" },
+};
+function confirmUi(a) { return CONFIRM_UI[a && a.confirm_state] || null; }
+
 function Calendar({ activities = [], leads = [], config = {}, userEmail, onOpen, addActivity, updateActivity, deleteActivity }) {
   const team = config.team || [];
   const [cursor, setCursor] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
@@ -4814,7 +4821,7 @@ function Calendar({ activities = [], leads = [], config = {}, userEmail, onOpen,
                 className={`flex min-h-[62px] flex-col rounded-lg border p-1 text-left transition ${isSel ? "border-blue-500 bg-blue-50" : "border-slate-100 hover:bg-slate-50"}`}>
                 <span className={`text-xs font-bold ${isToday ? "text-blue-600" : "text-slate-600"}`}>{d.getDate()}</span>
                 {list.slice(0, 2).map((a) => (
-                  <span key={a.id} className="mt-0.5 truncate rounded bg-emerald-100 px-1 text-[10px] font-semibold text-emerald-800">{timeOf(a)} {leadName(a.lead_id) || a.title}</span>
+                  <span key={a.id} className={`mt-0.5 truncate rounded px-1 text-[10px] font-semibold ${(confirmUi(a) || { dot: "bg-slate-100 text-slate-600" }).dot}`}>{timeOf(a)} {leadName(a.lead_id) || a.title}</span>
                 ))}
                 {list.length > 2 && <span className="mt-0.5 text-[10px] font-semibold text-slate-400">+{list.length - 2} more</span>}
               </button>
@@ -4828,11 +4835,13 @@ function Calendar({ activities = [], leads = [], config = {}, userEmail, onOpen,
         {!dayList.length && <p className="mt-2 text-sm text-slate-400">No appointments this day.</p>}
         <div className="mt-2 space-y-2">
           {dayList.map((a) => (
-            <div key={a.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
-              <span className="rounded bg-emerald-600 px-2 py-0.5 text-xs font-bold text-white">{timeOf(a)}</span>
+            <div key={a.id} className={`flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 ${(confirmUi(a) || { row: "border-slate-100 bg-slate-50" }).row}`}>
+              <span className="rounded bg-slate-700 px-2 py-0.5 text-xs font-bold text-white">{timeOf(a)}</span>
               <span className="text-sm font-semibold text-slate-800">{a.title || "Appointment"}</span>
               {a.lead_id && <button onClick={() => onOpen(a.lead_id)} className="text-xs font-semibold text-blue-600 hover:underline">{leadName(a.lead_id)} →</button>}
               <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[11px] font-semibold text-slate-600">{ownerName(a.assigned_to)}</span>
+              {confirmUi(a) && <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${confirmUi(a).chip}`}>{confirmUi(a).label}</span>}
+              {a.confirm_state !== "confirmed" && <button onClick={() => updateActivity(a.id, { confirm_state: "confirmed", confirmed_at: new Date().toISOString() })} className="rounded border border-emerald-300 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-50">Mark confirmed</button>}
               {a.notes && <span className="w-full text-xs text-slate-500">{a.notes}</span>}
               <div className="ml-auto flex gap-1">
                 <button onClick={() => setModal({ editing: a })} className="rounded p-1.5 text-slate-400 hover:bg-white hover:text-slate-600"><Pencil size={14} /></button>
@@ -4852,7 +4861,8 @@ function Calendar({ activities = [], leads = [], config = {}, userEmail, onOpen,
               <span className="w-40 shrink-0 text-xs font-semibold text-slate-500">{new Date(a.due_at).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })} {timeOf(a)}</span>
               <span className="font-medium text-slate-700">{a.title || "Appointment"}</span>
               {a.lead_id && <button onClick={() => onOpen(a.lead_id)} className="text-xs font-semibold text-blue-600 hover:underline">{leadName(a.lead_id)} →</button>}
-              <span className="ml-auto rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">{ownerName(a.assigned_to)}</span>
+              {confirmUi(a) && <span className={`ml-auto rounded-full px-2 py-0.5 text-[11px] font-bold ${confirmUi(a).chip}`}>{confirmUi(a).label}</span>}
+              <span className={`rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500 ${confirmUi(a) ? "" : "ml-auto"}`}>{ownerName(a.assigned_to)}</span>
             </div>
           ))}
         </div>

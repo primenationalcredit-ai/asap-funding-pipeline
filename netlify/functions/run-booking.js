@@ -131,14 +131,15 @@ async function appointmentConfirmations(supabase) {
     const yes = `${siteUrl()}/.netlify/functions/confirm-appointment?t=${encodeURIComponent(token)}`;
 
     let sent = false;
+    const callFrom = process.env.APPT_CALL_FROM || "(346) 330-4736";
     if (lead.phone && !quiet) {
-      const sms = `Hi ${first}, this is ASAP confirming your call today at ${when} Central. Reply YES to confirm, or let us know if you need a different time.`;
+      const sms = `Hi ${first}, this is ASAP confirming your call today at ${when} Central. We will be calling you from ${callFrom}, so please watch for it. Reply YES to confirm, or let us know if you need a different time.`;
       try { if (!rc) rc = await rcToken(); await sendSms(rc, lead.phone, sms); sent = true; }
       catch (e) { console.log("[confirm] sms fail", a.id, e.message); }
     }
     if (lead.email) {
       const subject = `Confirming your call at ${when} Central`;
-      const text = `Hi ${first},\n\nJust confirming our call coming up at ${when} Central.\n\nClick here to confirm you are good to go:\n${yes}\n\nIf you need a different time, just reply to this email.\n\nTalk soon,\nASAP Funding USA`;
+      const text = `Hi ${first},\n\nJust confirming our call coming up at ${when} Central.\n\nWe will be calling you from ${callFrom}, so please keep an eye out for that number.\n\nClick here to confirm you are good to go:\n${yes}\n\nIf you need a different time, just reply to this email.\n\nTalk soon,\nASAP Funding USA`;
       try { await sendEmail(lead.email, subject, text); sent = true; }
       catch (e) { console.log("[confirm] email fail", a.id, e.message); }
     }

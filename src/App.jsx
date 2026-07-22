@@ -698,6 +698,7 @@ function rowToLead(r) {
     automationPaused: !!r.automation_paused,
     optedOut: !!r.opted_out,
     ownerEmail: r.owner_email || "",
+    appointmentAt: r.appointment_at || "",
     product: r.product || "",
     lenderTag: r.lender_tag || "",
     snoozeUntil: r.snooze_until ? new Date(r.snooze_until).getTime() : null,
@@ -2385,6 +2386,17 @@ function BoardCard({ lead, onOpen, cadences, templates, config, openCompose, upd
           ? <span className="shrink-0 rounded bg-amber-100 px-1.5 text-[10px] font-bold text-amber-800">PAUSED</span>
           : rel && <span className={`shrink-0 text-xs font-medium ${rel.overdue ? "text-rose-600" : "text-orange-500"}`}>{rel.label}</span>}
       </div>
+      {lead.appointmentAt && (() => {
+        const t = new Date(lead.appointmentAt);
+        if (isNaN(t.getTime())) return null;
+        const past = t.getTime() < Date.now();
+        return (
+          <div className={`mt-1 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-bold ${past ? "bg-slate-100 text-slate-500" : "bg-emerald-100 text-emerald-800"}`}>
+            <CalendarDays size={11} />
+            {t.toLocaleDateString(undefined, { month: "short", day: "numeric" })} at {t.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
+          </div>
+        );
+      })()}
       {(lead.desiredAmount || lead.commissionAmount) && (
         <div className="mt-1 text-xs text-slate-500">
           {lead.commissionAmount ? <span className="font-semibold text-blue-700">{money(lead.commissionAmount)} comm</span> : lead.desiredAmount ? <span>Wants {lead.desiredAmount}</span> : null}

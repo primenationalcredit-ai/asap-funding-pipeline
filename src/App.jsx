@@ -1503,7 +1503,8 @@ function Dashboard({ userEmail }) {
   // Live updates: poll every 15s so inbound texts/emails, new leads, and server-created
   // alarms (like new-lead alerts) appear without a manual refresh, and refresh on tab focus.
   useEffect(() => {
-    const tick = () => { if (!document.hidden) { refetchComms(); refetchActivities(); refetchLeads(); } };
+    const pingBooking = () => { try { fetch("/.netlify/functions/run-booking", { method: "POST", keepalive: true }).catch(() => {}); } catch { /* best effort */ } };
+    const tick = () => { if (!document.hidden) { refetchComms(); refetchActivities(); refetchLeads(); pingBooking(); } };
     const id = setInterval(tick, 15000);
     const onVisible = () => { if (!document.hidden) { refetchComms(); refetchActivities(); refetchLeads(); } };
     document.addEventListener("visibilitychange", onVisible);

@@ -2260,20 +2260,11 @@ function Pipeline({ leads, allLeads, allCount, dueList, stats, config, query, se
   const [overTrash, setOverTrash] = useState(false);
   const boardRef = useRef(null);
 
-  // Vertical wheel scrolls the board sideways, so a trackpad or mouse wheel
-  // moves through the columns without hunting for the scrollbar.
-  useEffect(() => {
+  // Arrow buttons move the board one column at a time.
+  const nudge = (dir) => {
     const el = boardRef.current;
-    if (!el) return;
-    const onWheel = (e) => {
-      if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
-      if (el.scrollWidth <= el.clientWidth) return;
-      e.preventDefault();
-      el.scrollLeft += e.deltaY;
-    };
-    el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
-  }, []);
+    if (el) el.scrollBy({ left: dir * 300, behavior: "smooth" });
+  };
 
   // While dragging a card, holding near either edge scrolls the board along.
   const edgeScroll = (e) => {
@@ -2369,7 +2360,19 @@ function Pipeline({ leads, allLeads, allCount, dueList, stats, config, query, se
           )}
 
           {allCount === 0 ? <Empty onAdd={() => setShowAdd(true)} /> : (
-            <div ref={boardRef} onDragOver={edgeScroll} className="flex snap-x gap-3 overflow-x-auto overscroll-x-contain pb-3 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-400 [&::-webkit-scrollbar-track]:bg-slate-100 [&::-webkit-scrollbar]:h-2.5">
+            <div className="relative">
+              <style>{`
+                .board-scroll { scrollbar-width: auto; scrollbar-color: #94a3b8 #e2e8f0; }
+                .board-scroll::-webkit-scrollbar { height: 14px; }
+                .board-scroll::-webkit-scrollbar-track { background: #e2e8f0; border-radius: 8px; }
+                .board-scroll::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 8px; border: 3px solid #e2e8f0; }
+                .board-scroll::-webkit-scrollbar-thumb:hover { background: #64748b; }
+              `}</style>
+              <button type="button" onClick={() => nudge(-1)} aria-label="Scroll left"
+                className="absolute -left-1 top-1/2 z-20 hidden -translate-y-1/2 rounded-full border border-slate-200 bg-white/95 p-2 text-slate-600 shadow-md hover:bg-white md:block">‹</button>
+              <button type="button" onClick={() => nudge(1)} aria-label="Scroll right"
+                className="absolute -right-1 top-1/2 z-20 hidden -translate-y-1/2 rounded-full border border-slate-200 bg-white/95 p-2 text-slate-600 shadow-md hover:bg-white md:block">›</button>
+            <div ref={boardRef} onDragOver={edgeScroll} className="board-scroll flex gap-3 overflow-x-auto pb-3">
               {BOARDS[boardTab].stages.map((key) => {
                 const stage = STAGES.find((s) => s.key === key);
                 const items = colLeads(key);
@@ -2377,7 +2380,7 @@ function Pipeline({ leads, allLeads, allCount, dueList, stats, config, query, se
                   <div key={key}
                     onDragOver={(e) => e.preventDefault()}
                     onDrop={() => onDrop(key)}
-                    className="flex w-72 shrink-0 snap-start flex-col rounded-xl bg-slate-100/70 p-2">
+                    className="flex w-72 shrink-0 flex-col rounded-xl bg-slate-100/70 p-2">
                     <div className="mb-2 flex items-center justify-between px-1.5 pt-1">
                       <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ring-inset ${TONE[stage.tone]}`}>{stage.label}</span>
                       <span className="text-xs font-bold text-slate-400">{items.length}</span>
@@ -2392,6 +2395,7 @@ function Pipeline({ leads, allLeads, allCount, dueList, stats, config, query, se
                   </div>
                 );
               })}
+            </div>
             </div>
           )}
           <p className="mt-2 px-1 text-xs text-slate-400">Drag a card to a new column to move that lead. Click a card to open the full profile.</p>

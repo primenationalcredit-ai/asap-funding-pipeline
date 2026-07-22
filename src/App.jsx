@@ -24,6 +24,7 @@ const STAGES = [
   { key: "callback", label: "Call Back", tone: "violet" },
   { key: "check_back", label: "Check Back Later", tone: "blue" },
   { key: "not_interested", label: "Not Interested", tone: "orange" },
+  { key: "wrong_number", label: "Wrong Number", tone: "rose" },
   { key: "interested", label: "Interested", tone: "sky" },
   { key: "report_pulled", label: "Reports Received", tone: "teal" },
   { key: "app_received", label: "App Received", tone: "indigo" },
@@ -1900,7 +1901,7 @@ function Dashboard({ userEmail }) {
             <Pipeline leads={filtered} allLeads={leads} allCount={leads.length} dueList={dueList} stats={stats} config={config}
               query={query} setQuery={setQuery} filter={filter} setFilter={setFilter} showAdd={showAdd} setShowAdd={setShowAdd}
               addLead={addLead} onOpen={setProfileId} logTouch={logTouch} updateLead={updateLead} cadences={cadences} templates={templates} openCompose={setCompose}
-              onGoFollowups={() => setTab("followups")} />
+              onGoFollowups={() => setTab("followups")} removeLead={removeLead} />
           )}
           {tab === "followups" && <Followups dueList={dueList} config={config} onOpen={setProfileId} openCompose={setCompose} updateLead={updateLead} />}
           {tab === "inbox" && <Conversations leads={leads} comms={comms} unreadLeadIds={unreadLeadIds} onSend={sendReply} onAddNote={addNote} onOpen={setProfileId} markRead={markRead} markAllRead={markAllRead} templates={templates} config={config} openCompose={setCompose} />}
@@ -1932,7 +1933,7 @@ function Dashboard({ userEmail }) {
 /*  Pipeline                                                          */
 /* ================================================================== */
 const BOARDS = {
-  outreach: { label: "Outreach", stages: ["new", "appointment_booked", "voicemail", "waiting_reports", "app_sent", "callback", "check_back", "not_interested", "interested"] },
+  outreach: { label: "Outreach", stages: ["new", "appointment_booked", "voicemail", "waiting_reports", "app_sent", "callback", "check_back", "not_interested", "wrong_number", "interested"] },
   funding: { label: "Funding", stages: ["report_pulled", "app_received", "app_reports_received", "submitted", "looking_for_partner", "waiting_for_partner", "denied", "pre_approved", "contracts_out", "agreement_signed", "getting_approvals", "funded", "commission_paid"] },
   closed: { label: "Closed", stages: ["declined", "offer_cr", "referred_cr", "credit_repair", "dead"] },
 };
@@ -2254,10 +2255,11 @@ function Tracker({ leads, config, onOpen, logTouch, userEmail }) {
   );
 }
 
-function Pipeline({ leads, allLeads, allCount, dueList, stats, config, query, setQuery, filter, setFilter, showAdd, setShowAdd, addLead, onOpen, logTouch, updateLead, cadences, templates, openCompose, onGoFollowups }) {
+function Pipeline({ leads, allLeads, allCount, dueList, stats, config, query, setQuery, filter, setFilter, showAdd, setShowAdd, addLead, onOpen, logTouch, updateLead, cadences, templates, openCompose, onGoFollowups, removeLead }) {
   const [view, setView] = useState("board");
   const [boardTab, setBoardTab] = useState("outreach");
   const [dragId, setDragId] = useState(null);
+  const [overTrash, setOverTrash] = useState(false);
 
   const q = query.toLowerCase();
   const boardLeads = (allLeads || leads).filter((l) => !q || (l.name + l.phone + l.email + l.businessName + l.opportunityName + l.source + l.tags).toLowerCase().includes(q));
@@ -2324,6 +2326,24 @@ function Pipeline({ leads, allLeads, allCount, dueList, stats, config, query, se
               );
             })}
           </div>
+
+          {dragId && (
+            <div
+              onDragOver={(e) => { e.preventDefault(); setOverTrash(true); }}
+              onDragLeave={() => setOverTrash(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setOverTrash(false);
+                const victim = (allLeads || []).find((x) => x.id === dragId);
+                const who = victim ? (victim.name || victim.businessName || "this client") : "this client";
+                if (window.confirm(`Delete ${who}? This removes the client and everything on their file. This cannot be undone.`)) removeLead(dragId);
+                setDragId(null);
+              }}
+              className={`fixed bottom-6 left-1/2 z-[60] flex -translate-x-1/2 items-center gap-2 rounded-xl border-2 border-dashed px-6 py-4 shadow-lg transition ${overTrash ? "scale-105 border-rose-500 bg-rose-100" : "border-rose-300 bg-white"}`}>
+              <Trash2 size={20} className="text-rose-500" />
+              <span className="text-sm font-bold text-rose-600">{overTrash ? "Release to delete" : "Drag here to delete"}</span>
+            </div>
+          )}
 
           {allCount === 0 ? <Empty onAdd={() => setShowAdd(true)} /> : (
             <div className="flex gap-3 overflow-x-auto pb-3">
@@ -2585,7 +2605,7 @@ const LOAN_PROGRAMS = [
 // Stage-driven file: which "phase" a stage belongs to, so the file shows only what matters.
 const PHASE = {
   new: "qualify", voicemail: "qualify", interested: "qualify", callback: "qualify", check_back: "qualify", not_interested: "qualify", dead: "qualify",
-  appointment_booked: "qualify",
+  appointment_booked: "qualify", wrong_number: "qualify",
   waiting_reports: "collect", report_pulled: "collect", app_sent: "collect", app_received: "collect", app_reports_received: "submit",
   submitted: "submit", denied: "submit", pre_approved: "submit",
   looking_for_partner: "submit", waiting_for_partner: "submit",

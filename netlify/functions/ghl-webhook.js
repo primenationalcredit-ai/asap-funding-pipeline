@@ -71,10 +71,44 @@ async function newLeadAlarm(supabase, leadRow, leadId) {
 
 // Creates the calendar appointment row when a lead books a call.
 // Calendar reads activities where type = "appointment".
+// GHL sends appointment times with no timezone attached, and Netlify runs on
+// UTC, so a naive string would land five hours early. The booking calendar is
+// Central, so treat any zone-less timestamp as Central and convert properly.
+function tzOffsetMs(tz, ms) {
+  const dtf = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz, hour12: false,
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+  });
+  const p = {};
+  for (const part of dtf.formatToParts(new Date(ms))) p[part.type] = part.value;
+  const hour = p.hour === "24" ? "0" : p.hour;
+  const asUTC = Date.UTC(+p.year, +p.month - 1, +p.day, +hour, +p.minute, +p.second);
+  return ms - asUTC;
+}
+
+function parseGhlTime(v) {
+  if (!v) return null;
+  const s = String(v).trim();
+  if (/(Z|[+-]\d{2}:?\d{2})$/.test(s)) {
+    const d = new Date(s);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/);
+  if (!m) {
+    const d = new Date(s);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  const wall = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0));
+  let ms = wall;
+  for (let i = 0; i < 2; i++) ms = wall + tzOffsetMs("America/Chicago", ms);
+  return new Date(ms);
+}
+
 async function createAppointment(supabase, leadId, startTime, leadName) {
   if (!startTime) return;
-  const when = new Date(startTime);
-  if (isNaN(when.getTime())) return;
+  const when = parseGhlTime(startTime);
+  if (!when) return;
   const owner = process.env.APPT_OWNER_EMAIL || process.env.NEW_LEAD_ALARM_TO || "all";
   // Don't double-book the same slot for the same lead
   const { data: dupe } = await supabase.from("activities")
@@ -292,7 +326,7 @@ export const handler = async (event) => {
         const { error: bookErr } = await supabase.from("leads").update({
           booking_state: "booked",
           status: "appointment_booked",
-          appointment_at: lead.start_time || null,
+          appointment_at: (parseGhlTime(lead.start_time) || {}).toISOString ? parseGhlTime(lead.start_time).toISOString() : null,
           automation_paused: true,
           last_touch_at: new Date().toISOString(),
           touches: [...(existing.touches || []), { at: Date.now(), kind: "call_booked", at_time: lead.start_time || "", auto: true }],

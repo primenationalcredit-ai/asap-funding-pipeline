@@ -25,7 +25,6 @@ const STAGES = [
   { key: "check_back", label: "Check Back Later", tone: "blue" },
   { key: "not_interested", label: "Not Interested", tone: "orange" },
   { key: "wrong_number", label: "Wrong Number", tone: "rose" },
-  { key: "interested", label: "Interested", tone: "sky" },
   { key: "report_pulled", label: "Reports Received", tone: "teal" },
   { key: "app_received", label: "App Received", tone: "indigo" },
   { key: "app_reports_received", label: "App & Reports Received", tone: "cyan" },
@@ -1185,7 +1184,6 @@ function StagePill({ status }) {
 const JOURNEY = [
   { key: "new", label: "New", match: ["new", "called"] },
   { key: "contacted", label: "Contacted", match: ["voicemail", "callback", "not_interested"] },
-  { key: "interested", label: "Interested", match: ["interested"] },
   { key: "booked", label: "Booked", match: ["appointment_booked"] },
   { key: "report", label: "Report", match: ["waiting_reports", "report_pulled"] },
   { key: "app_sent", label: "App Sent", match: ["app_sent"] },
@@ -1933,9 +1931,9 @@ function Dashboard({ userEmail }) {
 /*  Pipeline                                                          */
 /* ================================================================== */
 const BOARDS = {
-  outreach: { label: "Outreach", stages: ["new", "appointment_booked", "voicemail", "waiting_reports", "app_sent", "callback", "check_back", "not_interested", "wrong_number", "interested"] },
+  outreach: { label: "Outreach", stages: ["new", "appointment_booked", "voicemail", "waiting_reports", "app_sent", "wrong_number", "callback", "check_back"] },
   funding: { label: "Funding", stages: ["report_pulled", "app_received", "app_reports_received", "submitted", "looking_for_partner", "waiting_for_partner", "denied", "pre_approved", "contracts_out", "agreement_signed", "getting_approvals", "funded", "commission_paid"] },
-  closed: { label: "Closed", stages: ["declined", "offer_cr", "referred_cr", "credit_repair", "dead"] },
+  closed: { label: "Closed", stages: ["not_interested", "declined", "offer_cr", "referred_cr", "credit_repair", "dead"] },
 };
 
 function QuickStart() {
@@ -2260,6 +2258,32 @@ function Pipeline({ leads, allLeads, allCount, dueList, stats, config, query, se
   const [boardTab, setBoardTab] = useState("outreach");
   const [dragId, setDragId] = useState(null);
   const [overTrash, setOverTrash] = useState(false);
+  const boardRef = useRef(null);
+
+  // Vertical wheel scrolls the board sideways, so a trackpad or mouse wheel
+  // moves through the columns without hunting for the scrollbar.
+  useEffect(() => {
+    const el = boardRef.current;
+    if (!el) return;
+    const onWheel = (e) => {
+      if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+      if (el.scrollWidth <= el.clientWidth) return;
+      e.preventDefault();
+      el.scrollLeft += e.deltaY;
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
+
+  // While dragging a card, holding near either edge scrolls the board along.
+  const edgeScroll = (e) => {
+    const el = boardRef.current;
+    if (!el || !dragId) return;
+    const r = el.getBoundingClientRect();
+    const edge = 90;
+    if (e.clientX - r.left < edge) el.scrollLeft -= 18;
+    else if (r.right - e.clientX < edge) el.scrollLeft += 18;
+  };
 
   const q = query.toLowerCase();
   const boardLeads = (allLeads || leads).filter((l) => !q || (l.name + l.phone + l.email + l.businessName + l.opportunityName + l.source + l.tags).toLowerCase().includes(q));
@@ -2291,7 +2315,6 @@ function Pipeline({ leads, allLeads, allCount, dueList, stats, config, query, se
             <option value="active">Active</option>
             <option value="new">New</option>
             <option value="voicemail">Left Voicemail</option>
-            <option value="interested">Interested</option>
             <option value="callback">Call Back</option>
             <option value="report_pulled">Report Pulled</option>
             <option value="all">All</option>
@@ -2346,7 +2369,7 @@ function Pipeline({ leads, allLeads, allCount, dueList, stats, config, query, se
           )}
 
           {allCount === 0 ? <Empty onAdd={() => setShowAdd(true)} /> : (
-            <div className="flex gap-3 overflow-x-auto pb-3">
+            <div ref={boardRef} onDragOver={edgeScroll} className="flex snap-x gap-3 overflow-x-auto overscroll-x-contain pb-3 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-400 [&::-webkit-scrollbar-track]:bg-slate-100 [&::-webkit-scrollbar]:h-2.5">
               {BOARDS[boardTab].stages.map((key) => {
                 const stage = STAGES.find((s) => s.key === key);
                 const items = colLeads(key);
@@ -2354,7 +2377,7 @@ function Pipeline({ leads, allLeads, allCount, dueList, stats, config, query, se
                   <div key={key}
                     onDragOver={(e) => e.preventDefault()}
                     onDrop={() => onDrop(key)}
-                    className="flex w-72 shrink-0 flex-col rounded-xl bg-slate-100/70 p-2">
+                    className="flex w-72 shrink-0 snap-start flex-col rounded-xl bg-slate-100/70 p-2">
                     <div className="mb-2 flex items-center justify-between px-1.5 pt-1">
                       <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ring-inset ${TONE[stage.tone]}`}>{stage.label}</span>
                       <span className="text-xs font-bold text-slate-400">{items.length}</span>
@@ -2930,7 +2953,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
       { label: "Not interested", disp: "Spoke, not interested", stage: "dead", c: "orange" },
     ];
     return [ // outreach default
-      { label: "Interested", disp: "Spoke, interested", stage: "interested", c: "sky" },
+      { label: "Interested", disp: "Spoke, interested", stage: "waiting_reports", c: "sky" },
       { label: "Call back later", disp: "Spoke, call back", stage: "callback", c: "violet" },
       { label: "Check back later", disp: "Spoke, check back later", stage: "check_back", c: "sky" },
       { label: "Not interested", disp: "Spoke, not interested", stage: "not_interested", c: "orange" },

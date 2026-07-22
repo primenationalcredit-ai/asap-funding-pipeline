@@ -2896,7 +2896,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
   const [lenderMsg, setLenderMsg] = useState("");
   const [spoke, setSpoke] = useState(false);
   const [declineOpen, setDeclineOpen] = useState(false);
-  useEffect(() => { setDraft(lead); setGuideOpen(lead.status === "new"); setSpoke(false); setDeclineOpen(false); markRead && markRead(lead.id); }, [lead.id]); // reload + mark read when switching leads
+  useEffect(() => { setDraft(lead); setGuideOpen(lead.status === "new"); setSpoke(false); setLogged(""); setCallNote(""); setNoteErr(false); setDeclineOpen(false); markRead && markRead(lead.id); }, [lead.id]); // reload + mark read when switching leads
   const set = (k) => (e) => setDraft({ ...draft, [k]: e.target.value });
   // Confirm helpers: editing a field auto-confirms it; the check confirms without editing.
   const confirmedList = draft.confirmedFields || [];
@@ -2987,23 +2987,20 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
     if (addActivity) addActivity(lead.id, { type: "note", title: label, notes: note, dueAt: Date.now(), alarm: false, done: true });
     setCallNote(""); setSpoke(false); setNoteErr(false);
     if (stage) updateLead(lead.id, { status: stage }); // stage null = just log the call, keep current stage
-    // A voicemail should put the follow-up message in front of you right away
-    // instead of waiting on the overnight cadence run.
-    if (isVoicemail) {
-      const step = nextDue({ ...lead, status: stage || lead.status, snoozeUntil: null }, cadences, templates);
-      const tpl = step && step.template;
-      if (tpl) {
-        openCompose({
-          lead, channel: tpl.channel,
-          to: tpl.channel === "sms" ? lead.phone : lead.email,
-          subject: fillTokens(tpl.subject, lead, config),
-          body: fillTokens(tpl.body, lead, config),
-          kind: "cadence", extra: { stage: stage || lead.status, step: step.i },
-        });
-      }
-    }
     setLogged(label);
-    setTimeout(() => setLogged(""), 2500);
+  };
+
+  // Opens the follow-up message for this lead's current stage, ready to send.
+  const sendFollowUp = (channel) => {
+    const step = nextDue({ ...lead, snoozeUntil: null }, cadences, templates);
+    const tpl = step && step.template && step.template.channel === channel ? step.template : null;
+    openCompose({
+      lead, channel,
+      to: channel === "sms" ? lead.phone : lead.email,
+      subject: tpl ? fillTokens(tpl.subject, lead, config) : "",
+      body: tpl ? fillTokens(tpl.body, lead, config) : "",
+      kind: "cadence", extra: { stage: lead.status, step: tpl ? step.i : undefined },
+    });
   };
 
   // Call outcomes change with where the client is in the pipeline.
@@ -3201,9 +3198,29 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
           {/* what happened on this call */}
           <div className="rounded-xl border border-slate-200 bg-white p-4">
             <div className="mb-2 flex items-center gap-1.5 text-sm font-bold text-slate-800"><Phone size={15} className="text-blue-600" /> What happened on this call? <span className="text-rose-500">*</span></div>
-            <textarea value={callNote} onChange={(e) => { setCallNote(e.target.value); if (e.target.value.trim()) setNoteErr(false); }} rows={2} placeholder="What did you discuss? (logged with your name and the time. Not needed for no answer)" className={`${inputCls} mb-1 ${noteErr ? "border-rose-400 bg-rose-50 ring-2 ring-rose-100" : ""}`} />
-            {noteErr && <p className="mb-2 text-xs font-medium text-rose-600">Please add a call note before logging the outcome.</p>}
-            {logged && <p className="mb-2 rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 ring-1 ring-inset ring-emerald-200">Logged: {logged}</p>}
+            {(
+              <>
+                <textarea value={callNote} onChange={(e) => { setCallNote(e.target.value); if (e.target.value.trim()) setNoteErr(false); }} rows={2} placeholder="What did you discuss? (logged with your name and the time. Not needed for no answer)" className={`${inputCls} mb-1 ${noteErr ? "border-rose-400 bg-rose-50 ring-2 ring-rose-100" : ""}`} />
+                {noteErr && <p className="mb-2 text-xs font-medium text-rose-600">Please add a call note before logging the outcome.</p>}
+              </>
+            )}
+            {logged && (
+              <div className="mb-2 rounded-lg bg-emerald-50 p-3 ring-1 ring-inset ring-emerald-200">
+                <div className="text-sm font-bold text-emerald-800">Logged: {logged}</div>
+                <div className="mt-2 text-xs font-semibold text-emerald-700">Send the follow-up</div>
+                <div className="mt-1.5 flex flex-wrap gap-2">
+                  <button disabled={!lead.phone} onClick={() => sendFollowUp("sms")}
+                    className={`rounded-lg px-3 py-2 text-sm font-semibold ${lead.phone ? "bg-blue-600 text-white hover:bg-blue-700" : "bg-slate-100 text-slate-300"}`}>
+                    <MessageSquare size={14} className="mr-1 inline" />Send text
+                  </button>
+                  <button disabled={!lead.email} onClick={() => sendFollowUp("email")}
+                    className={`rounded-lg px-3 py-2 text-sm font-semibold ${lead.email ? "bg-white text-blue-700 ring-1 ring-blue-300 hover:bg-blue-50" : "bg-slate-100 text-slate-300 ring-1 ring-slate-200"}`}>
+                    <Mail size={14} className="mr-1 inline" />Send email
+                  </button>
+                  <button onClick={() => setLogged("")} className="rounded-lg px-3 py-2 text-sm font-medium text-slate-500 hover:bg-white">Dismiss</button>
+                </div>
+              </div>
+            )}
             {!spoke ? (
               <div className="flex flex-wrap gap-2">
                 <button onClick={() => logOutcome(lvmStage, "Left voicemail")} className="rounded-lg bg-amber-100 px-3 py-2 text-sm font-semibold text-amber-800 ring-1 ring-inset ring-amber-200 hover:bg-amber-200">No answer / left voicemail</button>

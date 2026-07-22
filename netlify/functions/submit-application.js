@@ -36,7 +36,11 @@ export const handler = async (event) => {
           const existing = Array.isArray(lead.documents) ? lead.documents : [];
           const newDocs = docs.map((d) => ({ name: d.name, path: d.path, label: d.label || "Other", uploadedAt: Date.now(), by: "application form" }));
           const patch = { documents: [...existing, ...newDocs], last_touch_at: new Date().toISOString() };
-          if (["new", "voicemail", "interested", "callback", "check_back"].includes(lead.status)) patch.status = "app_sent";
+          // The client sending their application back is "received", not "sent".
+          // If their reports are already in, they move straight to App & Reports Received.
+          const movable = ["new", "voicemail", "interested", "callback", "check_back", "appointment_booked", "waiting_reports", "app_sent"];
+          if (lead.status === "report_pulled") patch.status = "app_reports_received";
+          else if (movable.includes(lead.status)) patch.status = "app_received";
           await supabase.from("leads").update(patch).eq("id", lead.id);
           await supabase.from("communications").insert({ lead_id: lead.id, direction: "in", channel: "note", body: `Client submitted the funding application with ${newDocs.length} document(s).`, by_user: "application form" });
           filed = true;

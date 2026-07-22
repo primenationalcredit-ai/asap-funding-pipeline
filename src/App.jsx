@@ -1634,7 +1634,16 @@ function Dashboard({ userEmail }) {
       const { error } = await supabase.from("leads").update(leadPatchToRow(computed)).eq("id", id);
       if (error) setErr(error.message);
     }
-  }, [userEmail]);
+    // Working the lead by hand clears its outstanding reminders, so nobody has
+    // to tick off a task they already did. Appointments are left alone.
+    try {
+      await supabase.from("activities")
+        .update({ done: true, done_at: new Date(now).toISOString() })
+        .eq("lead_id", id).eq("done", false).neq("type", "appointment")
+        .lte("due_at", new Date(now).toISOString());
+      refetchActivities();
+    } catch { /* best effort */ }
+  }, [userEmail, refetchActivities]);
 
   const addLead = useCallback(async (data) => {
     const row = { name: data.name.trim(), phone: data.phone.trim(), email: data.email.trim(), notes: data.notes.trim(), status: "new", touches: [] };
@@ -2297,13 +2306,31 @@ function Pipeline({ leads, allLeads, allCount, dueList, stats, config, query, se
 
   return (
     <div className="mt-4">
-      <QuickStart />
       {dueList.length > 0 && (
-        <button onClick={onGoFollowups} className="mb-4 flex w-full items-center gap-2 rounded-xl border border-orange-200 bg-orange-50 px-4 py-2.5 text-left text-sm font-semibold text-orange-800 hover:bg-orange-100">
-          <Clock size={15} /> {dueList.length} follow-up{dueList.length === 1 ? "" : "s"} due
-          <span className="ml-auto text-xs font-medium text-orange-600">Open Follow-ups &rarr;</span>
-        </button>
+        <div className="mb-4 rounded-xl border border-orange-200 bg-orange-50 p-3">
+          <div className="mb-2 flex items-center gap-2">
+            <Clock size={15} className="text-orange-600" />
+            <span className="text-sm font-bold text-orange-900">Today: {dueList.length} follow-up{dueList.length === 1 ? "" : "s"} due</span>
+            <button onClick={onGoFollowups} className="ml-auto text-xs font-semibold text-orange-700 hover:underline">Open Follow-ups &rarr;</button>
+          </div>
+          <div className="space-y-1.5">
+            {dueList.slice(0, 6).map(({ l }) => (
+              <div key={l.id} className="flex flex-wrap items-center gap-2 rounded-lg bg-white px-3 py-2 ring-1 ring-orange-100">
+                <button onClick={() => onOpen(l.id)} className="truncate text-sm font-semibold text-slate-800 hover:text-blue-700">{l.name || l.businessName || "(no name)"}</button>
+                <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ring-1 ring-inset ${TONE[(STAGES.find((x) => x.key === l.status) || {}).tone] || TONE.slate}`}>{(STAGES.find((x) => x.key === l.status) || {}).label || l.status}</span>
+                <div className="ml-auto flex gap-1.5">
+                  <button onClick={() => onOpen(l.id)} className="rounded-md bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-200">Open</button>
+                  <button onClick={() => logTouch(l.id, "manual", "note", { note: "Cleared from Today" })} className="rounded-md bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-500">Done</button>
+                </div>
+              </div>
+            ))}
+            {dueList.length > 6 && (
+              <button onClick={onGoFollowups} className="px-1 text-xs font-semibold text-orange-700 hover:underline">+{dueList.length - 6} more</button>
+            )}
+          </div>
+        </div>
       )}
+      <QuickStart />
 
       <div className="mb-3 flex flex-wrap items-center gap-2">
         {/* view toggle */}
@@ -3120,7 +3147,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
           )}
 
           {/* Early phase: the two next steps are report link or application (or both) */}
-          {["new", "voicemail", "callback", "check_back", "appointment_booked", "waiting_reports", "app_sent"].includes(lead.status) && (
+          {["callback", "appointment_booked", "waiting_reports", "app_sent"].includes(lead.status) && (
             <div className="rounded-xl border-2 border-sky-200 bg-sky-50 p-4">
               <div className="mb-0.5 text-sm font-bold text-sky-900">{["app_sent", "waiting_reports"].includes(lead.status) ? "Send anything else they need" : "Send the next step"}</div>
               <p className="mb-3 text-xs text-sky-700">Send the report link so they can pull their credit, the application, or both. You can send by text and email.</p>

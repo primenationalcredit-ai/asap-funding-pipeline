@@ -2987,6 +2987,21 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
     if (addActivity) addActivity(lead.id, { type: "note", title: label, notes: note, dueAt: Date.now(), alarm: false, done: true });
     setCallNote(""); setSpoke(false); setNoteErr(false);
     if (stage) updateLead(lead.id, { status: stage }); // stage null = just log the call, keep current stage
+    // A voicemail should put the follow-up message in front of you right away
+    // instead of waiting on the overnight cadence run.
+    if (isVoicemail) {
+      const step = nextDue({ ...lead, status: stage || lead.status, snoozeUntil: null }, cadences, templates);
+      const tpl = step && step.template;
+      if (tpl) {
+        openCompose({
+          lead, channel: tpl.channel,
+          to: tpl.channel === "sms" ? lead.phone : lead.email,
+          subject: fillTokens(tpl.subject, lead, config),
+          body: fillTokens(tpl.body, lead, config),
+          kind: "cadence", extra: { stage: stage || lead.status, step: step.i },
+        });
+      }
+    }
     setLogged(label);
     setTimeout(() => setLogged(""), 2500);
   };

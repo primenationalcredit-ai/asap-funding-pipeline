@@ -87,22 +87,55 @@ function tzOffsetMs(tz, ms) {
   return ms - asUTC;
 }
 
+function fromWallClock(y, mo, d, h, mi, tz) {
+  const wall = Date.UTC(y, mo, d, h, mi, 0);
+  let ms = wall;
+  for (let i = 0; i < 2; i++) ms = wall + tzOffsetMs(tz, ms);
+  return new Date(ms);
+}
+
+const GHL_MONTHS = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
+
+// GHL sends the booking time as plain English with no timezone, e.g.
+// "Friday, July 24, 2026 10:00 AM". The calendar is Central, so any string
+// without an explicit offset is read as Central rather than UTC.
 function parseGhlTime(v) {
   if (!v) return null;
+  const tz = "America/Chicago";
   const s = String(v).trim();
+
   if (/(Z|[+-]\d{2}:?\d{2})$/.test(s)) {
     const d = new Date(s);
     return isNaN(d.getTime()) ? null : d;
   }
-  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/);
-  if (!m) {
-    const d = new Date(s);
-    return isNaN(d.getTime()) ? null : d;
+
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{1,2}):(\d{2})/);
+  if (iso) return fromWallClock(+iso[1], +iso[2] - 1, +iso[3], +iso[4], +iso[5], tz);
+
+  const txt = s.match(/([A-Za-z]{3,})\s+(\d{1,2}),?\s+(\d{4})[,\s]+(\d{1,2}):(\d{2})\s*([AaPp])?/);
+  if (txt) {
+    const mo = GHL_MONTHS[txt[1].slice(0, 3).toLowerCase()];
+    if (mo !== undefined) {
+      let h = +txt[4];
+      const mer = (txt[6] || "").toLowerCase();
+      if (mer === "p" && h < 12) h += 12;
+      if (mer === "a" && h === 12) h = 0;
+      return fromWallClock(+txt[3], mo, +txt[2], h, +txt[5], tz);
+    }
   }
-  const wall = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0));
-  let ms = wall;
-  for (let i = 0; i < 2; i++) ms = wall + tzOffsetMs("America/Chicago", ms);
-  return new Date(ms);
+
+  const us = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})[,\s]+(\d{1,2}):(\d{2})\s*([AaPp])?/);
+  if (us) {
+    let h = +us[4];
+    const mer = (us[6] || "").toLowerCase();
+    if (mer === "p" && h < 12) h += 12;
+    if (mer === "a" && h === 12) h = 0;
+    return fromWallClock(+us[3], +us[1] - 1, +us[2], h, +us[5], tz);
+  }
+
+  console.log("[appt] unrecognised time format:", s);
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
 }
 
 async function createAppointment(supabase, leadId, startTime, leadName) {

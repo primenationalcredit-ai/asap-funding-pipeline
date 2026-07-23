@@ -2773,11 +2773,20 @@ function AlarmCenter({ activities = [], userEmail, completeActivity, snoozeActiv
   const notified = useRef(new Set());
   useEffect(() => {
     if (!("Notification" in window) || Notification.permission !== "granted") return;
+    // One popup per client, not one per reminder. Several reminders can land on
+    // the same lead at once and three notifications for one person is noise.
+    const seen = new Set();
     for (const a of due) {
-      if (notified.current.has(a.id)) continue;
-      notified.current.add(a.id);
+      const key = a.lead_id || a.id;
+      if (seen.has(key) || notified.current.has(key)) continue;
+      seen.add(key);
+      notified.current.add(key);
+      const also = due.filter((x) => (x.lead_id || x.id) === key).length - 1;
       try {
-        const n = new Notification(a.title || "ASAP CRM reminder", { body: "Open the CRM to see details.", tag: String(a.id), requireInteraction: true });
+        const n = new Notification(a.title || "ASAP CRM reminder", {
+          body: also > 0 ? `Plus ${also} more reminder${also === 1 ? "" : "s"} for this client.` : "Open the CRM to see details.",
+          tag: `asap-lead-${key}`,
+        });
         n.onclick = () => { try { window.focus(); if (a.lead_id) onOpen(a.lead_id); n.close(); } catch {} };
       } catch {}
     }

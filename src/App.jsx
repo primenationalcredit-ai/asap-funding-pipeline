@@ -2293,6 +2293,49 @@ function Pipeline({ leads, allLeads, allCount, dueList, stats, config, query, se
     if (el) el.scrollBy({ left: dir * 300, behavior: "smooth" });
   };
 
+  // Native horizontal scrollbars keep hiding themselves, so the board gets its
+  // own drag bar that is always visible and always grabbable.
+  const trackRef = useRef(null);
+  const [bar, setBar] = useState({ w: 0, l: 0, show: false });
+
+  const syncBar = useCallback(() => {
+    const el = boardRef.current;
+    if (!el) return;
+    const ratio = el.clientWidth / el.scrollWidth;
+    if (ratio >= 1) { setBar((b) => (b.show ? { ...b, show: false } : b)); return; }
+    setBar({ w: Math.max(ratio * 100, 8), l: (el.scrollLeft / el.scrollWidth) * 100, show: true });
+  }, []);
+
+  useEffect(() => {
+    const el = boardRef.current;
+    if (!el) return;
+    syncBar();
+    el.addEventListener("scroll", syncBar, { passive: true });
+    window.addEventListener("resize", syncBar);
+    return () => { el.removeEventListener("scroll", syncBar); window.removeEventListener("resize", syncBar); };
+  }, [syncBar, boardTab]);
+
+  const startBarDrag = (e) => {
+    e.preventDefault();
+    const el = boardRef.current, track = trackRef.current;
+    if (!el || !track) return;
+    const startX = e.clientX;
+    const startLeft = el.scrollLeft;
+    const trackW = track.clientWidth;
+    const move = (ev) => { el.scrollLeft = startLeft + ((ev.clientX - startX) / trackW) * el.scrollWidth; };
+    const up = () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); document.body.style.userSelect = ""; };
+    document.body.style.userSelect = "none";
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+  };
+
+  const jumpBar = (e) => {
+    const el = boardRef.current, track = trackRef.current;
+    if (!el || !track) return;
+    const rect = track.getBoundingClientRect();
+    el.scrollTo({ left: ((e.clientX - rect.left) / rect.width) * el.scrollWidth - el.clientWidth / 2, behavior: "smooth" });
+  };
+
   // While dragging a card, holding near either edge scrolls the board along.
   const edgeScroll = (e) => {
     const el = boardRef.current;
@@ -2453,6 +2496,14 @@ function Pipeline({ leads, allLeads, allCount, dueList, stats, config, query, se
                 );
               })}
             </div>
+            {bar.show && (
+              <div ref={trackRef} onMouseDown={jumpBar}
+                className="relative mt-1.5 h-4 w-full cursor-pointer rounded-full bg-slate-200">
+                <div onMouseDown={(e) => { e.stopPropagation(); startBarDrag(e); }}
+                  style={{ width: `${bar.w}%`, left: `${bar.l}%` }}
+                  className="absolute top-0 h-4 cursor-grab rounded-full bg-slate-500 transition-colors hover:bg-slate-600 active:cursor-grabbing active:bg-blue-600" />
+              </div>
+            )}
             </div>
           )}
           <p className="mt-2 px-1 text-xs text-slate-400">Drag a card to a new column to move that lead. Click a card to open the full profile.</p>
@@ -2907,6 +2958,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
   const [noteErr, setNoteErr] = useState(false);
   const [logged, setLogged] = useState("");
   const [loggedStage, setLoggedStage] = useState("");
+  const [wasNoShow, setWasNoShow] = useState(false);
   const [docLabel, setDocLabel] = useState("Bank statements");
   const [docBusy, setDocBusy] = useState(false);
   const [lenderOpen, setLenderOpen] = useState(false);
@@ -2918,7 +2970,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
   const [lenderMsg, setLenderMsg] = useState("");
   const [spoke, setSpoke] = useState(false);
   const [declineOpen, setDeclineOpen] = useState(false);
-  useEffect(() => { setDraft(lead); setGuideOpen(lead.status === "new"); setSpoke(false); setLogged(""); setCallNote(""); setNoteErr(false); setDeclineOpen(false); markRead && markRead(lead.id); }, [lead.id]); // reload + mark read when switching leads
+  useEffect(() => { setDraft(lead); setGuideOpen(lead.status === "new"); setSpoke(false); setLogged(""); setLoggedStage(""); setWasNoShow(false); setCallNote(""); setNoteErr(false); setDeclineOpen(false); markRead && markRead(lead.id); }, [lead.id]); // reload + mark read when switching leads
   const set = (k) => (e) => setDraft({ ...draft, [k]: e.target.value });
   // Confirm helpers: editing a field auto-confirms it; the check confirms without editing.
   const confirmedList = draft.confirmedFields || [];
@@ -3011,10 +3063,28 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
     if (stage) updateLead(lead.id, { status: stage }); // stage null = just log the call, keep current stage
     setLogged(label);
     setLoggedStage(stage || "");
+    // A voicemail on a booked call is a no show, not a cold dial. The follow-up
+    // has to acknowledge the missed appointment or it reads badly.
+    setWasNoShow(isVoicemail && lead.status === "appointment_booked");
   };
 
   // Opens the follow-up message for this lead's current stage, ready to send.
   const sendFollowUp = (channel) => {
+    const who = (lead.name || "").trim().split(/\s+/)[0] || "there";
+
+    if (wasNoShow) {
+      const noShowSms = `Hey ${who}, it is Joe with ASAP. Just tried you for the time we had set. I am still free for a little while if you want to jump on now. Otherwise reply 1 for later today or 2 for tomorrow and I will lock it in.`;
+      const noShowEmail = `Hi ${who},\n\nWe were set to talk just now and I could not reach you. No problem, it happens.\n\nI already went through your information, so the call will be quick when we do it. Reply with a time that works and I will call you, or grab one here.\n\nWhat we will cover:\n\nWhat you are realistically approved for\nWhat the terms look like\nWhat to change if the numbers are not where you want them\n\nIf you are no longer looking, just reply and tell me and I will close your file.\n\nTalk soon,\nJoe\nASAP Funding USA`;
+      openCompose({
+        lead, channel,
+        to: channel === "sms" ? lead.phone : lead.email,
+        subject: channel === "email" ? `We missed each other, ${who}` : "",
+        body: channel === "sms" ? noShowSms : noShowEmail,
+        kind: "manual",
+      });
+      return;
+    }
+
     const step = nextDue({ ...lead, snoozeUntil: null }, cadences, templates);
     const tpl = step && step.template && step.template.channel === channel ? step.template : null;
     openCompose({
@@ -3230,7 +3300,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
             {logged && (
               <div className="mb-2 rounded-lg bg-emerald-50 p-3 ring-1 ring-inset ring-emerald-200">
                 <div className="text-sm font-bold text-emerald-800">Logged: {logged}{loggedStage ? ` \u2192 moved to ${(STAGES.find((x) => x.key === loggedStage) || {}).label || loggedStage}` : " (stage unchanged)"}</div>
-                <div className="mt-2 text-xs font-semibold text-emerald-700">Send the follow-up</div>
+                <div className="mt-2 text-xs font-semibold text-emerald-700">{wasNoShow ? "They missed the call. Send the no show follow-up" : "Send the follow-up"}</div>
                 <div className="mt-1.5 flex flex-wrap gap-2">
                   <button disabled={!lead.phone} onClick={() => sendFollowUp("sms")}
                     className={`rounded-lg px-3 py-2 text-sm font-semibold ${lead.phone ? "bg-blue-600 text-white hover:bg-blue-700" : "bg-slate-100 text-slate-300"}`}>

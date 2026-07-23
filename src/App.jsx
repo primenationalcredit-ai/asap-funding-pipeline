@@ -2885,6 +2885,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
   const [callNote, setCallNote] = useState("");
   const [noteErr, setNoteErr] = useState(false);
   const [logged, setLogged] = useState("");
+  const [loggedStage, setLoggedStage] = useState("");
   const [docLabel, setDocLabel] = useState("Bank statements");
   const [docBusy, setDocBusy] = useState(false);
   const [lenderOpen, setLenderOpen] = useState(false);
@@ -2988,6 +2989,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
     setCallNote(""); setSpoke(false); setNoteErr(false);
     if (stage) updateLead(lead.id, { status: stage }); // stage null = just log the call, keep current stage
     setLogged(label);
+    setLoggedStage(stage || "");
   };
 
   // Opens the follow-up message for this lead's current stage, ready to send.
@@ -3031,7 +3033,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
   })();
   // Leaving a voicemail only sends outreach leads into the voicemail cadence; deeper in the
   // pipeline it just logs the call so the client is not yanked back to an outreach stage.
-  const lvmStage = ["new", "voicemail", "callback", "not_interested", "appointment_booked", "waiting_reports", ""].includes(lead.status) ? "voicemail" : null;
+  const lvmStage = (BOARDS.outreach.stages.includes(lead.status) || !lead.status || lead.status === "not_interested") ? "voicemail" : null;
 
   const submitToFunder = async () => {
     let link = "";
@@ -3206,7 +3208,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
             )}
             {logged && (
               <div className="mb-2 rounded-lg bg-emerald-50 p-3 ring-1 ring-inset ring-emerald-200">
-                <div className="text-sm font-bold text-emerald-800">Logged: {logged}</div>
+                <div className="text-sm font-bold text-emerald-800">Logged: {logged}{loggedStage ? ` \u2192 moved to ${(STAGES.find((x) => x.key === loggedStage) || {}).label || loggedStage}` : " (stage unchanged)"}</div>
                 <div className="mt-2 text-xs font-semibold text-emerald-700">Send the follow-up</div>
                 <div className="mt-1.5 flex flex-wrap gap-2">
                   <button disabled={!lead.phone} onClick={() => sendFollowUp("sms")}

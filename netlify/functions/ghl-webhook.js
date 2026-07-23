@@ -164,27 +164,63 @@ async function sendAbandonNudge(supabase, lead) {
   if (comms.length) { try { await supabase.from("communications").insert(comms); await supabase.from("leads").update({ last_touch_at: new Date().toISOString() }).eq("id", lead.id); } catch (e) {} }
 }
 
+// Acknowledge a completed lead that lands outside business hours. Text only:
+// the booking sequence sends the calendar link a few minutes later by email,
+// and it cannot text until the quiet-hour window opens in the morning.
+async function sendAfterHoursAck(supabase, leadRow, leadId) {
+  const { wd, hr } = centralParts();
+  if (hr >= 8 && hr < 21) return;                       // inside hours, booking sequence has it
+  if (process.env.AFTER_HOURS_SMS === "off") return;
+  if (!leadRow.phone) return;
+
+  const first = (leadRow.name || "").trim().split(/\s+/)[0] || "there";
+  const backOn = (wd === "Sat" || wd === "Sun" || (wd === "Fri" && hr >= 21)) ? "Monday morning" : "first thing in the morning";
+  const smsText = `${first}, it is Joe with ASAP. Got everything you just sent over. I am going through it ${backOn} and can walk you through where you stand in about 15 minutes. What is usually easier for you, mornings or afternoons?`;
+
+  try {
+    const rc = await rcToken();
+    await sendSms(rc, leadRow.phone, smsText);
+    await supabase.from("communications").insert({
+      lead_id: leadId, direction: "out", channel: "sms", body: smsText,
+      to_addr: leadRow.phone, by_user: "automation",
+    });
+    await supabase.from("leads").update({ last_touch_at: new Date().toISOString() }).eq("id", leadId);
+    console.log("[afterhours] ack sent", leadId);
+  } catch (e) { console.log("[afterhours] sms failed", e.message); }
+}
+
 // Fire an instant welcome text + email the moment a new lead lands.
 async function sendInstantWelcome(supabase, leadRow, leadId) {
   const first = (leadRow.name || "").trim().split(/\s+/)[0] || "there";
   const { wd, hr } = centralParts();
   const isWeekend = wd === "Sat" || wd === "Sun";
   const when = isWeekend ? "Monday" : "today";
+  // Friday night, Saturday and Sunday all roll forward to Monday.
+  const nextTouch = (isWeekend || (wd === "Fri" && hr >= 21)) ? "Monday" : "the morning";
   const comms = [];
 
-  // SMS, compliance-safe (branded ASAP, no funding/loan/lender/$). Only during 8am-9pm Central (quiet hours).
-  if (leadRow.phone && hr >= 8 && hr < 21) {
-    const smsText = isWeekend
-      ? `${first}, it is Joe with ASAP. I got your business info and I want to get your pre-approval offer over to you. What time works Monday for a quick call? Reply here and we will set it up.`
-      : `${first}, it is Joe with ASAP. I got your business info and I want to send over your pre-approval offer today. What time works for a quick call? Reply here and we will lock it in.`;
+  // SMS, compliance-safe (branded ASAP, no funding/loan/lender/$). Sends around the
+  // clock: a lead who just submitted a form is expecting an answer, so an
+  // after-hours acknowledgement is worth more than silence until morning.
+  const afterHours = hr < 8 || hr >= 21;
+  if (leadRow.phone && process.env.AFTER_HOURS_SMS !== "off") {
+    const smsText = afterHours
+      ? (nextTouch === "Monday"
+          ? `${first}, it is Joe with ASAP. Got your business info just now. I am back in Monday morning and can walk you through where you stand in about 15 minutes. What is usually easier for you, mornings or afternoons?`
+          : `${first}, it is Joe with ASAP. Got your business info just now. I am reviewing it first thing in the morning and can walk you through where you stand in about 15 minutes. What is usually easier for you, mornings or afternoons?`)
+      : isWeekend
+        ? `${first}, it is Joe with ASAP. I got your business info and I want to get your pre-approval offer over to you. What time works Monday for a quick call? Reply here and we will set it up.`
+        : `${first}, it is Joe with ASAP. I got your business info and I want to send over your pre-approval offer today. What time works for a quick call? Reply here and we will lock it in.`;
     try { const rc = await rcToken(); await sendSms(rc, leadRow.phone, smsText); comms.push({ lead_id: leadId, direction: "out", channel: "sms", body: smsText, to_addr: leadRow.phone, by_user: "automation" }); }
     catch (e) { console.log("[welcome] sms failed", e.message); }
   }
 
   // Email, always (no quiet-hour restriction on email)
   if (leadRow.email) {
-    const subject = `Your pre-approval offer, ${first}`;
-    const emailText = isWeekend
+    const subject = afterHours ? `Got your request, ${first}` : `Your pre-approval offer, ${first}`;
+    const emailText = afterHours
+      ? `Hi ${first},\n\nYour request came through just now and I am the one reviewing it.\n\n${nextTouch === "Monday" ? "My team is back in Monday morning" : "First thing in the morning"} I will look at three things:\n\nWhat you can likely qualify for right now\nWhat the terms realistically look like at your revenue and time in business\nWhat would move you into better programs over the next 60 to 90 days\n\nThat conversation takes about 15 minutes. Just reply with a window that works and I will call you then.\n\nTalk soon,\nJoe\nASAP Funding USA`
+      : isWeekend
       ? `Hi ${first},\n\nGreat news, I received your business information and I want to get a pre-approval offer over to you.\n\nMy team is back first thing Monday, so what time Monday works for a quick call? Just reply with a time that works and I will get you on the calendar.\n\nTalk soon,\nJoe\nASAP Funding USA`
       : `Hi ${first},\n\nGreat news, I received your business information and I want to send over a pre-approval offer today.\n\nWhat time works for a quick call so I can get you the details? Just reply with a time that works and I will make it happen.\n\nTalk soon,\nJoe\nASAP Funding USA`;
     try { await sendEmail(leadRow.email, subject, emailText); comms.push({ lead_id: leadId, direction: "out", channel: "email", subject, body: emailText, to_addr: leadRow.email, by_user: "automation" }); }
@@ -393,6 +429,12 @@ export const handler = async (event) => {
     const sendWelcome = !isIncomplete && !isComplete;
     if (sendWelcome) {
       try { await sendInstantWelcome(supabase, row, data.id); } catch (e) { console.log("[welcome] error", e.message); }
+    }
+    // A completed lead normally waits for the booking sequence, but that sequence
+    // cannot text during quiet hours. Send a plain acknowledgement so an
+    // after-hours lead is not met with silence until the next morning.
+    if (isComplete) {
+      try { await sendAfterHoursAck(supabase, row, data.id); } catch (e) { console.log("[afterhours] error", e.message); }
     }
     if (isComplete) {
       try { await newLeadAlarm(supabase, { ...row, name: `APP COMPLETE: ${row.name || ""}` }, data.id); } catch (e) {}

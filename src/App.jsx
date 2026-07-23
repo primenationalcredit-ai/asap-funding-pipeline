@@ -2305,7 +2305,19 @@ function Pipeline({ leads, allLeads, allCount, dueList, stats, config, query, se
 
   const q = query.toLowerCase();
   const boardLeads = (allLeads || leads).filter((l) => !q || (l.name + l.phone + l.email + l.businessName + l.opportunityName + l.source + l.tags).toLowerCase().includes(q));
-  const colLeads = (key) => boardLeads.filter((l) => l.status === key).sort((a, b) => (b.lastTouchAt || b.createdAt) - (a.lastTouchAt || a.createdAt));
+  const colLeads = (key) => {
+    const items = boardLeads.filter((l) => l.status === key);
+    // Booked calls read best in the order they will actually happen.
+    if (key === "appointment_booked") {
+      return items.sort((a, b) => {
+        const ta = a.appointmentAt ? Date.parse(a.appointmentAt) : Infinity;
+        const tb = b.appointmentAt ? Date.parse(b.appointmentAt) : Infinity;
+        if (ta !== tb) return ta - tb;
+        return (b.lastTouchAt || b.createdAt) - (a.lastTouchAt || a.createdAt);
+      });
+    }
+    return items.sort((a, b) => (b.lastTouchAt || b.createdAt) - (a.lastTouchAt || a.createdAt));
+  };
   const onDrop = (key) => { if (dragId) { updateLead(dragId, { status: key }); setDragId(null); } };
 
   return (

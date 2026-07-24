@@ -126,6 +126,12 @@ async function appointmentConfirmations(supabase) {
     if (!lead || lead.opted_out) continue;
 
     const token = (globalThis.crypto && crypto.randomUUID) ? crypto.randomUUID() : `${a.id}-${now}`;
+    // Claim before sending so two runner instances cannot both message the client.
+    const { data: won } = await supabase.from("activities")
+      .update({ confirm_state: "sent", confirm_sent_at: new Date(now).toISOString(), confirm_token: token })
+      .eq("id", a.id).is("confirm_state", null).select("id");
+    if (!won || !won.length) continue;
+
     const first = (lead.name || "").trim().split(/\s+/)[0] || "there";
     const when = fmtCentral(Date.parse(a.due_at));
     const yes = `${siteUrl()}/.netlify/functions/confirm-appointment?t=${encodeURIComponent(token)}`;
@@ -144,12 +150,8 @@ async function appointmentConfirmations(supabase) {
       catch (e) { console.log("[confirm] email fail", a.id, e.message); }
     }
 
-    if (sent) {
-      await supabase.from("activities").update({
-        confirm_state: "sent", confirm_sent_at: new Date(now).toISOString(), confirm_token: token,
-      }).eq("id", a.id);
-      asked++;
-    }
+    if (sent) asked++;
+    else await supabase.from("activities").update({ confirm_state: null, confirm_token: null }).eq("id", a.id);
   }
   return { asked };
 }
@@ -171,6 +173,13 @@ async function appointmentReminders(supabase) {
 
   let rc = null, reminded = 0;
   for (const a of pending) {
+    // Claim first, send second. Two runner instances reading the same row is
+    // what produced duplicate popups for the same appointment.
+    const { data: won } = await supabase.from("activities")
+      .update({ reminded_at: new Date(now).toISOString() })
+      .eq("id", a.id).is("reminded_at", null).select("id");
+    if (!won || !won.length) continue;
+
     const startMs = Date.parse(a.due_at);
     const who = a.assigned_to && a.assigned_to !== "all" ? a.assigned_to : (process.env.APPT_OWNER_EMAIL || "");
     let lead = null;
@@ -207,7 +216,6 @@ async function appointmentReminders(supabase) {
       });
     } catch (e) { console.log("[appt] alarm fail", e.message); }
 
-    await supabase.from("activities").update({ reminded_at: new Date(now).toISOString() }).eq("id", a.id);
     reminded++;
   }
   return { reminded };
@@ -252,6 +260,14 @@ async function run() {
     else if (stage < 2 && mins >= NUDGE2_MIN) doStage = 2;
     if (!doStage) { skipped++; continue; }
 
+    // Claim this nudge before sending. Several runner instances can be awake at
+    // once (every open CRM tab pings this), and without the claim two of them
+    // read the same row and both send.
+    const { data: claimed } = await supabase.from("leads")
+      .update({ booking_nudge_stage: doStage, last_touch_at: new Date().toISOString() })
+      .eq("id", lead.id).eq("booking_nudge_stage", stage).select("id");
+    if (!claimed || !claimed.length) { skipped++; continue; }
+
     const smsText = doStage === 1
       ? `${first}, it is Joe with ASAP. Underwriting wants to get you pre-approved. Grab a quick time here so we can go over it: ${link}`
       : `${first}, it is Joe with ASAP. I actually have a few minutes now if you want me to call you, or grab a time here whenever is easy: ${link}`;
@@ -270,10 +286,8 @@ async function run() {
       catch (e) { console.log("[booking] email fail", lead.id, e.message); }
     }
 
-    if (sent || (!lead.phone && !lead.email)) {
-      await supabase.from("leads").update({ booking_nudge_stage: doStage, last_touch_at: new Date().toISOString() }).eq("id", lead.id);
-      if (doStage === 1) nudged1++; else nudged2++;
-    }
+    if (doStage === 1) nudged1++; else nudged2++;
+    if (!sent) console.log("[booking] nudge claimed but nothing sent", lead.id);
   }
 
   if (comms.length) { try { await supabase.from("communications").insert(comms); } catch (e) { console.log("[booking] comm log fail", e.message); } }

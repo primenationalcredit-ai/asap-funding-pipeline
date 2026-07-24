@@ -50,14 +50,21 @@ function fillTokens(text, lead, config) {
 }
 
 // Central-time business hours check (America/Chicago handles CST/CDT)
+// Automated sending runs while somebody is actually at a desk to answer a
+// reply. 9am to 5pm Mountain also happens to be safe nationally: the earliest
+// it reaches anyone is 8am Pacific, the latest is 7pm Eastern, so both ends
+// stay inside the 8am to 9pm rule wherever the lead lives.
 function inBusinessHours(now = new Date()) {
+  const tz = process.env.BUSINESS_TZ || "America/Denver";
+  const startHr = Number(process.env.BUSINESS_START_HOUR || 9);
+  const endHr = Number(process.env.BUSINESS_END_HOUR || 17);
   const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/Chicago", weekday: "short", hour: "numeric", hour12: false,
+    timeZone: tz, weekday: "short", hour: "numeric", hour12: false,
   }).formatToParts(now);
   const wd = parts.find((p) => p.type === "weekday").value;
   const hr = Number(parts.find((p) => p.type === "hour").value);
   const isWeekday = !["Sat", "Sun"].includes(wd);
-  return isWeekday && hr >= 8 && hr < 17;
+  return isWeekday && hr >= startHr && hr < endHr;
 }
 // Central-time calendar date as YYYY-MM-DD (sortable/comparable as a string)
 function cDay(ms) {

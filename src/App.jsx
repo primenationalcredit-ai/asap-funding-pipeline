@@ -67,8 +67,13 @@ const DAY = 86400000;
 /* ================================================================== */
 /*  Defaults: config, template library, stage cadences               */
 /* ================================================================== */
+// Declared here rather than beside APP_LINK_DEFAULT because DEFAULT_CONFIG
+// below is evaluated at module load and would hit the temporal dead zone.
+const BOOK_LINK_DEFAULT = "https://asapfundingusa.com/thank-you.html";
+
 const DEFAULT_CONFIG = {
   reportLink: "https://www.myscoreiq.com/industry-score-preferred.aspx?offercode=432143MH",
+  bookLink: BOOK_LINK_DEFAULT,
   smartCreditLink: "https://www.smartcredit.com/?PID=52188",
   appLink: "https://tranquil-muffin-691d4e.netlify.app/apply.html",
   signature: "Joe at ASAP Funding USA",
@@ -458,6 +463,191 @@ The moment it is in, I go to work and come back with your actual options.
 {{signature}}` },
 
   // ============ EXTRA ACCOUNT-CHECK variety ============
+  // ============ NURTURE LIBRARY (Hormozi structure, ASAP voice) ============
+  // SMS here never uses the words funding, loan, lender or a dollar sign, and
+  // never {{signature}}. Carriers filter lending language on 10DLC numbers and
+  // a filtered text reads as delivered while never arriving.
+
+  // ---- First contact after a voicemail (pool vm_first_sms) ----
+  { id: "vm_first_sms_h1", pool: "vm_first_sms", name: "After VM: pick a number", channel: "sms", subject: "",
+    body: `Hey {{first}}, {{repfirst}} at ASAP. Just left you a voicemail about the request you put in for {{business}}. I can walk you through where you stand in about 15 minutes. Got 5 minutes right now? Reply 1 for now, 2 for later today, 3 for tomorrow.` },
+  { id: "vm_first_sms_h2", pool: "vm_first_sms", name: "After VM: direct", channel: "sms", subject: "",
+    body: `{{first}}, this is {{repfirst}} with ASAP. Tried you just now about {{business}}. Easiest thing is 15 minutes on the phone and you will know exactly where you stand. Free now, or should I try you later today?` },
+
+  // ---- Voicemail chase, day 2 onward (pool vm_sms) ----
+  { id: "vm_sms_h1", pool: "vm_sms", name: "VM chase: two times", channel: "sms", subject: "",
+    body: `Hey {{first}}, still trying to reach you about {{business}}. I have got 2:30 or 4:00 open today. Which is easier?` },
+  { id: "vm_sms_h2", pool: "vm_sms", name: "VM chase: bad timing or sorted", channel: "sms", subject: "",
+    body: `Hey {{first}}. Quick one. Is the timing just bad right now, or did you already get what you needed for {{business}}?` },
+  { id: "vm_sms_h3", pool: "vm_sms", name: "VM chase: yes or no is fine", channel: "sms", subject: "",
+    body: `{{first}}, {{repfirst}} at ASAP. Still have your info pulled up. One 15 minute call and you will know where you stand. Yes or no is fine.` },
+  { id: "vm_sms_h4", pool: "vm_sms", name: "VM chase: morning", channel: "sms", subject: "",
+    body: `Morning {{first}}. {{repfirst}} at ASAP. Still want me to run the numbers on {{business}}? Takes 15 minutes and you will know exactly what you are working with.` },
+  { id: "vm_sms_h5", pool: "vm_sms", name: "VM chase: stop guessing", channel: "sms", subject: "",
+    body: `{{first}}, tried you again today. If now is not a good time just tell me when and I will stop guessing. If you already sorted it out, tell me that too and I will close your file.` },
+
+  // ---- Voicemail emails (pool vm_email) ----
+  { id: "vm_email_h1", pool: "vm_email", name: "VM email: tried you", channel: "email", subject: "Tried you about {{business}}",
+    body: `Hey {{first}},
+
+I called a little while ago about the funding request you submitted for {{business}} and left you a voicemail.
+
+Here is what the call covers:
+
+Confirming a few details on your revenue and time in business
+What you are likely approved for today
+If today is not the right answer, exactly what changes that within 60 to 90 days
+
+Fifteen minutes, no cost, no obligation. Reply with two windows that work and I will call you.
+
+{{signature}}` },
+  { id: "vm_email_h2", pool: "vm_email", name: "VM email: what lenders look at", channel: "email", subject: "What lenders actually look at",
+    body: `Hey {{first}},
+
+Whether or not we ever talk, this is worth knowing.
+
+When a business applies for funding, the decision usually comes down to four things:
+
+Monthly deposits, not revenue on paper
+How long the business has been running
+Personal credit profile of the owner
+How many other positions are already open
+
+Most people get declined for the fourth one and never find out. They keep applying, which makes it worse.
+
+If you want me to look at where you actually sit before you apply anywhere else, just reply and tell me when you are around.
+
+{{signature}}` },
+  { id: "vm_email_h3", pool: "vm_email", name: "VM email: still worth a look", channel: "email", subject: "Still worth a look for {{business}}?",
+    body: `Hey {{first}},
+
+I have tried you a couple of times about {{business}}.
+
+Most people who fill that form out are trying to answer one of three questions:
+
+How much can I actually get right now
+What will it cost me
+If the answer is not what I want, what do I fix
+
+Fifteen minutes on the phone answers all three.
+
+If your situation changed and you are no longer looking, reply and say so. I will close it out and stop chasing you.
+
+{{signature}}` },
+
+  // ---- Early conversation (pools int_sms / int_email) ----
+  { id: "int_sms_h1", pool: "int_sms", name: "Early: five minutes now", channel: "sms", subject: "",
+    body: `{{first}}, if you have got 5 minutes right now we can knock this out and you will know exactly where you stand. Want to do that, or should I grab a time with you instead?` },
+  { id: "int_sms_h2", pool: "int_sms", name: "Early: two questions", channel: "sms", subject: "",
+    body: `{{first}}, {{repfirst}} at ASAP. I have your file open. Two questions and I can tell you where you stand. Worth 15 minutes today?` },
+  { id: "int_email_h1", pool: "int_email", name: "Early: three questions", channel: "email", subject: "Quick call about {{business}}",
+    body: `Hey {{first}},
+
+My job on this is simple:
+
+Confirm a few details
+Show you what you may qualify for now
+Outline what would unlock better terms if you are not there yet
+
+Reply with a good time today or tomorrow and I will call you. Fifteen minutes and you will know where you stand.
+
+{{signature}}` },
+
+  // ---- Call back (pools cb_sms / cb_email) ----
+  { id: "cb_sms_h1", pool: "cb_sms", name: "Call back: circling back", channel: "sms", subject: "",
+    body: `Hey {{first}}, {{repfirst}} at ASAP. You asked me to circle back around now. Still a good time for 15 minutes?` },
+  { id: "cb_sms_h2", pool: "cb_sms", name: "Call back: missed the window", channel: "sms", subject: "",
+    body: `{{first}}, tried you at the time we agreed. Want me to try again later today, or is another day better?` },
+
+  // ---- Application chase (pools appchase_sms / appchase_email) ----
+  { id: "appchase_sms_h1", pool: "appchase_sms", name: "App chase: which part", channel: "sms", subject: "",
+    body: `Hey {{first}}, still need that one back from you. Which part is holding you up? Most people get stuck on the bank statements and there is an easy way around it.` },
+  { id: "appchase_sms_h2", pool: "appchase_sms", name: "App chase: resend or call", channel: "sms", subject: "",
+    body: `{{first}}, still holding your spot but I need that back to do anything with it. Want me to resend it, or would a quick call be easier?` },
+  { id: "appchase_sms_h3", pool: "appchase_sms", name: "App chase: check spam", channel: "sms", subject: "",
+    body: `Morning {{first}}. Did everything come through okay on your end? Check spam if you do not see it. Happy to walk you through any part of it, takes 5 minutes.` },
+  { id: "appchase_email_h1", pool: "appchase_email", name: "App chase: stuck on anything", channel: "email", subject: "Stuck on anything in the application?",
+    body: `Hey {{first}},
+
+Your application is still outstanding. Two things people usually get hung up on:
+
+Bank statements. You need the last four months, and most banks let you download them as PDFs in about two minutes from online banking. You do not need paper copies.
+
+The revenue question. Use your actual deposits, not what you invoiced. Deposits are what gets looked at.
+
+If something else is in the way, reply and tell me. I would rather fix it than have you sit on it.
+
+{{signature}}` },
+
+  // ---- Long term nurture ----
+  { id: "value_email_h1", pool: "value_email", name: "Nurture: three things in 90 days", channel: "email", subject: "Three things that change your terms in 90 days",
+    body: `Hey {{first}},
+
+Not selling you anything today. Three things that genuinely move what you can qualify for, in order of impact:
+
+Deposit consistency. Lenders look at how steady your monthly deposits are, not just the total. Two strong months and one weak one reads worse than three average ones.
+
+Open positions. Every active advance against future revenue reduces what anyone else will offer. Clearing one can matter more than adding revenue.
+
+Personal credit. Above 680 opens programs that are simply not available below it. Most owners are closer to that line than they think.
+
+If you want me to look at where you actually sit, reply CALL and I will send times.
+
+{{signature}}` },
+  { id: "proof_email_h1", pool: "proof_email", name: "Nurture: second application is worse", channel: "email", subject: "Why the second application is worse than the first",
+    body: `Hey {{first}},
+
+Something worth knowing whether or not you work with us.
+
+When a business gets declined and immediately applies somewhere else, the second answer is usually worse than the first. Multiple applications in a short window signal trouble, and each one leaves a mark.
+
+The right move after a decline is to find out why, fix the specific thing, and then apply once to somewhere that fits.
+
+That is most of what I do. If you have been turned down recently, reply and tell me where. I can usually tell you what triggered it.
+
+{{signature}}` },
+  { id: "story_email_h1", pool: "story_email", name: "Nurture: bank statements", channel: "email", subject: "What your bank statements say about you",
+    body: `Hey {{first}},
+
+Underwriters spend more time on bank statements than anything else. What they are actually reading:
+
+Average daily balance, which tells them whether a payment would bounce
+Number of negative days, where even a few is a problem
+Deposit count, since many small deposits reads healthier than a few large ones
+Existing debits to other funders, which is the fastest way to a decline
+
+None of that is on your application. It is all in the statements.
+
+If you want to know how yours read before anyone else sees them, reply CALL.
+
+{{signature}}` },
+  { id: "urgency_sms_h1", pool: "urgency_sms", name: "Nurture: still open or sorted", channel: "sms", subject: "",
+    body: `Hey {{first}}, {{repfirst}} at ASAP. Still looking at options for {{business}}, or did you get it sorted? Either answer is fine, I just want to know whether to keep your file open.` },
+  { id: "ni_email_h1", pool: "ni_email", name: "Nurture: door open", channel: "email", subject: "Keeping your file open, {{first}}",
+    body: `Hey {{first}},
+
+No pitch here. Your information stays on file, so if the timing changes next month or next quarter, reply to this email and I will pick it straight back up. No starting over.
+
+One thing worth knowing in the meantime. If you get turned down somewhere, do not immediately apply somewhere else. Multiple applications in a short window make the next answer worse, not better. Talk to somebody first.
+
+{{signature}}` },
+
+  // ---- Break up ----
+  { id: "breakup_sms_h1", pool: "breakup_sms", name: "Break up: closing your file", channel: "sms", subject: "",
+    body: `Hey {{first}}. I am going to stop reaching out after this one. If the timing changes for {{business}}, text me here any time and I will pick it right back up. Good luck either way.` },
+  { id: "breakup_email_h1", pool: "breakup_email", name: "Break up: closing your file", channel: "email", subject: "Closing your file for now",
+    body: `Hey {{first}},
+
+I have reached out a handful of times about funding for {{business}} and have not been able to connect, so I am going to stop and let you get on with your day.
+
+Your information stays on file. If the timing changes next month or next quarter, reply to this email and I will pick it straight back up. No starting over.
+
+One last thing worth knowing. If you are turned down somewhere, do not immediately apply somewhere else. Multiple applications in a short window make the next answer worse, not better. Talk to somebody first.
+
+Good luck with the business.
+
+{{signature}}` },
+
   { id: "acct_sms_d", pool: "acct_sms", name: "Account check text: offer to do it together", channel: "sms", subject: "",
     body: `{{first}}, {{repfirst}} at ASAP. Still do not see your report on my end. If setting it up is the holdup, I will just call you and we can do it together in about 5 minutes. Reply CALL and I will ring you, or here is the link if you would rather knock it out yourself: {{link}}` },
   { id: "acct_sms_e", pool: "acct_sms", name: "Account check text: what is holding it up", channel: "sms", subject: "",
@@ -648,9 +838,13 @@ const DEFAULT_CADENCES = {
     { day: 30, pool: "ni_email" },
   ],
   check_back: [
-    { day: 30, pool: "ni_email" },
-    { day: 60, pool: "ni_email" },
-    { day: 90, pool: "ni_email" },
+    { day: 14, pool: "urgency_sms" },
+    { day: 30, pool: "value_email" },
+    { day: 45, pool: "urgency_sms" },
+    { day: 60, pool: "proof_email" },
+    { day: 90, pool: "story_email" },
+    { day: 120, pool: "urgency_sms" },
+    { day: 150, pool: "ni_email" },
   ],
   report_pulled: [{ day: 0, pool: "pulled_sms" }],
   app_sent: [
@@ -931,6 +1125,8 @@ function fillTokens(text, lead, config) {
     .replaceAll("{{link}}", config.reportLink || "[set your MyScoreIQ link in Settings]")
     .replaceAll("{{smartcredit}}", config.smartCreditLink || "https://www.smartcredit.com/?PID=52188")
     .replaceAll("{{applink}}", config.appLink || APP_LINK_DEFAULT)
+    .replaceAll("{{business}}", (lead.businessName || lead.business_name || "your business"))
+    .replaceAll("{{booklink}}", (config && config.bookLink) || BOOK_LINK_DEFAULT)
     .replaceAll("{{repfirst}}", rep.first)
     .replaceAll("{{signature}}", rep.signature);
 }

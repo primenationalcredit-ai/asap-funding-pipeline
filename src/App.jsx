@@ -458,6 +458,20 @@ The moment it is in, I go to work and come back with your actual options.
 {{signature}}` },
 
   // ============ EXTRA ACCOUNT-CHECK variety ============
+  { id: "acct_sms_d", pool: "acct_sms", name: "Account check text: offer to do it together", channel: "sms", subject: "",
+    body: `{{first}}, {{repfirst}} at ASAP. Still do not see your report on my end. If setting it up is the holdup, I will just call you and we can do it together in about 5 minutes. Reply CALL and I will ring you, or here is the link if you would rather knock it out yourself: {{link}}` },
+  { id: "acct_sms_e", pool: "acct_sms", name: "Account check text: what is holding it up", channel: "sms", subject: "",
+    body: `Hey {{first}}, one thing is still outstanding on my side and it is the only piece holding up your answer. Which part is tripping you up? Most people get stuck on the same step and it is a 2 minute fix. {{link}}` },
+  { id: "acct_email_d", pool: "acct_email", name: "Account check email: offer to do it together", channel: "email", subject: "Want me to walk you through it, {{first}}?",
+    body: `Hi {{first}},
+
+Your report still has not come through, and it is genuinely the only thing standing between you and a real answer. Without it I am guessing, and guessing costs you options.
+
+If the setup is what is slowing you down, that is an easy fix. Reply CALL and I will ring you, and we will do it together on the phone. Takes about five minutes.
+
+If you would rather do it yourself, here is the link again: {{link}}
+
+{{signature}}` },
   { id: "acct_sms_c", pool: "acct_sms", name: "Account check text: nudge", channel: "sms", subject: "",
     body: `{{first}}, {{repfirst}} at ASAP. Were you able to get your report pulled? If the link gave you trouble, here it is again: {{link}} Happy to walk you through it.` },
   { id: "acct_email_c", pool: "acct_email", name: "Account check email: stuck", channel: "email", subject: "Did the link give you trouble, {{first}}?",

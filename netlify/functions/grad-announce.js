@@ -9,6 +9,8 @@ const PB_URL = process.env.PLAYBOOK_SUPABASE_URL;
 const PB_KEY = process.env.PLAYBOOK_SUPABASE_KEY;
 const PD_TOKEN = process.env.PIPEDRIVE_TOKEN;
 const FUNNEL = "https://asapfundingusa.com/";
+// Person CURRENT STATUS values: round 3/4 completed stages + everyone in Additional Rounds
+const ROUND_STATUSES = ['716','717','718','719','724','725','726','727','1901','1267','1264','1491','1492','1568','1268','1601','1265','1493','1494','1800','1797','1798','1799','1495','1801'];
 
 function inBusinessHours(now = new Date()) {
   const tz = process.env.BUSINESS_TZ || "America/Denver";
@@ -64,10 +66,18 @@ async function pdGet(path) {
   const j = await r.json().catch(() => null);
   return j && j.data;
 }
+async function pdPost(path, body) {
+  const r = await fetch(`https://asapcreditrepair.pipedrive.com/api/v1${path}?api_token=${PD_TOKEN}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const j = await r.json().catch(() => null);
+  return j && j.data;
+}
 
 const firstName = (n) => (String(n || "").trim().split(/\s+/)[0] || "there");
 const smsCopy = (f) =>
   `Hi ${f}, it's the team at ASAP. Congrats on wrapping up your program! We just added some new services that a lot of our past clients are using for their personal and business goals. We sent the details to your email, or reply INFO and we will reach out. Reply STOP to opt out.`;
+const emailSubjectActive = "Something new for you at ASAP";
+const emailCopyActive = (f) =>
+  `Hi ${f},\n\nYou have been putting in the work on your program and your credit has come a long way. Quick heads up: we now offer Personal and Business funding!\n\nBig banks decline more than 4 out of 5 small business applications. We work with a network of lenders who actually say yes, with options starting as low as 0% introductory APR for qualified applicants.\n\nIf you ever need it, for a business or anything personal, just reply to this email or grab a time here and we will show you what you qualify for: ${FUNNEL}\n\nASAP Credit & Financial Services`;
 const emailSubject = "Now that your services are wrapped up...";
 const emailCopy = (f) =>
   `Hi ${f},\n\nCongrats on finishing your program! Now that your services are over, I wanted to let you know we now offer Personal and Business funding.\n\nBig banks decline more than 4 out of 5 small business applications. We work with a network of lenders who actually say yes, with options starting as low as 0% introductory APR for qualified applicants.\n\nIf you ever need it, for a business or anything personal, just reply to this email or grab a time here and we will show you what you qualify for: ${FUNNEL}\n\nASAP Credit & Financial Services`;
@@ -96,6 +106,41 @@ exports.handler = async (event) => {
       const due = await pbGet(`consultant_invoices?balance=gt.1&status=eq.overdue&pipedrive_deal_id=not.is.null&select=pipedrive_deal_id&limit=1000`);
       for (const d of due) dueIds.add(String(d.pipedrive_deal_id));
     } catch (e) {}
+
+    // Source 2: clients in round 3/4 or Additional Rounds (person CURRENT STATUS).
+    // Uses a Pipedrive filter created once by the API and remembered in app_config.
+    let roundCands = [];
+    if (params.source !== "grads") {
+      try {
+        let fid = null;
+        const { data: cfg } = await supabase.from("app_config").select("value").eq("key", "grad_rounds_filter_id").limit(1);
+        if (cfg && cfg[0] && cfg[0].value) fid = parseInt(cfg[0].value) || null;
+        if (!fid) {
+          const made = await pdPost("/filters", {
+            name: "Funding campaign: rounds 3/4 + Additional Rounds",
+            type: "people",
+            conditions: { glue: "and", conditions: [
+              { glue: "and", conditions: [] },
+              { glue: "or", conditions: ROUND_STATUSES.map((v) => ({ object: "person", field_id: "9181", operator: "=", value: v })) },
+            ]},
+          });
+          if (made && made.id) {
+            fid = made.id;
+            await supabase.from("app_config").upsert({ key: "grad_rounds_filter_id", value: String(fid) }, { onConflict: "key" });
+          }
+        }
+        if (fid) {
+          let st = 0;
+          for (let pg = 0; pg < 4; pg++) {
+            const pr = await pdGet(`/persons?filter_id=${fid}&start=${st}&limit=500`);
+            const arr = Array.isArray(pr) ? pr : [];
+            roundCands.push(...arr);
+            if (arr.length < 500) break;
+            st += 500;
+          }
+        }
+      } catch (e) {}
+    }
 
     // 2. never twice + never to a STOP
     const { data: logRows } = await supabase.from("grad_announce_log").select("pipedrive_deal_id");
@@ -131,7 +176,29 @@ exports.handler = async (event) => {
       sent++;
       await new Promise((res) => setTimeout(res, 250));
     }
-    return { statusCode: 200, headers, body: JSON.stringify({ dry, days, limit, candidates: cands.length, alreadySent: already.size, processed: sent, skipped, errors, preview: dry ? out : undefined }, null, 2) };
+    // Second pass: the rounds audience, with active-client copy (never "services are over")
+    for (const p of roundCands) {
+      if (sent >= limit) break;
+      const key = `person-${p.id}`;
+      if (already.has(key)) { skipped++; continue; }
+      let email = Array.isArray(p.email) && p.email.length ? (p.email.find((e) => e.primary) || p.email[0]).value : null;
+      if (email && /asapnoemail|@asapcreditrepair/i.test(email)) email = null;
+      const phoneRaw = Array.isArray(p.phone) && p.phone.length ? (p.phone.find((x) => x.primary) || p.phone[0]).value : null;
+      const phone = phoneRaw && !stopPhones.has(last10(phoneRaw)) ? phoneRaw : null;
+      if (!email && !phone) { skipped++; continue; }
+      const ek2 = email ? email.toLowerCase() : null; const pk2 = phone ? last10(phone) : null;
+      if ((ek2 && seenContacts.has(ek2)) || (pk2 && seenContacts.has(pk2))) { skipped++; continue; }
+      if (ek2) seenContacts.add(ek2); if (pk2) seenContacts.add(pk2);
+      const f = firstName(p.name);
+      if (dry) { out.push({ person: p.id, name: p.name, source: "rounds", email: email || "(none)", sms_to: phone || "(none)" }); sent++; continue; }
+      let emailStatus = "skipped", smsStatus = "skipped";
+      try { if (email) { await sendEmail(email, emailSubjectActive, emailCopyActive(f)); emailStatus = "sent"; } } catch (e) { emailStatus = `error: ${String(e.message).slice(0, 80)}`; errors++; }
+      try { if (phone) { rc = rc || await rcToken(); await sendSms(rc, phone, smsCopy(f)); smsStatus = "sent"; } } catch (e) { smsStatus = `error: ${String(e.message).slice(0, 80)}`; errors++; }
+      await supabase.from("grad_announce_log").insert({ pipedrive_deal_id: key, client_name: p.name, email, phone, email_status: emailStatus, sms_status: smsStatus, finished_date: null });
+      sent++;
+      await new Promise((res) => setTimeout(res, 250));
+    }
+    return { statusCode: 200, headers, body: JSON.stringify({ dry, days, limit, candidates: cands.length, rounds_candidates: roundCands.length, alreadySent: already.size, processed: sent, skipped, errors, preview: dry ? out : undefined }, null, 2) };
   } catch (error) {
     return { statusCode: 500, headers, body: JSON.stringify({ error: error.message }) };
   }

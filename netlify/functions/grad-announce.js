@@ -90,25 +90,38 @@ exports.handler = async (event) => {
     const seen = new Set(); const cands = [];
     for (const p of pays) { const id = String(p.pipedrive_deal_id); if (!seen.has(id)) { seen.add(id); cands.push(p); } }
 
+    // Skip anyone with an open overdue balance - wrong moment for this message
+    const dueIds = new Set();
+    try {
+      const due = await pbGet(`consultant_invoices?balance=gt.1&status=eq.overdue&pipedrive_deal_id=not.is.null&select=pipedrive_deal_id&limit=1000`);
+      for (const d of due) dueIds.add(String(d.pipedrive_deal_id));
+    } catch (e) {}
+
     // 2. never twice + never to a STOP
     const { data: logRows } = await supabase.from("grad_announce_log").select("pipedrive_deal_id");
     const already = new Set((logRows || []).map((r) => String(r.pipedrive_deal_id)));
     const { data: stops } = await supabase.from("leads").select("phone").eq("opted_out", true);
     const stopPhones = new Set((stops || []).map((l) => last10(l.phone)).filter(Boolean));
 
-    const out = []; let sent = 0, skipped = 0, errors = 0; let rc = null;
+    const out = []; let sent = 0, skipped = 0, errors = 0; let rc = null; const seenContacts = new Set();
     for (const c of cands) {
       if (sent >= limit) break;
       const dealId = String(c.pipedrive_deal_id);
       if (already.has(dealId)) { skipped++; continue; }
+      if (dueIds.has(dealId)) { skipped++; continue; }
       const deal = await pdGet(`/deals/${dealId}`);
       const personId = deal && deal.person_id && (deal.person_id.value || deal.person_id.id);
       if (!personId) { skipped++; continue; }
       const person = await pdGet(`/persons/${personId}`);
-      const email = person && Array.isArray(person.email) && person.email.length ? (person.email.find((e) => e.primary) || person.email[0]).value : null;
+      let email = person && Array.isArray(person.email) && person.email.length ? (person.email.find((e) => e.primary) || person.email[0]).value : null;
+      if (email && /asapnoemail|@asapcreditrepair/i.test(email)) email = null; // placeholder addresses
       const phoneRaw = person && Array.isArray(person.phone) && person.phone.length ? (person.phone.find((p) => p.primary) || person.phone[0]).value : null;
       const phone = phoneRaw && !stopPhones.has(last10(phoneRaw)) ? phoneRaw : null;
       if (!email && !phone) { skipped++; continue; }
+      // one message per inbox/phone (shared household contacts)
+      const ek = email ? email.toLowerCase() : null; const pk = phone ? last10(phone) : null;
+      if ((ek && seenContacts.has(ek)) || (pk && seenContacts.has(pk))) { skipped++; continue; }
+      if (ek) seenContacts.add(ek); if (pk) seenContacts.add(pk);
       const f = firstName(c.client_name || (person && person.name));
       if (dry) { out.push({ deal: dealId, name: c.client_name, finished: c.payment_date, email: email || "(none)", sms_to: phone || "(none)" }); sent++; continue; }
       let emailStatus = "skipped", smsStatus = "skipped";

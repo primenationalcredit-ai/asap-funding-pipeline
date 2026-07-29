@@ -37,6 +37,4 @@
   to = "/.netlify/functions/auto-runner"
   status = 200
 
-[functions."grad-announce"]
-  schedule = "0 17 * * 1-5"
 

@@ -414,7 +414,15 @@ function normalize(payload) {
     // top level phone is E.164 (+1...), prefer it over the formatted customData copy
     phone: fmtPhone(stripFbPrefix(pickFrom([top, cd, con], ["phone", "phone_number", "phoneNumber"]))),
     email: pickFrom([top, cd, con], ["email", "email_address", "emailAddress"]),
-    source: normalizeSource(pickFrom([top, cd], ["contact_source", "source", "lead_source", "leadSource", "opportunity_source", "opportunitySource", "utm_source", "attributionSource"])),
+    source: (function () {
+      // A Facebook lead's referral source names its form so the team can tell
+      // MCA from SLOC at a glance without opening the tags.
+      const formTag = fbFormTag(payload);
+      if (formTag === "facebook-mca") return "Facebook (MCA)";
+      if (formTag === "facebook-sloc") return "Facebook (SLOC)";
+      if (formTag === "facebook") return "Facebook";
+      return normalizeSource(pickFrom([top, cd], ["contact_source", "source", "lead_source", "leadSource", "opportunity_source", "opportunitySource", "utm_source", "attributionSource"]));
+    })(),
     tags: (function () {
       const raw = pickFrom([top, cd], ["tags"]) || "";
       const formTag = fbFormTag(payload);

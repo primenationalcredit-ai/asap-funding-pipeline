@@ -281,6 +281,32 @@ function normalizeSource(s) {
   return String(s).replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+function mapCreditScore(v) {
+  const t = String(v || "").toLowerCase();
+  if (!t || t.includes("dummy")) return v || "";
+  if (t.includes("under 620") || t.includes("below 620") || t.includes("poor")) return "Poor (under 620)";
+  if (t.includes("720") || t.includes("higher") || t.includes("excellent")) return "Excellent (720+)";
+  if (t.includes("680") || t.includes("719") || t.includes("good")) return "Good (680 - 719)";
+  if (t.includes("620") || t.includes("679") || t.includes("fair")) return "Fair (620 - 679)";
+  return v;
+}
+function mapRevenue(v) {
+  const t = String(v || "").toLowerCase();
+  if (!t || t.includes("dummy")) return v || "";
+  if (t.includes("not yet") || t.includes("pre revenue") || t.includes("pre-revenue") || t.includes("brand new")) return "Pre-revenue";
+  if (t.includes("under") || t.includes("less than")) return "Under $10,000";
+  if (t.includes("10,000 or more") || t.includes("10000 or more") || t.includes("or more")) return "$10,000+";
+  return v;
+}
+function mapTimeline(v) {
+  const t = String(v || "").toLowerCase();
+  if (!t || t.includes("dummy")) return v || "";
+  if (t.includes("30 day") || t.includes("within 30")) return "Within 30 days";
+  if (t.includes("1 to 3") || t.includes("1-3") || t.includes("month")) return "1 to 3 months";
+  if (t.includes("exploring") || t.includes("just looking")) return "Just exploring";
+  return v;
+}
+
 function pickFrom(objs, keys) {
   for (const o of objs) {
     if (!o) continue;
@@ -313,12 +339,29 @@ function normalize(payload) {
   const cd = payload.customData || {};
   const con = payload.contact || {};
 
-  let name = pickFrom([top, con, cd], ["full_name", "fullName", "name", "contact_name"]);
+  let name = pickFrom([top, con, cd], [
+    "full_name", "fullName", "name", "contact_name",
+    "Full Name", "Full name", "full name", "FullName",
+  ]);
   if (!name) {
-    const first = pickFrom([top, con, cd], ["first_name", "firstName"]);
-    const last = pickFrom([top, con, cd], ["last_name", "lastName"]);
+    const first = pickFrom([top, con, cd], ["first_name", "firstName", "First Name", "first name"]);
+    const last = pickFrom([top, con, cd], ["last_name", "lastName", "Last Name", "last name"]);
     name = [first, last].filter(Boolean).join(" ");
   }
+  // Facebook Lead Ads sometimes deliver answers as a field_data array of
+  // {name, values:[...]} instead of flat keys. Pull the name out of it.
+  if (!name && Array.isArray(payload.field_data)) {
+    const fd = payload.field_data.find((f) => /full.?name|^name$/i.test(f.name || ""));
+    if (fd) name = (fd.values && fd.values[0]) || "";
+    if (!name) {
+      const ff = payload.field_data.find((f) => /first.?name/i.test(f.name || ""));
+      const lf = payload.field_data.find((f) => /last.?name/i.test(f.name || ""));
+      name = [ff && ff.values && ff.values[0], lf && lf.values && lf.values[0]].filter(Boolean).join(" ");
+    }
+  }
+  // A name that is really an email or phone is not a name.
+  if (name && (name.includes("@") || /^\+?[\d\s().-]{7,}$/.test(name))) name = "";
+  name = (name || "").trim();
 
   return {
     ghl_contact_id: pickFrom([top, cd, con], ["contact_id", "contactId", "id"]),
@@ -343,15 +386,16 @@ function normalize(payload) {
       || pickFrom([cd, top], ["opportunity_name", "opportunityName"]),
     pipeline_stage: pickFrom([cd, top], ["pipeline_stage", "pipelineStage", "stage"]),
     desired_amount: pickFrom([cd, top], ["desired_amount", "desiredAmount"]),
-    estimated_credit_score: pickFrom([cd, top], ["estimated_credit_score", "estimatedCreditScore", "credit_score"]),
-    monthly_revenue: pickFrom([cd, top], ["monthly_revenue", "monthlyRevenue"]),
+    estimated_credit_score: mapCreditScore(pickFrom([cd, top], ["estimated_credit_score", "estimatedCreditScore", "credit_score", "what_is_your_estimated_personal_credit_score"])),
+    monthly_revenue: mapRevenue(pickFrom([cd, top], ["monthly_revenue", "monthlyRevenue", "does_your_business_have_revenue_yet"])),
     time_in_business: pickFrom([cd, top], ["time_in_business", "timeInBusiness"]),
+    funding_timeline: mapTimeline(pickFrom([cd, top], ["funding_timeline", "fundingTimeline", "how_soon_do_you_need_the_capital"])),
   };
 }
 
 const DATA_FIELDS = [
   "name", "phone", "email", "source", "tags", "opportunity_name", "business_name", "pipeline_stage",
-  "desired_amount", "estimated_credit_score", "monthly_revenue", "time_in_business",
+  "desired_amount", "estimated_credit_score", "monthly_revenue", "time_in_business", "funding_timeline",
 ];
 
 export const handler = async (event) => {

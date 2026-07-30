@@ -551,7 +551,11 @@ export const handler = async (event) => {
     }
 
     // ---- New lead (first time we have seen this contact) ----
-    const row = { ...Object.fromEntries(DATA_FIELDS.map((f) => [f, lead[f]])) };
+    // Coerce every data field to a string so an absent value (e.g. an MCA lead
+    // has no credit score) becomes "" rather than null. The leads table has
+    // NOT-NULL constraints on several of these, and a null silently rejects the
+    // whole insert, which is how MCA leads were vanishing.
+    const row = { ...Object.fromEntries(DATA_FIELDS.map((f) => [f, lead[f] == null ? "" : lead[f]])) };
     row.ghl_contact_id = lead.ghl_contact_id || null;
     row.status = "new"; // qualifier completion is not an application, booking sequence handles the rest
     row.touches = [];

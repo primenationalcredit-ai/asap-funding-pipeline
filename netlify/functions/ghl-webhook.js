@@ -281,8 +281,50 @@ function normalizeSource(s) {
   return String(s).replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+// Facebook raw lead values arrive prefixed: "p:+1704...", "l:2766...", "ag:...".
+// Strip the "x:" prefix so phones and ids are clean.
+function stripFbPrefix(v) {
+  const t = String(v || "");
+  return /^[a-z]{1,3}:/.test(t) ? t.slice(t.indexOf(":") + 1) : t;
+}
+
+// MCA form: "$10,000_to_$15,000" style monthly deposit -> revenue band
+function mapDeposit(v) {
+  const t = String(v || "").toLowerCase().replace(/_/g, " ").replace(/\$/g, "").replace(/\s+/g, " ");
+  if (!t || t.includes("dummy")) return "";
+  if (t.includes("10,000 to 15") || t.includes("10000 to 15")) return "$10,000 - $15,000";
+  if (t.includes("15,000 to 30") || t.includes("15000 to 30")) return "$15,000 - $30,000";
+  if (t.includes("30,000 to 75") || t.includes("30,000 to") || t.includes("30000")) return "$30,000 - $75,000";
+  if (t.includes("75,000") || t.includes("100,000") || t.includes("75000")) return "$75,000+";
+  if (t.includes("under") || t.includes("less than")) return "Under $10,000";
+  return v;
+}
+
+// MCA form: "6_months_to_2_years" style time in business
+function mapTimeInBiz(v) {
+  const t = String(v || "").toLowerCase().replace(/_/g, " ");
+  if (!t || t.includes("dummy")) return "";
+  if (t.includes("less_than_3") || t.includes("less than 3") || t.includes("under_3")) return "Under 3 months";
+  if (t.includes("3_months_to_6") || t.includes("3 to 6") || t.includes("6_months") && t.includes("3")) return "3 to 6 months";
+  if (t.includes("6_months_to_2") || t.includes("6 months to 2") || t.includes("6_months")) return "6 months to 2 years";
+  if (t.includes("2_years") || t.includes("over_2") || t.includes("2+ ")) return "2+ years";
+  return v;
+}
+
+// Which Facebook form did this come from? Tag it so the team can tell them apart.
+function fbFormTag(payload) {
+  const blob = JSON.stringify(payload || {}).toLowerCase();
+  if (blob.includes("mca") || payload.about_how_much_does_your_business_deposit_each_month ||
+      payload["about_how_much_does_your_business_deposit_each_month?"]) return "facebook-mca";
+  if (blob.includes("sloc") || payload.what_is_your_estimated_personal_credit_score ||
+      payload["what_is_your_estimated_personal_credit_score?"]) return "facebook-sloc";
+  if (blob.includes("\"platform\": \"fb\"") || blob.includes("\"platform\":\"fb\"") ||
+      blob.includes("\"platform\": \"ig\"") || blob.includes("is_organic")) return "facebook";
+  return "";
+}
+
 function mapCreditScore(v) {
-  const t = String(v || "").toLowerCase();
+  const t = String(v || "").toLowerCase().replace(/_/g, " ");
   if (!t || t.includes("dummy")) return v || "";
   if (t.includes("under 620") || t.includes("below 620") || t.includes("poor")) return "Poor (under 620)";
   if (t.includes("720") || t.includes("higher") || t.includes("excellent")) return "Excellent (720+)";
@@ -291,15 +333,15 @@ function mapCreditScore(v) {
   return v;
 }
 function mapRevenue(v) {
-  const t = String(v || "").toLowerCase();
+  const t = String(v || "").toLowerCase().replace(/_/g, " ");
   if (!t || t.includes("dummy")) return v || "";
   if (t.includes("not yet") || t.includes("pre revenue") || t.includes("pre-revenue") || t.includes("brand new")) return "Pre-revenue";
-  if (t.includes("under") || t.includes("less than")) return "Under $10,000";
   if (t.includes("10,000 or more") || t.includes("10000 or more") || t.includes("or more")) return "$10,000+";
+  if (t.includes("under") || t.includes("less than")) return "Under $10,000";
   return v;
 }
 function mapTimeline(v) {
-  const t = String(v || "").toLowerCase();
+  const t = String(v || "").toLowerCase().replace(/_/g, " ");
   if (!t || t.includes("dummy")) return v || "";
   if (t.includes("30 day") || t.includes("within 30")) return "Within 30 days";
   if (t.includes("1 to 3") || t.includes("1-3") || t.includes("month")) return "1 to 3 months";
@@ -370,10 +412,16 @@ function normalize(payload) {
     start_time: pickFrom([cd, top], ["start_time", "startTime", "appointment_time", "appointmentTime"]),
     name,
     // top level phone is E.164 (+1...), prefer it over the formatted customData copy
-    phone: fmtPhone(pickFrom([top, cd, con], ["phone", "phone_number", "phoneNumber"])),
+    phone: fmtPhone(stripFbPrefix(pickFrom([top, cd, con], ["phone", "phone_number", "phoneNumber"]))),
     email: pickFrom([top, cd, con], ["email", "email_address", "emailAddress"]),
     source: normalizeSource(pickFrom([top, cd], ["contact_source", "source", "lead_source", "leadSource", "opportunity_source", "opportunitySource", "utm_source", "attributionSource"])),
-    tags: pickFrom([top, cd], ["tags"]),
+    tags: (function () {
+      const raw = pickFrom([top, cd], ["tags"]) || "";
+      const formTag = fbFormTag(payload);
+      const set = new Set(String(raw).split(",").map((t) => t.trim()).filter(Boolean));
+      if (formTag) { set.add("facebook"); set.add(formTag); }
+      return Array.from(set).join(",");
+    })(),
     // opportunity / qualification fields (from customData mapping)
     opportunity_name: pickFrom([cd, top], ["opportunity_name", "opportunityName"]),
     business_name:
@@ -386,16 +434,21 @@ function normalize(payload) {
       || pickFrom([cd, top], ["opportunity_name", "opportunityName"]),
     pipeline_stage: pickFrom([cd, top], ["pipeline_stage", "pipelineStage", "stage"]),
     desired_amount: pickFrom([cd, top], ["desired_amount", "desiredAmount"]),
-    estimated_credit_score: mapCreditScore(pickFrom([cd, top], ["estimated_credit_score", "estimatedCreditScore", "credit_score", "what_is_your_estimated_personal_credit_score"])),
-    monthly_revenue: mapRevenue(pickFrom([cd, top], ["monthly_revenue", "monthlyRevenue", "does_your_business_have_revenue_yet"])),
-    time_in_business: pickFrom([cd, top], ["time_in_business", "timeInBusiness"]),
-    funding_timeline: mapTimeline(pickFrom([cd, top], ["funding_timeline", "fundingTimeline", "how_soon_do_you_need_the_capital"])),
+    estimated_credit_score: mapCreditScore(pickFrom([cd, top], ["estimated_credit_score", "estimatedCreditScore", "credit_score", "what_is_your_estimated_personal_credit_score", "what_is_your_estimated_personal_credit_score?"])),
+    monthly_revenue: (function () {
+      const dep = pickFrom([cd, top], ["about_how_much_does_your_business_deposit_each_month", "about_how_much_does_your_business_deposit_each_month?", "monthly_deposits", "avg_monthly_deposits"]);
+      if (dep) return mapDeposit(dep);
+      return mapRevenue(pickFrom([cd, top], ["monthly_revenue", "monthlyRevenue", "does_your_business_have_revenue_yet", "does_your_business_have_revenue_yet?"]));
+    })(),
+    time_in_business: mapTimeInBiz(pickFrom([cd, top], ["time_in_business", "timeInBusiness", "how_long_has_the_business_been_operating_under_current_ownership", "how_long_has_the_business_been_operating_under_current_ownership?"])) || pickFrom([cd, top], ["time_in_business", "timeInBusiness"]),
+    business_type: pickFrom([cd, top], ["what_type_of_business_do_you_run", "what_type_of_business_do_you_run?", "business_type", "businessType"]),
+    funding_timeline: mapTimeline(pickFrom([cd, top], ["funding_timeline", "fundingTimeline", "how_soon_do_you_need_the_capital", "how_soon_do_you_need_the_capital?"])),
   };
 }
 
 const DATA_FIELDS = [
   "name", "phone", "email", "source", "tags", "opportunity_name", "business_name", "pipeline_stage",
-  "desired_amount", "estimated_credit_score", "monthly_revenue", "time_in_business", "funding_timeline",
+  "desired_amount", "estimated_credit_score", "monthly_revenue", "time_in_business", "funding_timeline", "business_type",
 ];
 
 export const handler = async (event) => {

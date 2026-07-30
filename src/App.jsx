@@ -90,13 +90,13 @@ const DEFAULT_CONFIG = {
 const DEFAULT_TEMPLATES = [
   // ============ VOICEMAIL: text (pool vm_sms) ============
   { id: "vm_sms_a", pool: "vm_sms", name: "VM text: direct", channel: "sms", subject: "",
-    body: `Hi {{first}}, it's {{repfirst}} with ASAP. I just gave you a call about the Facebook ad you responded to on getting your business approved. Give me a quick call back or shoot me a text when you get a sec.` },
+    body: `Hi {{first}}, it is {{repfirst}} with ASAP. Just gave you a call about the request you put in for your business. Got a quick minute to talk today, or is later better?` },
   { id: "vm_sms_b", pool: "vm_sms", name: "VM text: story", channel: "sms", subject: "",
-    body: `Hi {{first}}, {{repfirst}} with ASAP here. I just called you about the Facebook ad you responded to on getting your business approved. Call or text me back and I will walk you through it.` },
+    body: `Hi {{first}}, {{repfirst}} at ASAP. Just called about the request you put in. Fifteen minutes and I can tell you exactly where you stand. Free now or later today?` },
   { id: "vm_sms_c", pool: "vm_sms", name: "VM text: myth bust", channel: "sms", subject: "",
-    body: `Hi {{first}}, it's {{repfirst}} from ASAP. I just tried calling you about the Facebook ad you responded to on getting your business approved. This is not spam, just following up like you asked. Text me back a good time to connect.` },
+    body: `Hi {{first}}, {{repfirst}} from ASAP. Tried you just now about your request. Not spam, just following up like you asked. What is a good time to reach you?` },
   { id: "vm_sms_d", pool: "vm_sms", name: "VM text: curiosity", channel: "sms", subject: "",
-    body: `{{first}}, {{repfirst}} with ASAP. I just gave you a call about the Facebook ad you responded to on getting your business approved. Whenever you have a sec, call or text me back and I will keep it quick.` },
+    body: `{{first}}, {{repfirst}} with ASAP. Gave you a call about your request. Whenever you have a sec, call or text me back. Morning or afternoon easier for you?` },
 
   // ============ VOICEMAIL: email (pool vm_email) ============
   { id: "vm_email_a", pool: "vm_email", name: "VM email: direct", channel: "email", subject: "Tried to reach you, {{first}}",
@@ -133,13 +133,13 @@ Reply or call me back and I will pull your options together.
 
   // ============ INTERESTED / SEND LINK: text (pool int_sms) ============
   { id: "first_sms", pool: "int_sms", name: "Interested text: standard", channel: "sms", subject: "",
-    body: `Hi {{first}}, {{repfirst}} with ASAP. Here is the one thing between you and knowing exactly what you qualify for, your report: {{link}} 5 minutes, soft pull, zero hit to your score. Text me DONE when it is in and I will get to work.` },
+    body: `{{first}}, {{repfirst}} at ASAP. One quick step and I can show you exactly where your business stands, real numbers not guesses. Takes 5 minutes, soft check, nothing that affects you: {{link}} Text me DONE when it is in?` },
   { id: "int_sms_b", pool: "int_sms", name: "Interested text: story", channel: "sms", subject: "",
-    body: `{{first}}, {{repfirst}} with ASAP. You did the hard part by reaching out. This part takes 5 minutes: pull your report here so I can show you real numbers, not guesses: {{link}} No hit to your score.` },
+    body: `{{first}}, {{repfirst}} at ASAP. You did the hard part by reaching out. This next step takes 5 minutes and lets me show you real numbers instead of guesses: {{link}} Can you knock it out today?` },
   { id: "int_sms_c", pool: "int_sms", name: "Interested text: risk reversal", channel: "sms", subject: "",
-    body: `{{first}}, most owners are shocked when they see what they actually qualify for. I cannot show you until I see your report though, and it is a soft pull, no score hit: {{link}} Worth 5 minutes?` },
+    body: `{{first}}, most owners are surprised when they see where they actually stand. I cannot show you until this quick step is done, 5 minutes, nothing that affects you: {{link}} Worth a shot?` },
   { id: "int_sms_d", pool: "int_sms", name: "Interested text: speed", channel: "sms", subject: "",
-    body: `{{first}}, here is my promise: pull your report and I will have real options back to you the same day. That is it. 5 minutes on your end: {{link}}` },
+    body: `{{first}}, here is my promise: finish this one quick step and I will have real options back to you the same day. 5 minutes on your end: {{link}} Deal?` },
 
   // ============ INTERESTED / SEND LINK: email (pool int_email) ============
   { id: "first_email", pool: "int_email", name: "Interested email: standard", channel: "email", subject: "Your pre-approval, {{first}}",
@@ -179,9 +179,9 @@ To do that I need one thing, your report:
 
   // ============ ACCOUNT CHECK: text (pool acct_sms) ============
   { id: "acct_sms_a", pool: "acct_sms", name: "Account check: text", channel: "sms", subject: "",
-    body: `{{first}}, {{repfirst}} with ASAP. Quick one: were you able to get your MyScoreIQ account created? That report is the only thing between you and knowing exactly what you qualify for. Here is the link again, 5 minutes: {{link}} Reply DONE when it is set and I will take it from there.` },
+    body: `{{first}}, {{repfirst}} at ASAP. Quick one, were you able to finish that last step? It is the only thing between you and your real numbers. Here is the link again, 5 minutes: {{link}} Reply DONE when it is set?` },
   { id: "acct_sms_b", pool: "acct_sms", name: "Account check: text 2", channel: "sms", subject: "",
-    body: `{{first}}, not going to let you leave money on the table. Two minutes to create your MyScoreIQ account and I can tell you what you qualify for today: {{link}} If you get stuck anywhere, text me STUCK and I will jump on a call with you.` },
+    body: `{{first}}, not going to let you leave anything on the table. Two minutes to finish that step and I can tell you where you stand today: {{link}} Get stuck anywhere? Reply STUCK and I will call you.` },
 
   // ============ ACCOUNT CHECK: email (pool acct_email) ============
   { id: "acct_email_a", pool: "acct_email", name: "Account check: email", channel: "email", subject: "Were you able to set up your account, {{first}}?",
@@ -201,9 +201,9 @@ Get stuck anywhere? Just reply to this and I will walk you through it, or hop on
 
   // ============ SUCCESS STORIES: text (pool story_sms) ============
   { id: "story_sms_a", pool: "story_sms", name: "Success story: text", channel: "sms", subject: "",
-    body: `{{first}}, just helped a business owner with a 600 score get the approval they needed for their shop. Every owner's situation is different, but I would love to show you what is possible for yours. Got 5 minutes to talk?` },
+    body: `{{first}}, just helped an owner most people had already counted out get exactly what they needed for their shop. Every situation is different, but I would love to show you what is possible. Got 5 minutes to talk?` },
   { id: "story_sms_b", pool: "story_sms", name: "Success story: text 2", channel: "sms", subject: "",
-    body: `{{first}}, a lot of owners think a lower score shuts the door. It does not. We recently got someone open under a year approved when their bank passed. Worth a quick call to see your options?` },
+    body: `{{first}}, a lot of owners think one bad answer shuts the door. It does not. We recently got someone a yes after their bank passed. Worth a quick call to see your options?` },
 
   // ============ SUCCESS STORIES: email (pool story_email) ============
   { id: "story_email_a", pool: "story_email", name: "Success story: email", channel: "email", subject: "What we did for an owner like you, {{first}}",
@@ -271,7 +271,7 @@ Keep my number. When you are ready, we can usually get you a pre-approval fast. 
 
   // ============ AFTER REPORT PULLED: text (pool pulled_sms) ============
   { id: "pulled_sms_a", pool: "pulled_sms", name: "Got it, reviewing", channel: "sms", subject: "",
-    body: `Got your report, {{first}}, thank you. Reviewing everything now and I will be back to you today. {{repfirst}} with ASAP` },
+    body: `Got everything, {{first}}, thank you. Going through it now and I will be back to you today. {{repfirst}} with ASAP` },
   { id: "pulled_sms_b", pool: "pulled_sms", name: "Got it, working it", channel: "sms", subject: "",
     body: `{{first}}, got it, thank you. Going through your file now to see how I can help. Back to you today. {{repfirst}} with ASAP` },
 
@@ -306,7 +306,7 @@ Have your bank statements, a voided check, and your driver's license handy. Repl
 
   // ============ URGENCY / NUDGE: text (pool urgency_sms) ============
   { id: "urg_sms_a", pool: "urgency_sms", name: "Urgency text: window", channel: "sms", subject: "",
-    body: `{{first}}, quick nudge from {{repfirst}} at ASAP. Still want to get your business in a position to get approved? Pull your report here and I take it from there: {{link}}` },
+    body: `{{first}}, quick nudge from {{repfirst}} at ASAP. Still want to get your business in a position to move forward? Finish this one step and I take it from there: {{link}} You in?` },
   { id: "urg_sms_b", pool: "urgency_sms", name: "Urgency text: not a pest", channel: "sms", subject: "",
     body: `{{first}}, {{repfirst}} with ASAP. Not trying to bug you, just do not want you to miss your window. 5 minutes here and I go to work: {{link}}` },
   { id: "urg_sms_c", pool: "urgency_sms", name: "Urgency text: one more", channel: "sms", subject: "",
@@ -316,7 +316,7 @@ Have your bank statements, a voided check, and your driver's license handy. Repl
   { id: "urg_sms_e", pool: "urgency_sms", name: "Urgency text: still on desk", channel: "sms", subject: "",
     body: `{{first}}, {{repfirst}} with ASAP. Still have your file on my desk. Want me to keep going? {{link}}` },
   { id: "urg_sms_f", pool: "urgency_sms", name: "Urgency text: yes or no", channel: "sms", subject: "",
-    body: `{{first}}, one word is all I need. Are you still trying to get your business approved this year? If yes, here is step one: {{link}}` },
+    body: `{{first}}, one word is all I need. Still trying to get your business where you want it this year? If yes, here is step one: {{link}}` },
 
   // ============ VALUE / EDUCATION: email (pool value_email) ============
   { id: "val_email_a", pool: "value_email", name: "Value email: why declined", channel: "email", subject: "Why good businesses get declined, {{first}}",
@@ -400,7 +400,7 @@ The next move is yours. Pull your report and let me get to work.
   { id: "break_sms_a", pool: "breakup_sms", name: "Breakup text: close file", channel: "sms", subject: "",
     body: `{{first}}, {{repfirst}} with ASAP. I have reached out a few times and do not want to be a pest. I will close your file for now. If you ever want to pick it back up, just text me. No hard feelings.` },
   { id: "break_sms_b", pool: "breakup_sms", name: "Breakup text: last call", channel: "sms", subject: "",
-    body: `{{first}}, last one from me for now. If getting your business approved is still a goal, here is your link: {{link}} If not, no worries at all and I will step back.` },
+    body: `{{first}}, last one from me for now. If getting your business where you want it is still a goal, here is your link: {{link}} If not, no worries at all and I will step back. Just reply YES or NO?` },
   { id: "break_sms_c", pool: "breakup_sms", name: "Breakup text: door open", channel: "sms", subject: "",
     body: `{{first}}, {{repfirst}} here. Going to give you some space. The door stays open, text me anytime and we pick right back up where we left off.` },
 
@@ -432,11 +432,11 @@ Wishing you and the business well either way.
 
   // ============ EXTRA VOICEMAIL variety ============
   { id: "vm_first_sms", pool: "vm_first_sms", name: "VM text: first touch (pre-approval)", channel: "sms", subject: "",
-    body: `{{first}}, {{repfirst}} with ASAP. We got the info you submitted and I want to get your pre-approval sent out, possibly as early as today. I just missed you by phone. Call or text me back and we will get moving.` },
+    body: `{{first}}, {{repfirst}} at ASAP. Got the info you submitted and I want to get your answer over to you, possibly today. Just missed you by phone. Call or text back, what time is good?` },
   { id: "vm_sms_e", pool: "vm_sms", name: "VM text: quick", channel: "sms", subject: "",
-    body: `{{first}}, {{repfirst}} at ASAP. Tried you by phone about the Facebook ad on getting your business approved. Got 2 minutes today? Text me back.` },
+    body: `{{first}}, {{repfirst}} at ASAP. Tried you by phone about the request you put in. Got 2 minutes today? Reply 1 for now, 2 for later, 3 for tomorrow.` },
   { id: "vm_sms_f", pool: "vm_sms", name: "VM text: worth it", channel: "sms", subject: "",
-    body: `{{first}}, it is {{repfirst}} with ASAP. You reached out about getting your business approved and I just missed you. This is worth 5 minutes of your day, promise. Call or text back.` },
+    body: `{{first}}, {{repfirst}} with ASAP. You reached out about your business and I just missed you. Worth 5 minutes, promise. What time works to connect?` },
   { id: "vm_email_d", pool: "vm_email", name: "VM email: still here", channel: "email", subject: "Still here when you are ready, {{first}}",
     body: `Hey {{first}},
 
@@ -448,9 +448,9 @@ Whenever you have a few minutes, reply here or give me a call and I will show yo
 
   // ============ EXTRA INTERESTED / report-link variety ============
   { id: "int_sms_e", pool: "int_sms", name: "Interested text: curiosity 2", channel: "sms", subject: "",
-    body: `{{first}}, {{repfirst}} with ASAP. I genuinely think you will be surprised by what you qualify for. Only way to know is your report: {{link}} Soft pull, no score hit.` },
+    body: `{{first}}, {{repfirst}} at ASAP. I think you will be surprised by where you land. Only way to know for sure is this quick step: {{link}} Got 5 minutes?` },
   { id: "int_sms_f", pool: "int_sms", name: "Interested text: same day", channel: "sms", subject: "",
-    body: `{{first}}, pull this and I will have real options back to you today: {{link}} 5 minutes, no hit to your score. Text me DONE when it is in.` },
+    body: `{{first}}, finish this and I will have real options back to you today: {{link}} 5 minutes, nothing that affects you. Text me DONE when it is in?` },
   { id: "int_email_d", pool: "int_email", name: "Interested email: no guessing", channel: "email", subject: "Let us stop guessing, {{first}}",
     body: `Hey {{first}},
 
@@ -649,7 +649,7 @@ Good luck with the business.
 {{signature}}` },
 
   { id: "acct_sms_d", pool: "acct_sms", name: "Account check text: offer to do it together", channel: "sms", subject: "",
-    body: `{{first}}, {{repfirst}} at ASAP. Still do not see your report on my end. If setting it up is the holdup, I will just call you and we can do it together in about 5 minutes. Reply CALL and I will ring you, or here is the link if you would rather knock it out yourself: {{link}}` },
+    body: `{{first}}, {{repfirst}} at ASAP. Still do not see that last step done on my end. If that is the holdup, I will just call you and we do it together in 5 minutes. Reply CALL and I will ring you, or here is the link: {{link}}` },
   { id: "acct_sms_e", pool: "acct_sms", name: "Account check text: what is holding it up", channel: "sms", subject: "",
     body: `Hey {{first}}, one thing is still outstanding on my side and it is the only piece holding up your answer. Which part is tripping you up? Most people get stuck on the same step and it is a 2 minute fix. {{link}}` },
   { id: "acct_email_d", pool: "acct_email", name: "Account check email: offer to do it together", channel: "email", subject: "Want me to walk you through it, {{first}}?",
@@ -663,7 +663,7 @@ If you would rather do it yourself, here is the link again: {{link}}
 
 {{signature}}` },
   { id: "acct_sms_c", pool: "acct_sms", name: "Account check text: nudge", channel: "sms", subject: "",
-    body: `{{first}}, {{repfirst}} at ASAP. Were you able to get your report pulled? If the link gave you trouble, here it is again: {{link}} Happy to walk you through it.` },
+    body: `{{first}}, {{repfirst}} at ASAP. Were you able to finish that last step? If the link gave you trouble, here it is again: {{link}} Want me to walk you through it?` },
   { id: "acct_email_c", pool: "acct_email", name: "Account check email: stuck", channel: "email", subject: "Did the link give you trouble, {{first}}?",
     body: `Hey {{first}},
 

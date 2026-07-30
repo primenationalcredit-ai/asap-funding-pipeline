@@ -975,14 +975,16 @@ function normalizeSource(s) {
   const v = String(s || "").toLowerCase().trim();
   if (!v) return "Unknown";
   if (v.includes("google") || v.includes("gclid") || v.includes("adwords")) return "Google";
+  if (v.includes("mca")) return "Facebook (MCA)";
+  if (v.includes("sloc")) return "Facebook (SLOC)";
   if (v.includes("facebook") || v.includes("fb ") || v === "fb" || v.includes("fbclid") || v.includes("meta") || v.includes("instagram")) return "Facebook";
   if (v === "direct" || v.includes("direct traffic")) return "Direct";
   if (v.includes("referr")) return "Referral";
   // Anything else (form names like "...Qualification Form", website URLs, etc.) is not an ad source.
   return "Unknown";
 }
-const SOURCE_TONE = { Google: "bg-blue-100 text-blue-700", Facebook: "bg-indigo-100 text-indigo-700", Direct: "bg-slate-100 text-slate-600", Referral: "bg-emerald-100 text-emerald-700", Unknown: "bg-amber-100 text-amber-700" };
-const SOURCE_CHOICES = ["Google", "Facebook", "Direct", "Referral", "Unknown"];
+const SOURCE_TONE = { Google: "bg-blue-100 text-blue-700", Facebook: "bg-indigo-100 text-indigo-700", "Facebook (MCA)": "bg-indigo-100 text-indigo-700", "Facebook (SLOC)": "bg-violet-100 text-violet-700", Direct: "bg-slate-100 text-slate-600", Referral: "bg-emerald-100 text-emerald-700", Unknown: "bg-amber-100 text-amber-700" };
+const SOURCE_CHOICES = ["Google", "Facebook", "Facebook (MCA)", "Facebook (SLOC)", "Direct", "Referral", "Unknown"];
 
 // ---- Origination tracker (folded in from the standalone ASAP tracker) ----
 // Stored with NO database change: the current origination stage is the latest

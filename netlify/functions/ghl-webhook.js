@@ -304,10 +304,11 @@ function mapDeposit(v) {
 function mapTimeInBiz(v) {
   const t = String(v || "").toLowerCase().replace(/_/g, " ");
   if (!t || t.includes("dummy")) return "";
-  if (t.includes("less_than_3") || t.includes("less than 3") || t.includes("under_3")) return "Under 3 months";
-  if (t.includes("3_months_to_6") || t.includes("3 to 6") || t.includes("6_months") && t.includes("3")) return "3 to 6 months";
-  if (t.includes("6_months_to_2") || t.includes("6 months to 2") || t.includes("6_months")) return "6 months to 2 years";
-  if (t.includes("2_years") || t.includes("over_2") || t.includes("2+ ")) return "2+ years";
+  if (t.includes("more than 2") || t.includes("over 2") || t.includes("2+ years") || t.includes("2 years or more")) return "2+ years";
+  if (t.includes("less than 3") || t.includes("under 3")) return "Under 3 months";
+  if (t.includes("3 months to 6") || t.includes("3 to 6")) return "3 to 6 months";
+  if (t.includes("6 months to 2") || t.includes("6 months")) return "6 months to 2 years";
+  if (t.includes("2 years")) return "2+ years";
   return v;
 }
 

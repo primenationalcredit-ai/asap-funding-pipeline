@@ -413,7 +413,7 @@ function normalize(payload) {
     start_time: pickFrom([cd, top], ["start_time", "startTime", "appointment_time", "appointmentTime"]),
     name,
     // top level phone is E.164 (+1...), prefer it over the formatted customData copy
-    phone: fmtPhone(stripFbPrefix(pickFrom([top, cd, con], ["phone", "phone_number", "phoneNumber"]))),
+    phone: fmtPhone(stripFbPrefix(pickFrom([top, cd, con], ["phone", "phone_number", "phoneNumber", "Phone", "Phone ", "Phone Number", "phone number"]))),
     email: pickFrom([top, cd, con], ["email", "email_address", "emailAddress"]),
     source: (function () {
       // A Facebook lead's referral source names its form so the team can tell

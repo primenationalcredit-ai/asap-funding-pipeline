@@ -45,6 +45,8 @@ function fillTokens(text, lead, config) {
     .replaceAll("{{link}}", config.reportLink || "")
     .replaceAll("{{smartcredit}}", config.smartCreditLink || "")
     .replaceAll("{{applink}}", config.appLink || "")
+    .replaceAll("{{business}}", (lead.business_name || lead.businessName || "your business"))
+    .replaceAll("{{booklink}}", config.bookLink || "")
     .replaceAll("{{repfirst}}", rep.first)
     .replaceAll("{{signature}}", rep.signature);
 }

@@ -1826,9 +1826,19 @@ function Dashboard({ userEmail }) {
       if (l.id !== id) return l;
       const touches = [...(l.touches || []), { at: now, channel, kind, ...extra }];
       const patch = { touches, lastTouchAt: now };
-      if (kind === "link" && !l.linkSentAt) {
-        patch.linkSentAt = now;
-        if (l.status === "new" || l.status === "called") { patch.status = "link_sent"; patch.stageEnteredAt = now; }
+      // Sending a link auto-advances the stage so nobody has to move the card by hand.
+      // A report/credit link moves an outreach lead to Sent Reports; the application
+      // link moves it to Sent Application. We only ever move FORWARD in the outreach
+      // flow, never drag a lead already deep in the funding stages backward.
+      const OUTREACH_MOVE = ["new", "called", "voicemail", "callback", "check_back", "link_sent", "waiting_reports"];
+      if (kind === "applink") {
+        if (OUTREACH_MOVE.includes(l.status)) { patch.status = "app_sent"; patch.stageEnteredAt = now; }
+        if (!l.linkSentAt) patch.linkSentAt = now;
+      } else if (kind === "link") {
+        if (!l.linkSentAt) patch.linkSentAt = now;
+        // Report link: move an early-stage lead to Sent Reports (but not past it,
+        // and not if the application already went out).
+        if (["new", "called", "link_sent"].includes(l.status)) { patch.status = "waiting_reports"; patch.stageEnteredAt = now; }
       }
       // A real human touch (a logged call, or a note) means we are mid-conversation.
       // Push the next automated message out so we do not blast them.
@@ -3492,8 +3502,8 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
                 <div className="rounded-lg bg-white p-3 ring-1 ring-sky-100">
                   <div className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-slate-800"><FileText size={15} className="text-blue-600" /> Send Application</div>
                   <div className="flex gap-2">
-                    <button disabled={!lead.phone} onClick={() => openCompose({ lead, channel: "sms", to: lead.phone, subject: "", body: fillTokens((templates.find(t => t.id === "app_sms")?.body) || APP_SMS_DEFAULT, lead, config), kind: "link" })} className={`flex-1 rounded-lg px-3 py-2 text-sm font-semibold ${lead.phone ? "bg-blue-600 text-white hover:bg-blue-700" : "bg-slate-100 text-slate-300"}`}><MessageSquare size={14} className="mr-1 inline" />Text</button>
-                    <button disabled={!lead.email} onClick={() => openCompose({ lead, channel: "email", to: lead.email, subject: fillTokens((templates.find(t => t.id === "app_email")?.subject) || APP_EMAIL_SUBJECT_DEFAULT, lead, config), body: fillTokens((templates.find(t => t.id === "app_email")?.body) || APP_EMAIL_DEFAULT, lead, config), kind: "link" })} className={`flex-1 rounded-lg px-3 py-2 text-sm font-semibold ${lead.email ? "bg-white text-blue-700 ring-1 ring-blue-300 hover:bg-blue-50" : "bg-slate-100 text-slate-300 ring-1 ring-slate-200"}`}><Mail size={14} className="mr-1 inline" />Email</button>
+                    <button disabled={!lead.phone} onClick={() => openCompose({ lead, channel: "sms", to: lead.phone, subject: "", body: fillTokens((templates.find(t => t.id === "app_sms")?.body) || APP_SMS_DEFAULT, lead, config), kind: "applink" })} className={`flex-1 rounded-lg px-3 py-2 text-sm font-semibold ${lead.phone ? "bg-blue-600 text-white hover:bg-blue-700" : "bg-slate-100 text-slate-300"}`}><MessageSquare size={14} className="mr-1 inline" />Text</button>
+                    <button disabled={!lead.email} onClick={() => openCompose({ lead, channel: "email", to: lead.email, subject: fillTokens((templates.find(t => t.id === "app_email")?.subject) || APP_EMAIL_SUBJECT_DEFAULT, lead, config), body: fillTokens((templates.find(t => t.id === "app_email")?.body) || APP_EMAIL_DEFAULT, lead, config), kind: "applink" })} className={`flex-1 rounded-lg px-3 py-2 text-sm font-semibold ${lead.email ? "bg-white text-blue-700 ring-1 ring-blue-300 hover:bg-blue-50" : "bg-slate-100 text-slate-300 ring-1 ring-slate-200"}`}><Mail size={14} className="mr-1 inline" />Email</button>
                   </div>
                 </div>
               </div>
@@ -4025,8 +4035,8 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
               </div>
             )}
             <div className="flex flex-wrap gap-2">
-              <button disabled={!lead.phone} onClick={() => openCompose({ lead, channel: "sms", to: lead.phone, subject: "", body: fillTokens((templates.find(t=>t.id==="app_sms")?.body) || APP_SMS_DEFAULT, lead, config), kind: "link" })} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium ${lead.phone ? "bg-blue-600 text-white hover:bg-blue-700" : "bg-slate-100 text-slate-300"}`}><MessageSquare size={15} /> Text application</button>
-              <button disabled={!lead.email} onClick={() => openCompose({ lead, channel: "email", to: lead.email, subject: fillTokens((templates.find(t=>t.id==="app_email")?.subject) || APP_EMAIL_SUBJECT_DEFAULT, lead, config), body: fillTokens((templates.find(t=>t.id==="app_email")?.body) || APP_EMAIL_DEFAULT, lead, config), kind: "link" })} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium ${lead.email ? "bg-white text-blue-700 ring-1 ring-blue-300 hover:bg-blue-50" : "bg-slate-100 text-slate-300 ring-1 ring-slate-200"}`}><Mail size={15} /> Email application</button>
+              <button disabled={!lead.phone} onClick={() => openCompose({ lead, channel: "sms", to: lead.phone, subject: "", body: fillTokens((templates.find(t=>t.id==="app_sms")?.body) || APP_SMS_DEFAULT, lead, config), kind: "applink" })} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium ${lead.phone ? "bg-blue-600 text-white hover:bg-blue-700" : "bg-slate-100 text-slate-300"}`}><MessageSquare size={15} /> Text application</button>
+              <button disabled={!lead.email} onClick={() => openCompose({ lead, channel: "email", to: lead.email, subject: fillTokens((templates.find(t=>t.id==="app_email")?.subject) || APP_EMAIL_SUBJECT_DEFAULT, lead, config), body: fillTokens((templates.find(t=>t.id==="app_email")?.body) || APP_EMAIL_DEFAULT, lead, config), kind: "applink" })} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium ${lead.email ? "bg-white text-blue-700 ring-1 ring-blue-300 hover:bg-blue-50" : "bg-slate-100 text-slate-300 ring-1 ring-slate-200"}`}><Mail size={15} /> Email application</button>
               <CopyButton text={config.appLink || APP_LINK_DEFAULT} label="Copy app link" className="bg-slate-100 text-slate-700 hover:bg-slate-200" />
             </div>
             {lead.status !== "app_sent" && (

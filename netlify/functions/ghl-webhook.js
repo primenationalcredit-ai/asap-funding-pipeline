@@ -361,6 +361,24 @@ function pickFrom(objs, keys) {
   return "";
 }
 
+// Like pickFrom but matches keys ignoring case, spaces, and underscores, so a
+// Zapier label like "Phone " or "phone_number" all resolve the same. This kills
+// the whole class of "field came in blank because the label had a stray space".
+function pickFuzzy(objs, keys) {
+  const want = keys.map((k) => k.toLowerCase().replace(/[\s_]+/g, ""));
+  for (const o of objs) {
+    if (!o) continue;
+    for (const realKey of Object.keys(o)) {
+      const norm = realKey.toLowerCase().replace(/[\s_]+/g, "");
+      if (want.includes(norm)) {
+        const v = o[realKey];
+        if (v !== undefined && v !== null && String(v).trim() !== "") return String(v).trim();
+      }
+    }
+  }
+  return "";
+}
+
 // Last-resort: find any key that looks like a business-name field
 // (legal_business_name, businessName, company_name, dba, etc.)
 function fuzzyBusinessName(objs) {
@@ -413,7 +431,7 @@ function normalize(payload) {
     start_time: pickFrom([cd, top], ["start_time", "startTime", "appointment_time", "appointmentTime"]),
     name,
     // top level phone is E.164 (+1...), prefer it over the formatted customData copy
-    phone: fmtPhone(stripFbPrefix(pickFrom([top, cd, con], ["phone", "phone_number", "phoneNumber", "Phone", "Phone ", "Phone Number", "phone number"]))),
+    phone: fmtPhone(stripFbPrefix(pickFuzzy([top, cd, con], ["phone", "phone_number", "phoneNumber"]))),
     email: pickFrom([top, cd, con], ["email", "email_address", "emailAddress"]),
     source: (function () {
       // A Facebook lead's referral source names its form so the team can tell

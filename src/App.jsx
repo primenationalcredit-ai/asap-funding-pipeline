@@ -478,7 +478,7 @@ The moment it is in, I go to work and come back with your actual options.
   { id: "vm_sms_h1", pool: "vm_sms", name: "VM chase: two times", channel: "sms", subject: "",
     body: `Hey {{first}}, still trying to reach you about {{business}}. I have got 2:30 or 4:00 open today. Which is easier?` },
   { id: "vm_sms_h2", pool: "vm_sms", name: "VM chase: bad timing or sorted", channel: "sms", subject: "",
-    body: `Hey {{first}}. Quick one. Is the timing just bad right now, or did you already get what you needed for {{business}}?` },
+    body: `{{first}}, its {{repfirst}} again. Should I keep trying you this week or is now just not a good time? Either way is fine, just let me know.` },
   { id: "vm_sms_h3", pool: "vm_sms", name: "VM chase: yes or no is fine", channel: "sms", subject: "",
     body: `{{first}}, {{repfirst}} at ASAP. Still have your info pulled up. One 15 minute call and you will know where you stand. Yes or no is fine.` },
   { id: "vm_sms_h4", pool: "vm_sms", name: "VM chase: morning", channel: "sms", subject: "",

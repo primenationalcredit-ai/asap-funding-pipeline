@@ -277,7 +277,7 @@ Keep my number. When you are ready, we can usually get you a pre-approval fast. 
 
   // ============ APPLICATION (after pre-approval): pool app_sms / app_email ============
   { id: "app_sms_a", pool: "app_sms", name: "Application: more funding (text)", channel: "sms", subject: "",
-    body: `Hi {{first}}, to move forward we need a quick application with your last few bank statements. You can do it all in one place, about 10 minutes: {{applink}}` },
+    body: `Hi {{first}}, you are one step from moving forward. Quick application, your last few bank statements, about 10 minutes all in one place: {{applink}} Reply here if anything trips you up and I will walk you through it.` },
   // ============ MANUAL (never auto-sent, shows in the Insert-a-template picker) ============
   { id: "manual_smartcredit_sms", pool: "manual", name: "SmartCredit backup (text)", channel: "sms", subject: "",
     body: `{{first}}, no problem. If MyScoreIQ is not working for you, use SmartCredit instead, it does the same thing: {{smartcredit}} About 5 minutes. Text me DONE once you are in.` },
@@ -308,11 +308,11 @@ Have your bank statements, a voided check, and your driver's license handy. Repl
   { id: "urg_sms_a", pool: "urgency_sms", name: "Urgency text: window", channel: "sms", subject: "",
     body: `{{first}}, quick nudge from {{repfirst}} at ASAP. Still want to get your business in a position to move forward? Finish this one step and I take it from there: {{link}} You in?` },
   { id: "urg_sms_b", pool: "urgency_sms", name: "Urgency text: not a pest", channel: "sms", subject: "",
-    body: `{{first}}, {{repfirst}} with ASAP. Not trying to bug you, just do not want you to miss your window. 5 minutes here and I go to work: {{link}}` },
+    body: `{{first}}, {{repfirst}} at ASAP. Not trying to bug you, just do not want you to miss your window. Two minutes here and I go to work: {{link}} Want me to keep going, yes or no?` },
   { id: "urg_sms_c", pool: "urgency_sms", name: "Urgency text: one more", channel: "sms", subject: "",
     body: `{{first}}, it is {{repfirst}} at ASAP. Circling back one more time. Ready when you are: {{link}} Reply STOP anytime and I will hold off.` },
   { id: "urg_sms_d", pool: "urgency_sms", name: "Urgency text: things change", channel: "sms", subject: "",
-    body: `{{first}}, {{repfirst}} here. A lot can change in a few weeks. If now is a better time, here is your link: {{link}}` },
+    body: `{{first}}, {{repfirst}} here. A lot can change in a few weeks. If now is a better time, here is your link: {{link}} Or just reply and tell me when to check back.` },
   { id: "urg_sms_e", pool: "urgency_sms", name: "Urgency text: still on desk", channel: "sms", subject: "",
     body: `{{first}}, {{repfirst}} with ASAP. Still have your file on my desk. Want me to keep going? {{link}}` },
   { id: "urg_sms_f", pool: "urgency_sms", name: "Urgency text: yes or no", channel: "sms", subject: "",
@@ -677,7 +677,7 @@ If you hit a snag, just reply and tell me where you got stuck. I will get you th
 
   // ============ EXTRA SUCCESS STORY variety ============
   { id: "story_sms_d", pool: "story_sms", name: "Success story text: turnaround", channel: "sms", subject: "",
-    body: `{{first}}, {{repfirst}} with ASAP. Had an owner this month who was sure they would get told no everywhere. We found their yes. I would love to do the same for you: {{link}}` },
+    body: `{{first}}, {{repfirst}} at ASAP. Had an owner this month everyone else had counted out. We found their yes. Want me to see what I can do for you? Reply YES and I will start.` },
   { id: "story_email_d", pool: "story_email", name: "Success story email: rough credit", channel: "email", subject: "Rough credit is not the end, {{first}}",
     body: `Hey {{first}},
 

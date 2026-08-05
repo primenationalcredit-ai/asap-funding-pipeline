@@ -6,6 +6,12 @@
 [functions]
   node_bundler = "esbuild"
 
+# Bundles env vars into the function code at build time so they don't count
+# against AWS Lambda's 4KB runtime env-var limit. This is what lets the large
+# Google service-account key coexist with all the other secrets.
+[[plugins]]
+  package = "netlify-plugin-bundle-env"
+
 # Friendly path for the GHL webhook
 [[redirects]]
   from = "/api/ghl-webhook"

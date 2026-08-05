@@ -107,7 +107,13 @@ export const handler = async (event) => {
     const token = await getAccessToken(secrets.google_sa_email, secrets.google_sa_private_key);
     const folderName = (clientName || leadId || "Unknown").replace(/[^a-zA-Z0-9.\-_ ]/g, "_").trim() || "Unknown";
     const folderId = await ensureClientFolder(token, secrets.drive_root_folder_id, folderName);
-    const name = fileName || storagePath.split("/").pop();
+    // Name the file "<First Last> Starting Report", keeping the original extension.
+    // clientName may arrive as "First Last - Business"; take the part before " - ".
+    const personName = String(clientName || "").split(" - ")[0].replace(/[^a-zA-Z0-9.\-_ ]/g, "_").trim() || "Client";
+    const src = fileName || storagePath.split("/").pop() || "report";
+    const dot = src.lastIndexOf(".");
+    const ext = dot > 0 ? src.slice(dot) : "";
+    const name = `${personName} Starting Report${ext}`;
     const up = await uploadToDrive(token, folderId, name, bytes, contentType);
 
     console.log("[report-to-drive] ok", JSON.stringify({ leadId, folder: folderName, file: up.name, id: up.id }));

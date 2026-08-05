@@ -1,6 +1,18 @@
-// netlify/functions/report-to-drive.js  (ES module — matches the rest of the project)
+// netlify/functions/report-to-drive.js  (ES module)
 // Copies a credit report from Supabase Storage into a Google Drive folder,
-// one subfolder per client. Only called for CREDIT REPORTS.
+// one subfolder per client. ONLY called for credit reports.
+//
+// The Google service-account credentials live in a Supabase table (app_secrets),
+// NOT in Netlify env vars — this keeps them out of the 4KB Lambda env limit.
+// Only two small env vars are needed: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY
+// (both already present for every function), plus REPORT_DRIVE_SECRET.
+//
+// One-time setup SQL (run in Supabase):
+//   create table if not exists app_secrets (key text primary key, value text);
+//   insert into app_secrets (key, value) values
+//     ('google_sa_email', 'funding@complete-silo-504612-k0.iam.gserviceaccount.com'),
+//     ('google_sa_private_key', '-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n'),
+//     ('drive_root_folder_id', 'YOUR_FOLDER_ID');
 import { createClient } from "@supabase/supabase-js";
 import crypto from "node:crypto";
 
@@ -8,9 +20,20 @@ function b64url(input) {
   return Buffer.from(input).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-async function getAccessToken() {
-  const email = process.env.GOOGLE_SA_EMAIL;
-  const key = (process.env.GOOGLE_SA_PRIVATE_KEY || "").replace(/\\n/g, "\n");
+async function loadSecrets(supabase) {
+  const { data, error } = await supabase.from("app_secrets").select("key, value")
+    .in("key", ["google_sa_email", "google_sa_private_key", "drive_root_folder_id"]);
+  if (error) throw new Error("could not load secrets: " + error.message);
+  const map = {};
+  for (const row of data || []) map[row.key] = row.value;
+  if (!map.google_sa_email || !map.google_sa_private_key || !map.drive_root_folder_id) {
+    throw new Error("missing google secrets in app_secrets table");
+  }
+  return map;
+}
+
+async function getAccessToken(email, privateKey) {
+  const key = String(privateKey || "").replace(/\\n/g, "\n");
   const now = Math.floor(Date.now() / 1000);
   const header = b64url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
   const claim = b64url(JSON.stringify({
@@ -33,8 +56,7 @@ async function getAccessToken() {
   return j.access_token;
 }
 
-async function ensureClientFolder(token, name) {
-  const root = process.env.DRIVE_ROOT_FOLDER_ID;
+async function ensureClientFolder(token, root, name) {
   const q = encodeURIComponent(`name='${name.replace(/'/g, "\\'")}' and '${root}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`);
   const found = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id)&supportsAllDrives=true&includeItemsFromAllDrives=true`, {
     headers: { Authorization: `Bearer ${token}` },
@@ -73,16 +95,21 @@ export const handler = async (event) => {
     }
     const { leadId, storagePath, clientName, fileName } = body;
     if (!storagePath) return { statusCode: 400, body: "storagePath required" };
+
     const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+    const secrets = await loadSecrets(supabase);
+
     const { data: file, error } = await supabase.storage.from("reports").download(storagePath);
     if (error || !file) return { statusCode: 404, body: "file not found in storage" };
     const bytes = Buffer.from(await file.arrayBuffer());
     const contentType = file.type || "application/pdf";
-    const token = await getAccessToken();
+
+    const token = await getAccessToken(secrets.google_sa_email, secrets.google_sa_private_key);
     const folderName = (clientName || leadId || "Unknown").replace(/[^a-zA-Z0-9.\-_ ]/g, "_").trim() || "Unknown";
-    const folderId = await ensureClientFolder(token, folderName);
+    const folderId = await ensureClientFolder(token, secrets.drive_root_folder_id, folderName);
     const name = fileName || storagePath.split("/").pop();
     const up = await uploadToDrive(token, folderId, name, bytes, contentType);
+
     console.log("[report-to-drive] ok", JSON.stringify({ leadId, folder: folderName, file: up.name, id: up.id }));
     return { statusCode: 200, body: JSON.stringify({ ok: true, driveFileId: up.id, link: up.webViewLink }) };
   } catch (e) {

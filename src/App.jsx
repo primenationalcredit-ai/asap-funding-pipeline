@@ -3209,6 +3209,24 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
     return () => clearTimeout(t);
   }, [draft]); // eslint-disable-line
 
+  // Best-effort mirror of a credit report to Google Drive. Never blocks the upload.
+  const pushReportToDrive = async (storagePath, fileName) => {
+    try {
+      await fetch("/.netlify/functions/report-to-drive", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          leadId: lead.id,
+          storagePath,
+          fileName,
+          clientName: `${lead.name || "Unnamed"}${lead.businessName ? " - " + lead.businessName : ""}`,
+          secret: window.__REPORT_DRIVE_SECRET || undefined,
+        }),
+        keepalive: true,
+      });
+    } catch { /* Drive copy is a backup, not required */ }
+  };
+
   const uploadReport = async (file) => {
     if (!file) return;
     setUploading(true);
@@ -3217,6 +3235,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
       const { error } = await supabase.storage.from("reports").upload(path, file, { upsert: true });
       if (error) throw error;
       await updateLead(lead.id, { reportPath: path, reportUploadedAt: Date.now(), status: lead.status === "submitted" || lead.status === "funded" ? lead.status : "report_pulled" });
+      pushReportToDrive(path, file.name);
     } catch (e) { alert("Upload failed: " + (e.message || e)); }
     finally { setUploading(false); }
   };
@@ -3236,7 +3255,10 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
       }
       await updateLead(lead.id, { documents: [...(lead.documents || []), ...added], lastTouchAt: Date.now() });
       // Uploading a credit report counts as obtaining a report, log it for tracking.
-      if (docLabel === "Credit report") logTouch(lead.id, "report", "report", { by: userEmail, label: "Credit report" });
+      if (docLabel === "Credit report") {
+        logTouch(lead.id, "report", "report", { by: userEmail, label: "Credit report" });
+        for (const a of added) pushReportToDrive(a.path, a.name);
+      }
     } catch (e) { alert("Upload failed: " + (e.message || e)); }
     finally { setDocBusy(false); }
   };

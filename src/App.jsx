@@ -1937,7 +1937,7 @@ function Dashboard({ userEmail }) {
   const addActivity = useCallback(async (leadId, act) => {
     const { error } = await supabase.from("activities").insert({
       lead_id: leadId, type: act.type, title: act.title || null, notes: act.notes || null,
-      due_at: new Date(act.dueAt).toISOString(), created_by: userEmail, assigned_to: act.assignedTo || userEmail,
+      due_at: (() => { const t = new Date(act.dueAt); return isNaN(t.getTime()) ? new Date().toISOString() : t.toISOString(); })(), created_by: userEmail, assigned_to: act.assignedTo || userEmail,
       alarm: !!act.alarm,
       done: !!act.done, done_at: act.done ? new Date().toISOString() : null,
     });
@@ -4750,8 +4750,9 @@ function ActivityPanel({ lead, activities, addActivity, completeActivity, delete
   const doneActs = activities.filter((a) => a.done);
 
   const save = () => {
-    if (!when) return;
-    addActivity(lead.id, { type, title: title || ACT_TYPES.find((t) => t.key === type).label, dueAt: new Date(when).getTime(), notes, alarm, assignedTo: assignedTo || userEmail });
+    const t = new Date(when).getTime();
+    if (!when || isNaN(t)) { alert("Please pick a date and time for this task."); return; }
+    addActivity(lead.id, { type, title: title || ACT_TYPES.find((t) => t.key === type).label, dueAt: t, notes, alarm, assignedTo: assignedTo || userEmail });
     setTitle(""); setWhen(""); setNotes(""); setAlarm(false); setAssignedTo(""); setOpen(false);
   };
 

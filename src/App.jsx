@@ -2602,7 +2602,28 @@ function Pipeline({ leads, allLeads, allCount, dueList, stats, config, query, se
           <div className="mb-2 flex items-center gap-2">
             <Clock size={15} className="text-orange-600" />
             <span className="text-sm font-bold text-orange-900">Today: {dueList.length} follow-up{dueList.length === 1 ? "" : "s"} due</span>
-            <button onClick={onGoFollowups} className="ml-auto text-xs font-semibold text-orange-700 hover:underline">Open Follow-ups &rarr;</button>
+            <button
+              onClick={async () => {
+                try {
+                  const ids = dueList.map(({ l }) => l.id).slice(0, 200);
+                  if (!ids.length) return;
+                  if (!window.confirm(`Start a PhoneBurner power-dial session for ${ids.length} due lead${ids.length === 1 ? "" : "s"}?`)) return;
+                  const { data } = await supabase.auth.getSession();
+                  const res = await fetch("/.netlify/functions/pb-start-session", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", Authorization: `Bearer ${data.session?.access_token}` },
+                    body: JSON.stringify({ leadIds: ids }),
+                  });
+                  const j = await res.json().catch(() => ({}));
+                  if (!res.ok || j.error) { alert("Power dial failed: " + (j.error || res.status)); return; }
+                  if (j.redirect_url) window.open(j.redirect_url, "_blank");
+                  else alert("Session created but PhoneBurner returned no redirect link. Open PhoneBurner directly to start it.");
+                } catch (e) { alert("Power dial failed: " + (e.message || e)); }
+              }}
+              className="ml-auto rounded-lg bg-orange-600 px-2.5 py-1 text-xs font-bold text-white hover:bg-orange-700">
+              Power dial {dueList.length}
+            </button>
+            <button onClick={onGoFollowups} className="text-xs font-semibold text-orange-700 hover:underline">Open Follow-ups &rarr;</button>
           </div>
           <div className="space-y-1.5">
             {dueList.slice(0, 6).map(({ l }) => (

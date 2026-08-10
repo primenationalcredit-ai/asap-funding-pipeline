@@ -1711,15 +1711,14 @@ function Dashboard({ userEmail }) {
   }, []);
 
   const refetchActivities = useCallback(async () => {
-    // Fetch OPEN tasks (any age) plus recently-created done ones. The old query
-    // grabbed the oldest 1000 by due_at, so once the table passed 1000 rows a
-    // newly created task fell outside the window and never showed in the app.
-    const cutoff = new Date(Date.now() - 90 * 86400000).toISOString();
+    // Get the most recent 2000 activities by creation time so newly created
+    // tasks are always included. Simple, robust query (no .or()) — a malformed
+    // filter here silently returns an error and leaves the panel empty.
     const { data, error } = await supabase.from("activities").select("*")
-      .or(`done.eq.false,created_at.gte.${cutoff}`)
-      .order("due_at", { ascending: true })
-      .limit(5000);
-    if (!error && data) setActivities(data);
+      .order("created_at", { ascending: false })
+      .limit(2000);
+    if (error) { console.error("refetchActivities failed:", error); return; }
+    if (data) setActivities(data);
   }, []);
 
   const refetchLeads = useCallback(async () => {

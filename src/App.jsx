@@ -1711,15 +1711,15 @@ function Dashboard({ userEmail }) {
   }, []);
 
   const refetchActivities = useCallback(async () => {
-    // Fetch OPEN tasks (any age) plus recently-created done ones. The old query
-    // grabbed the oldest 1000 by due_at, so once the table passed 1000 rows a
-    // newly created task fell outside the window and never showed in the app.
-    const cutoff = new Date(Date.now() - 90 * 86400000).toISOString();
+    // Order by created_at DESCENDING (newest first) so freshly created tasks are
+    // always in the returned set. The previous query ordered by due_at ASCENDING,
+    // so once the table grew, new tasks sorted to the end and fell outside the
+    // returned rows even though the fetch succeeded — the panel looked empty.
     const { data, error } = await supabase.from("activities").select("*")
-      .or(`done.eq.false,created_at.gte.${cutoff}`)
-      .order("due_at", { ascending: true })
-      .limit(5000);
-    if (!error && data) setActivities(data);
+      .order("created_at", { ascending: false })
+      .limit(2000);
+    if (error) { console.error("refetchActivities failed:", error); return; }
+    if (data) setActivities(data);
   }, []);
 
   const refetchLeads = useCallback(async () => {

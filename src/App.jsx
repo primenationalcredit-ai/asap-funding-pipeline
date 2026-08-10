@@ -1711,14 +1711,15 @@ function Dashboard({ userEmail }) {
   }, []);
 
   const refetchActivities = useCallback(async () => {
-    // Get the most recent 2000 activities by creation time so newly created
-    // tasks are always included. Simple, robust query (no .or()) — a malformed
-    // filter here silently returns an error and leaves the panel empty.
+    // Fetch OPEN tasks (any age) plus recently-created done ones. The old query
+    // grabbed the oldest 1000 by due_at, so once the table passed 1000 rows a
+    // newly created task fell outside the window and never showed in the app.
+    const cutoff = new Date(Date.now() - 90 * 86400000).toISOString();
     const { data, error } = await supabase.from("activities").select("*")
-      .order("created_at", { ascending: false })
-      .limit(2000);
-    if (error) { console.error("refetchActivities failed:", error); return; }
-    if (data) setActivities(data);
+      .or(`done.eq.false,created_at.gte.${cutoff}`)
+      .order("due_at", { ascending: true })
+      .limit(5000);
+    if (!error && data) setActivities(data);
   }, []);
 
   const refetchLeads = useCallback(async () => {
@@ -1776,8 +1777,11 @@ function Dashboard({ userEmail }) {
         else await supabase.from("app_config").upsert({ key: "cadences", value: DEFAULT_CADENCES });
         if (map.lenders) setLenders(map.lenders);
         await refetchLeads();
-        // these tables are optional: if the migration has not run yet, ignore
-        try { await refetchComms(); await refetchActivities(); } catch { /* not migrated yet */ }
+        // Load each independently — a failure in one must NOT prevent the others.
+        // (Previously these shared one try/catch, so if comms threw, activities
+        // never loaded and the tasks panel was always empty.)
+        try { await refetchComms(); } catch (e) { console.error("refetchComms failed:", e); }
+        try { await refetchActivities(); } catch (e) { console.error("refetchActivities failed:", e); }
       } catch (e) { setErr(String(e.message || e)); }
       finally { setLoaded(true); }
     })();

@@ -90,7 +90,24 @@ function e164(phone) {
   if (d.length === 11 && d[0] === "1") return "+" + d;
   return d ? "+" + d : "";
 }
+// Normalize outbound SMS to GSM-7-safe ASCII. One typographic character (curly
+// apostrophe from a business name, smart quotes, ellipsis) silently flips the
+// whole message to UCS-2, and a mislabeled hop renders it as CJK mojibake on the
+// client's phone (the "Chinese text" incident). Keeping everything GSM-safe also
+// keeps segments at 160 chars instead of 70.
+function gsmSafe(s) {
+  return String(s || "")
+    .replace(/[\u2018\u2019\u201A\u02BC]/g, "'")
+    .replace(/[\u201C\u201D\u201E]/g, '"')
+    .replace(/[\u2013\u2014\u2015]/g, "-")
+    .replace(/\u2026/g, "...")
+    .replace(/[\u00A0\u2000-\u200B\u202F\u205F\u3000]/g, " ")
+    .normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\x20-\x7E\n\r]/g, "");
+}
+
 async function sendSms(rc, to, text) {
+  text = gsmSafe(text);
   const r = await fetch(`${rc.server}/restapi/v1.0/account/~/extension/~/sms`, {
     method: "POST", headers: { Authorization: `Bearer ${rc.token}`, "Content-Type": "application/json" },
     body: JSON.stringify({ from: { phoneNumber: process.env.RC_FROM }, to: [{ phoneNumber: e164(to) }], text }),

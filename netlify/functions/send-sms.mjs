@@ -42,6 +42,22 @@ function e164(phone) {
   return d ? "+" + d : "";
 }
 
+// Normalize outbound SMS to GSM-7-safe ASCII. One typographic character (curly
+// apostrophe from a business name, smart quotes, ellipsis) silently flips the
+// whole message to UCS-2, and a mislabeled hop renders it as CJK mojibake on the
+// client's phone (the "Chinese text" incident). Keeping everything GSM-safe also
+// keeps segments at 160 chars instead of 70.
+function gsmSafe(s) {
+  return String(s || "")
+    .replace(/[\u2018\u2019\u201A\u02BC]/g, "'")
+    .replace(/[\u201C\u201D\u201E]/g, '"')
+    .replace(/[\u2013\u2014\u2015]/g, "-")
+    .replace(/\u2026/g, "...")
+    .replace(/[\u00A0\u2000-\u200B\u202F\u205F\u3000]/g, " ")
+    .normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\x20-\x7E\n\r]/g, "");
+}
+
 export const handler = async (event) => {
   if (event.httpMethod !== "POST") return resp(405, { error: "Method not allowed" });
 
@@ -60,7 +76,7 @@ export const handler = async (event) => {
   let body;
   try { body = JSON.parse(event.body || "{}"); } catch { return resp(400, { error: "Invalid JSON" }); }
   const to = e164(body.to);
-  const text = body.text;
+  const text = gsmSafe(body.text);
   if (!to || !text) return resp(422, { error: "Missing recipient or message" });
 
   if (!process.env.RC_CLIENT_ID || !process.env.RC_JWT || !process.env.RC_FROM) {

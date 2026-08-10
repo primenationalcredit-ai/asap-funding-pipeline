@@ -2792,6 +2792,18 @@ function BoardCard({ lead, onOpen, cadences, templates, config, openCompose, upd
       <div className="mt-1.5 flex flex-wrap gap-1" onClick={stop}>
         <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${SOURCE_TONE[normalizeSource(lead.source)] || SOURCE_TONE.Unknown}`}>{normalizeSource(lead.source)}</span>
         {lead.product && <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${lead.product === "SLOC" ? "bg-indigo-100 text-indigo-700" : "bg-orange-100 text-orange-700"}`}>{lead.product}</span>}
+        {lead.creditScore && (() => {
+          let low = parseScoreLow(lead.creditScore);
+          // "below 620" / "under 620" means LESS than the number found — nudge it under.
+          if (low != null && /below|under|less than/i.test(lead.creditScore)) low = low - 1;
+          // Color by SLOC eligibility: 680+ green, 620-679 amber, under 620 rose,
+          // wordy answers with no number (e.g. "not sure") plain slate.
+          const tone = low == null ? "bg-slate-100 text-slate-600"
+            : low >= 680 ? "bg-emerald-100 text-emerald-700"
+            : low >= 620 ? "bg-amber-100 text-amber-800"
+            : "bg-rose-100 text-rose-700";
+          return <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${tone}`} title={`Credit: ${lead.creditScore}`}>{lead.creditScore}</span>;
+        })()}
         {lead.lenderTag && <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">{lead.lenderTag}</span>}
         {lead.optedOut && <span className="inline-flex items-center gap-0.5 rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-bold text-rose-700"><Ban size={10} /> DND</span>}
       </div>

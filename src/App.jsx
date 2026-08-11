@@ -286,22 +286,16 @@ Keep my number. When you are ready, we can usually get you a pre-approval fast. 
   { id: "cosigner_email", pool: "manual", name: "Good news: need a cosigner (email)", channel: "email", subject: `Good news, {{first}}, one more step`,
     body: `Hi {{first}},
 
-Good news. Our partner reviewed your business and wants to move forward. That is the hard part and you cleared it.
+Our partner wants to move forward. The only gap is the personal profile on file, they need 680 or higher.
 
-The one gap is the personal profile on file. They look for 680 or higher and yours is just under, so we add someone stronger to bridge it.
+The fix is adding someone stronger. They do not have to be part of your business, and it is temporary. The business builds its own track record and you borrow in its name alone later.
 
-A few things worth knowing:
-
-They do not have to be part of your business. No ownership, no role, nothing changes about how you run things.
-
-This is temporary. The business builds its own track record over the next several months, and the goal is you borrowing in the business name alone.
-
-Here are the two steps:
+Two steps:
 
 1. Have them pull their report with a soft inquiry here: {{link}}
-2. Once it downloads, send it over to me and I will take it from there.
+2. Send it over to me and I will take it from there.
 
-Who did you have in mind? Reply here or give me a call and I will walk you both through it.
+Who did you have in mind?
 
 {{signature}}` },
   { id: "manual_smartcredit_sms", pool: "manual", name: "SmartCredit backup (text)", channel: "sms", subject: "",

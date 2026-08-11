@@ -17,8 +17,6 @@ import { supabase } from "./supabaseClient.js";
 /* ================================================================== */
 const STAGES = [
   { key: "new", label: "New", tone: "slate" },
-  { key: "pending_scheduling", label: "Pending Scheduling", tone: "sky" },
-  { key: "scheduled", label: "Scheduled", tone: "sky" },
   { key: "appointment_booked", label: "Appt Booked", tone: "emerald" },
   { key: "voicemail", label: "Left Voicemail", tone: "amber" },
   { key: "waiting_reports", label: "Sent Reports", tone: "amber" },
@@ -28,6 +26,8 @@ const STAGES = [
   { key: "not_interested", label: "Not Interested", tone: "orange" },
   { key: "wrong_number", label: "Wrong Number", tone: "rose" },
   { key: "report_pulled", label: "Reports Received", tone: "teal" },
+  { key: "pending_scheduling", label: "Pending Scheduling", tone: "sky" },
+  { key: "scheduled", label: "Scheduled", tone: "sky" },
   { key: "app_received", label: "App Received", tone: "indigo" },
   { key: "app_reports_received", label: "App & Reports Received", tone: "cyan" },
   { key: "submitted", label: "Deal Submitted", tone: "indigo" },
@@ -2285,8 +2285,8 @@ function PowerDial({ leads }) {
 }
 
 const BOARDS = {
-  outreach: { label: "Outreach", stages: ["new", "pending_scheduling", "scheduled", "appointment_booked", "voicemail", "waiting_reports", "app_sent", "wrong_number", "callback", "check_back"] },
-  funding: { label: "Funding", stages: ["report_pulled", "app_received", "app_reports_received", "submitted", "looking_for_partner", "waiting_for_partner", "denied", "pre_approved", "contracts_out", "agreement_signed", "getting_approvals", "funded", "commission_paid"] },
+  outreach: { label: "Outreach", stages: ["new", "appointment_booked", "voicemail", "waiting_reports", "app_sent", "wrong_number", "callback", "check_back"] },
+  funding: { label: "Funding", stages: ["report_pulled", "pending_scheduling", "scheduled", "app_received", "app_reports_received", "submitted", "looking_for_partner", "waiting_for_partner", "denied", "pre_approved", "contracts_out", "agreement_signed", "getting_approvals", "funded", "commission_paid"] },
   closed: { label: "Closed", stages: ["not_interested", "declined", "offer_cr", "referred_cr", "credit_repair", "dead"] },
 };
 

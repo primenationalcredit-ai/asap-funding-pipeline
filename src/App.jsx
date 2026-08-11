@@ -2923,6 +2923,17 @@ function BoardCard({ lead, onOpen, cadences, templates, config, openCompose, upd
             : "bg-rose-100 text-rose-700";
           return <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${tone}`} title={`Credit: ${lead.creditScore}`}>{lead.creditScore}</span>;
         })()}
+        {lead.monthlyRevenue && (() => {
+          // Revenue chip. Green when there is real money coming in, slate when the
+          // answer is a "no revenue yet" style response so it reads at a glance.
+          const rv = String(lead.monthlyRevenue).trim();
+          // Only a bare zero counts as "no revenue" — do not let $10,000 or 150-200k
+          // match a loose zero pattern (caught by testing).
+          const noRev = /not yet|no revenue|pre[- ]revenue|brand new|none|^\$?0(\.00)?$/i.test(rv);
+          const tone = noRev ? "bg-slate-100 text-slate-600" : "bg-teal-100 text-teal-800";
+          const short = String(lead.monthlyRevenue).length > 22 ? String(lead.monthlyRevenue).slice(0, 21) + "\u2026" : lead.monthlyRevenue;
+          return <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${tone}`} title={`Revenue: ${lead.monthlyRevenue}`}>{short}</span>;
+        })()}
         {lead.lenderTag && <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">{lead.lenderTag}</span>}
         {lead.optedOut && <span className="inline-flex items-center gap-0.5 rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-bold text-rose-700"><Ban size={10} /> DND</span>}
       </div>

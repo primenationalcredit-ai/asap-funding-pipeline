@@ -2905,6 +2905,16 @@ function BoardCard({ lead, onOpen, cadences, templates, config, openCompose, upd
   const tplSms = pickFrom(poolTemplates(templates, "int_sms"), lead.id) || templates.find((t) => t.id === "first_sms");
   const tplEmail = pickFrom(poolTemplates(templates, "int_email"), lead.id) || templates.find((t) => t.id === "first_email");
   const stop = (e) => e.stopPropagation();
+  // Most recent typed note, shown on the card so the team sees the latest
+  // context without opening the lead. Prefers real notes (kind "note") and
+  // falls back to a call disposition note only if there are no typed notes.
+  const lastNote = (() => {
+    const all = (lead.touches || []).filter((t) => t.note && String(t.note).trim());
+    if (!all.length) return null;
+    const typed = all.filter((t) => t.kind === "note");
+    const pick = (typed.length ? typed : all).sort((a, b) => (b.at || 0) - (a.at || 0))[0];
+    return pick || null;
+  })();
   return (
     <div draggable onDragStart={onDragStart} onDragEnd={onDragEnd} onClick={onOpen}
       className={`cursor-pointer rounded-lg border border-slate-200 bg-white p-2.5 shadow-sm transition hover:border-blue-300 hover:shadow ${dragging ? "opacity-40" : ""}`}>
@@ -2931,6 +2941,14 @@ function BoardCard({ lead, onOpen, cadences, templates, config, openCompose, upd
       {(lead.desiredAmount || lead.commissionAmount) && (
         <div className="mt-1 text-xs text-slate-500">
           {lead.commissionAmount ? <span className="font-semibold text-blue-700">{money(lead.commissionAmount)} comm</span> : lead.desiredAmount ? <span>Wants {lead.desiredAmount}</span> : null}
+        </div>
+      )}
+      {lastNote && (
+        <div className="mt-1.5 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5" title={lastNote.note}>
+          <p className="line-clamp-2 whitespace-pre-wrap text-[11px] leading-snug text-amber-900">{lastNote.note}</p>
+          <p className="mt-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-600">
+            {(lastNote.by || "").split("@")[0] || "note"}{lastNote.at ? " \u00b7 " + new Date(lastNote.at).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : ""}
+          </p>
         </div>
       )}
       <div className="mt-1.5 flex flex-wrap gap-1" onClick={stop}>

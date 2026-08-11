@@ -2605,9 +2605,14 @@ function Pipeline({ leads, allLeads, allCount, dueList, stats, config, query, se
             <button
               onClick={async () => {
                 try {
-                  const ids = dueList.map(({ l }) => l.id).slice(0, 200);
-                  if (!ids.length) return;
-                  if (!window.confirm(`Start a PhoneBurner power-dial session for ${ids.length} due lead${ids.length === 1 ? "" : "s"}?`)) return;
+                  const all = dueList.map(({ l }) => l.id);
+                  if (!all.length) return;
+                  const max = Math.min(all.length, 200);
+                  const ans = window.prompt(`How many leads do you want to power dial? (${all.length} due, max ${max})`, String(max));
+                  if (ans == null) return; // cancelled
+                  const n = Math.max(1, Math.min(max, parseInt(ans, 10) || 0));
+                  if (!n) return;
+                  const ids = all.slice(0, n); // due list is already sorted most-overdue first
                   const { data } = await supabase.auth.getSession();
                   const res = await fetch("/.netlify/functions/pb-start-session", {
                     method: "POST",

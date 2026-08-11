@@ -283,22 +283,25 @@ Keep my number. When you are ready, we can usually get you a pre-approval fast. 
   // ============ MANUAL (never auto-sent, shows in the Insert-a-template picker) ============
   { id: "cosigner_sms", pool: "manual", name: "Good news: need a cosigner (text)", channel: "sms", subject: "",
     body: `{{first}}, {{repfirst}} at ASAP. Good news, our partner said yes. Only gap is the personal profile on file, they need 680 or higher. Anyone strong you could add? They do not have to be in the business. Got 5 minutes for a call?` },
-  { id: "cosigner_email", pool: "manual", name: "Good news: need a cosigner (email)", channel: "email", subject: `Good news, {{first}}, with one thing we need to sort`,
+  { id: "cosigner_email", pool: "manual", name: "Good news: need a cosigner (email)", channel: "email", subject: `Good news, {{first}}, one more step`,
     body: `Hi {{first}},
 
-Good news first. Our partner reviewed your business and they want to move forward with you. That is the hard part, and you cleared it.
+Good news. Our partner reviewed your business and wants to move forward. That is the hard part and you cleared it.
 
-The one gap is the personal profile they need on file. They look for 680 or higher, and yours is sitting just under that line. It is close, which is why this is worth a quick conversation.
+The one gap is the personal profile on file. They look for 680 or higher and yours is just under, so we add someone stronger to bridge it.
 
-The usual fix is adding someone with a stronger profile. A few things people are surprised to hear:
+A few things worth knowing:
 
 They do not have to be part of your business. No ownership, no role, nothing changes about how you run things.
 
-Their strength is what gets this across the line now, and it also starts building the business itself up. Over the next several months the business establishes its own track record, and the goal is that you are borrowing in the business name alone and no longer need anyone else on it.
+This is temporary. The business builds its own track record over the next several months, and the goal is you borrowing in the business name alone.
 
-So this is a bridge, not a permanent arrangement.
+Here are the two steps:
 
-Is there someone you would feel comfortable asking? A spouse, a family member, a business partner. Reply here or give me a call and I will explain exactly what is involved so you can bring it to them with the full picture.
+1. Have them pull their report with a soft inquiry here: {{link}}
+2. Once it downloads, send it over to me and I will take it from there.
+
+Who did you have in mind? Reply here or give me a call and I will walk you both through it.
 
 {{signature}}` },
   { id: "manual_smartcredit_sms", pool: "manual", name: "SmartCredit backup (text)", channel: "sms", subject: "",

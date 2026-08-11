@@ -46,6 +46,21 @@ export const handler = async (event) => {
 
     const admin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
+    // Map PhoneBurner disposition buttons -> CRM stage. Names come from the
+    // account's Starter Dialing Set + Starter Live Answer Set. Matching is
+    // lowercase/loose so minor renames still land.
+    const d = disposition.toLowerCase();
+    let newStatus = null;      // stage to move to, null = leave stage alone
+    let optOut = false;        // Do Not Call flips the lead to opted out
+    if (/voicemail|left message|lvm/.test(d)) newStatus = "voicemail";
+    else if (/set appointment|appointment|booked/.test(d)) newStatus = "appointment_booked";
+    else if (/not interested/.test(d)) newStatus = "not_interested";
+    else if (/follow ?up/.test(d)) newStatus = "callback";
+    else if (/wrong number|bad (number|phone)/.test(d)) newStatus = "wrong_number";
+    else if (/do not call|dnc/.test(d)) { newStatus = "dead"; optOut = true; }
+    // "No Answer", "Busy Signal", "Unavailable" deliberately do NOT move the
+    // stage — they just log the attempt, same as the CRM's own call buttons.
+
     const pieces = [];
     if (disposition) pieces.push(`Disposition: ${disposition}`);
     if (duration) pieces.push(`Duration: ${duration}s`);
@@ -60,13 +75,22 @@ export const handler = async (event) => {
     // Push the next automated follow-up out 3 days, same as a manual call log,
     // so the cadence doesn't text someone Lydia just spoke with.
     try {
-      const { error: uErr } = await admin.from("leads")
-        .update({ snooze_until: new Date(Date.now() + 3 * 86400000).toISOString() })
-        .eq("id", leadId);
-      if (uErr) console.log("[pb-calldone] snooze update failed:", uErr.message);
-    } catch (e) { console.log("[pb-calldone] snooze error", e.message); }
+      const patch = { snooze_until: new Date(Date.now() + 3 * 86400000).toISOString() };
+      // Only ever move leads that are still in the outreach part of the funnel —
+      // never yank someone who is already submitted/funded back to an early stage.
+      const OUTREACH = ["new", "appointment_booked", "voicemail", "waiting_reports", "app_sent", "wrong_number", "callback", "check_back", "not_interested", ""];
+      if (newStatus) {
+        const { data: cur } = await admin.from("leads").select("status").eq("id", leadId).maybeSingle();
+        const st = (cur && cur.status) || "";
+        if (OUTREACH.includes(st)) { patch.status = newStatus; patch.stage_entered_at = new Date().toISOString(); }
+        else console.log("[pb-calldone] lead in", st, "- logging call, not moving stage");
+      }
+      if (optOut) patch.opted_out = true;
+      const { error: uErr } = await admin.from("leads").update(patch).eq("id", leadId);
+      if (uErr) console.log("[pb-calldone] lead update failed:", uErr.message);
+    } catch (e) { console.log("[pb-calldone] lead update error", e.message); }
 
-    console.log("[pb-calldone] logged", JSON.stringify({ leadId, disposition, agent }));
+    console.log("[pb-calldone] logged", JSON.stringify({ leadId, disposition, newStatus, optOut, agent }));
     return { statusCode: 200, body: "ok" };
   } catch (e) {
     console.log("[pb-calldone] error", e.message);

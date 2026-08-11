@@ -281,6 +281,26 @@ Keep my number. When you are ready, we can usually get you a pre-approval fast. 
   { id: "app_sms_a", pool: "app_sms", name: "Application: more funding (text)", channel: "sms", subject: "",
     body: `Hi {{first}}, you are one step from moving forward. Quick application, your last few bank statements, about 10 minutes all in one place: {{applink}} Reply here if anything trips you up and I will walk you through it.` },
   // ============ MANUAL (never auto-sent, shows in the Insert-a-template picker) ============
+  { id: "cosigner_sms", pool: "manual", name: "Approved: need a cosigner (text)", channel: "sms", subject: "",
+    body: `{{first}}, {{repfirst}} at ASAP. Good news, our partner said yes. Only gap is the personal profile on file, they need 680 or higher. Anyone strong you could add? They do not have to be in the business. Got 5 minutes for a call?` },
+  { id: "cosigner_email", pool: "manual", name: "Approved: need a cosigner (email)", channel: "email", subject: `Good news, {{first}}, with one thing we need to sort`,
+    body: `Hi {{first}},
+
+Good news first. Our partner reviewed your business and they want to move forward with you. That is the hard part, and you cleared it.
+
+The one gap is the personal profile they need on file. They look for 680 or higher, and yours is sitting just under that line. It is close, which is why this is worth a quick conversation.
+
+The usual fix is adding someone with a stronger profile. A few things people are surprised to hear:
+
+They do not have to be part of your business. No ownership, no role, nothing changes about how you run things.
+
+Their strength is what gets this across the line now, and it also starts building the business itself up. Over the next several months the business establishes its own track record, and the goal is that you are borrowing in the business name alone and no longer need anyone else on it.
+
+So this is a bridge, not a permanent arrangement.
+
+Is there someone you would feel comfortable asking? A spouse, a family member, a business partner. Reply here or give me a call and I will explain exactly what is involved so you can bring it to them with the full picture.
+
+{{signature}}` },
   { id: "manual_smartcredit_sms", pool: "manual", name: "SmartCredit backup (text)", channel: "sms", subject: "",
     body: `{{first}}, no problem. If MyScoreIQ is not working for you, use SmartCredit instead, it does the same thing: {{smartcredit}} About 5 minutes. Text me DONE once you are in.` },
   { id: "manual_smartcredit_email", pool: "manual", name: "SmartCredit backup (email)", channel: "email", subject: "Use this instead, {{first}}",

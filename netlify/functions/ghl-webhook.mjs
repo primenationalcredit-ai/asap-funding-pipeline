@@ -424,7 +424,7 @@ function normalize(payload) {
   if (name && (name.includes("@") || /^\+?[\d\s().-]{7,}$/.test(name))) name = "";
   name = (name || "").trim();
 
-  return {
+  const out = {
     ghl_contact_id: pickFrom([top, cd, con], ["contact_id", "contactId", "id"]),
     event: pickFrom([cd, top], ["event", "event_type", "eventType"]),
     opportunity_id: pickFrom([cd, top], ["opportunity_id", "opportunityId"]),
@@ -471,6 +471,51 @@ function normalize(payload) {
     business_type: pickFrom([cd, top], ["what_type_of_business_do_you_run", "what_type_of_business_do_you_run?", "business_type", "businessType"]),
     funding_timeline: mapTimeline(pickFrom([cd, top], ["funding_timeline", "fundingTimeline", "how_soon_do_you_need_the_capital", "how_soon_do_you_need_the_capital?"])),
   };
+  return repairSlocFields(out);
+}
+
+// The SLOC Zap has its three answers mapped to the WRONG Facebook questions, so
+// credit / revenue / timeline arrive in each other's columns. The three answer
+// sets do not overlap, so we can tell what each value IS by its content and put
+// it back where it belongs. This is a safety net; the Zap should still be fixed.
+function looksLikeScore(v) {
+  const t = String(v || "").toLowerCase();
+  if (!t) return false;
+  // A revenue answer like "yes, under $10,000 a month" also contains 3 digits,
+  // so revenue-shaped text is never a score no matter what digits it holds.
+  if (/^yes\b|a month|per month|monthly|\$/.test(t)) return false;
+  return /\b\d{3}\b/.test(t) || /excellent|good|fair|poor|or higher|or above/.test(t);
+}
+function looksLikeRevenue(v) {
+  const t = String(v || "").toLowerCase();
+  if (!t) return false;
+  return /revenue|pre.?revenue|brand new|not yet|^yes\b|a month|per month|monthly|\$|\d+\s*k\b/.test(t);
+}
+function looksLikeTimeline(v) {
+  const t = String(v || "").toLowerCase();
+  if (!t) return false;
+  return /within|asap|immediately|day|week|month(?!ly)|soon|not sure when|just (looking|researching)/.test(t)
+    && !/a month|per month/.test(t);
+}
+// Reassign the three SLOC qualifier values to the right columns by content.
+// Only rearranges when the current arrangement is clearly wrong AND we can
+// confidently place a value; otherwise leaves everything untouched.
+function repairSlocFields(row) {
+  const vals = [row.estimated_credit_score, row.monthly_revenue, row.funding_timeline].filter((v) => String(v || "").trim());
+  if (vals.length < 2) return row;
+  const scoreOk = !row.estimated_credit_score || looksLikeScore(row.estimated_credit_score);
+  const revOk = !row.monthly_revenue || looksLikeRevenue(row.monthly_revenue);
+  const timeOk = !row.funding_timeline || looksLikeTimeline(row.funding_timeline);
+  if (scoreOk && revOk && timeOk) return row; // already correct, do nothing
+  const score = vals.find(looksLikeScore) || "";
+  const rev = vals.find((v) => v !== score && looksLikeRevenue(v)) || "";
+  const time = vals.find((v) => v !== score && v !== rev && looksLikeTimeline(v)) || "";
+  if (!score && !rev && !time) return row; // could not classify, leave as-is
+  console.log("[sloc-repair]", JSON.stringify({ was: { s: row.estimated_credit_score, r: row.monthly_revenue, t: row.funding_timeline }, now: { s: score, r: rev, t: time } }));
+  row.estimated_credit_score = score;
+  row.monthly_revenue = rev;
+  row.funding_timeline = time;
+  return row;
 }
 
 const DATA_FIELDS = [

@@ -281,9 +281,9 @@ Keep my number. When you are ready, we can usually get you a pre-approval fast. 
   { id: "app_sms_a", pool: "app_sms", name: "Application: more funding (text)", channel: "sms", subject: "",
     body: `Hi {{first}}, you are one step from moving forward. Quick application, your last few bank statements, about 10 minutes all in one place: {{applink}} Reply here if anything trips you up and I will walk you through it.` },
   // ============ MANUAL (never auto-sent, shows in the Insert-a-template picker) ============
-  { id: "cosigner_sms", pool: "manual", name: "Approved: need a cosigner (text)", channel: "sms", subject: "",
+  { id: "cosigner_sms", pool: "manual", name: "Good news: need a cosigner (text)", channel: "sms", subject: "",
     body: `{{first}}, {{repfirst}} at ASAP. Good news, our partner said yes. Only gap is the personal profile on file, they need 680 or higher. Anyone strong you could add? They do not have to be in the business. Got 5 minutes for a call?` },
-  { id: "cosigner_email", pool: "manual", name: "Approved: need a cosigner (email)", channel: "email", subject: `Good news, {{first}}, with one thing we need to sort`,
+  { id: "cosigner_email", pool: "manual", name: "Good news: need a cosigner (email)", channel: "email", subject: `Good news, {{first}}, with one thing we need to sort`,
     body: `Hi {{first}},
 
 Good news first. Our partner reviewed your business and they want to move forward with you. That is the hard part, and you cleared it.

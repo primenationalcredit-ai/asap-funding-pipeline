@@ -2079,8 +2079,8 @@ function Dashboard({ userEmail }) {
 
   if (!loaded) return <div className="flex min-h-96 items-center justify-center font-sans text-slate-400">Loading your pipeline...</div>;
 
-  const NAV = [["pipeline", "Pipeline", LayoutGrid], ["tracker", "Tracker", TrendingUp], ["inbox", "Inbox", MessageSquare], ["applications", "Applications", FileText], ["activities", "Activities", CalendarClock], ["calendar", "Calendar", CalendarDays], ["followups", "Follow-ups", Clock], ["commissions", "Commissions", DollarSign], ["team", "Team", User], ["messaging", "Templates", FileText], ["scripts", "Scripts", ListChecks], ["settings", "Settings", SettingsIcon]];
-  const tabTitle = { pipeline: "Pipeline", tracker: "Origination tracker", inbox: "Inbox", activities: "Activities", followups: "Follow-ups", commissions: "Commissions", team: "Team activity", messaging: "Message templates", scripts: "Call scripts", settings: "Settings" }[tab];
+  const NAV = [["pipeline", "Pipeline", LayoutGrid], ["tracker", "Tracker", TrendingUp], ["inbox", "Inbox", MessageSquare], ["applications", "Applications", FileText], ["activities", "Activities", CalendarClock], ["calendar", "Calendar", CalendarDays], ["followups", "Follow-ups", Clock], ["powerdial", "Power Dial", Phone], ["commissions", "Commissions", DollarSign], ["team", "Team", User], ["messaging", "Templates", FileText], ["scripts", "Scripts", ListChecks], ["settings", "Settings", SettingsIcon]];
+  const tabTitle = { pipeline: "Pipeline", tracker: "Origination tracker", inbox: "Inbox", activities: "Activities", followups: "Follow-ups", powerdial: "Power Dial", commissions: "Commissions", team: "Team activity", messaging: "Message templates", scripts: "Call scripts", settings: "Settings" }[tab];
 
   return (
     <div className="flex min-h-screen bg-slate-50 font-sans text-slate-800">
@@ -2164,6 +2164,7 @@ function Dashboard({ userEmail }) {
           {tab === "inbox" && <Conversations leads={leads} comms={comms} unreadLeadIds={unreadLeadIds} onSend={sendReply} onAddNote={addNote} onOpen={setProfileId} markRead={markRead} markAllRead={markAllRead} templates={templates} config={config} openCompose={setCompose} />}
           {tab === "tracker" && <Tracker leads={leads} config={config} onOpen={setProfileId} logTouch={logTouch} userEmail={userEmail} />}
           {tab === "activities" && <Activities activities={activities} leads={leads} onOpen={setProfileId} completeActivity={completeActivity} deleteActivity={deleteActivity} />}
+          {tab === "powerdial" && <PowerDial leads={leads} />}
           {tab === "calendar" && <Calendar activities={activities} leads={leads} config={config} userEmail={userEmail} onOpen={setProfileId} addActivity={addActivity} updateActivity={updateActivity} deleteActivity={deleteActivity} />}
           {tab === "messaging" && <Messaging templates={templates} persistTemplates={persistTemplates} cadences={cadences} persistCadences={persistCadences} />}
           {tab === "commissions" && <Commissions leads={leads} onOpen={setProfileId} />}
@@ -2189,6 +2190,98 @@ function Dashboard({ userEmail }) {
 /* ================================================================== */
 /*  Pipeline                                                          */
 /* ================================================================== */
+function PowerDial({ leads }) {
+  // Default to the outreach stages Lydia actually works. She can tick any
+  // combination; the count updates live so she knows what she is loading.
+  const [picked, setPicked] = useState(() => new Set(["new", "voicemail", "callback", "check_back"]));
+  const [count, setCount] = useState(50);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  const toggle = (k) => setPicked((prev) => { const n = new Set(prev); n.has(k) ? n.delete(k) : n.add(k); return n; });
+
+  const dialable = (l) => {
+    if (l.optedOut) return false;                    // never call opted-out people
+    if (!l.phone || String(l.phone).replace(/\D/g, "").length < 10) return false;
+    return picked.has(l.status || "new");
+  };
+  // Longest since last touch first, so the coldest leads get worked.
+  const pool = (leads || []).filter(dialable)
+    .sort((a, b) => (a.lastTouchAt || 0) - (b.lastTouchAt || 0));
+
+  const start = async () => {
+    const ids = pool.slice(0, Math.max(1, Math.min(200, count))).map((l) => l.id);
+    if (!ids.length) { setMsg("No leads match. Tick a stage with dialable leads."); return; }
+    setBusy(true); setMsg("");
+    try {
+      const { data } = await supabase.auth.getSession();
+      const res = await fetch("/.netlify/functions/pb-start-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${data.session?.access_token}` },
+        body: JSON.stringify({ leadIds: ids }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || j.error) { setMsg("Could not start session: " + (j.error || res.status)); return; }
+      if (j.redirect_url) { window.open(j.redirect_url, "_blank"); setMsg(`Session opened with ${j.contacts} contacts in a new tab.`); }
+      else setMsg("Session created but PhoneBurner returned no link. Open PhoneBurner directly.");
+    } catch (e) { setMsg("Could not start session: " + (e.message || e)); }
+    finally { setBusy(false); }
+  };
+
+  const countFor = (k) => (leads || []).filter((l) => (l.status || "new") === k && !l.optedOut && l.phone && String(l.phone).replace(/\D/g, "").length >= 10).length;
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-xl border border-slate-200 bg-white p-4">
+        <h3 className="text-sm font-bold text-slate-800">Who do you want to call?</h3>
+        <p className="mt-1 text-xs text-slate-500">Tick the stages to dial. Leads with no phone number and anyone who opted out are always skipped. Oldest untouched leads are loaded first.</p>
+        {Object.entries(BOARDS).map(([bk, b]) => (
+          <div key={bk} className="mt-3">
+            <div className="mb-1.5 flex items-center gap-2">
+              <span className="text-[11px] font-bold uppercase tracking-wide text-slate-400">{b.label}</span>
+              <button onClick={() => setPicked((p) => { const n = new Set(p); const all = b.stages.every((k) => p.has(k)); b.stages.forEach((k) => all ? n.delete(k) : n.add(k)); return n; })}
+                className="text-[11px] font-semibold text-blue-600 hover:underline">select all</button>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {b.stages.map((k) => {
+                const st = STAGES.find((x) => x.key === k);
+                const n = countFor(k);
+                const on = picked.has(k);
+                return (
+                  <button key={k} onClick={() => toggle(k)} disabled={!n}
+                    className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition ${on ? "border-blue-600 bg-blue-50 text-blue-800" : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"} ${!n ? "cursor-not-allowed opacity-40" : ""}`}>
+                    {st ? st.label : k} <span className={on ? "text-blue-500" : "text-slate-400"}>{n}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-white p-4">
+        <div className="flex flex-wrap items-end gap-4">
+          <div>
+            <label className="block text-xs font-semibold text-slate-600">How many to load</label>
+            <input type="number" min="1" max="200" value={count} onChange={(e) => setCount(parseInt(e.target.value, 10) || 1)}
+              className="mt-1 w-28 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          </div>
+          <div className="text-sm text-slate-600">
+            <span className="font-bold text-slate-900">{pool.length}</span> match your selection
+            {pool.length > count && <span className="text-slate-400"> (loading the {count} oldest)</span>}
+          </div>
+          <button onClick={start} disabled={busy || !pool.length}
+            className="ml-auto rounded-lg bg-orange-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-orange-700 disabled:opacity-50">
+            {busy ? "Starting..." : `Start power dial (${Math.min(pool.length, count)})`}
+          </button>
+        </div>
+        {msg && <p className="mt-3 text-sm text-slate-600">{msg}</p>}
+        <p className="mt-3 text-xs text-slate-400">The session opens in a new tab. Dial and pick an outcome there, and this CRM logs the call and moves the card automatically. You can run as many sessions a day as you like.</p>
+      </div>
+    </div>
+  );
+}
+
 const BOARDS = {
   outreach: { label: "Outreach", stages: ["new", "appointment_booked", "voicemail", "waiting_reports", "app_sent", "wrong_number", "callback", "check_back"] },
   funding: { label: "Funding", stages: ["report_pulled", "app_received", "app_reports_received", "submitted", "looking_for_partner", "waiting_for_partner", "denied", "pre_approved", "contracts_out", "agreement_signed", "getting_approvals", "funded", "commission_paid"] },

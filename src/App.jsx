@@ -26,6 +26,7 @@ const STAGES = [
   { key: "not_interested", label: "Not Interested", tone: "orange" },
   { key: "wrong_number", label: "Wrong Number", tone: "rose" },
   { key: "report_pulled", label: "Reports Received", tone: "teal" },
+  { key: "sent_to_giggle", label: "Sent to Giggle", tone: "lime" },
   { key: "pending_scheduling", label: "Pending Scheduling", tone: "sky" },
   { key: "scheduled", label: "Scheduled", tone: "sky" },
   { key: "app_received", label: "App Received", tone: "indigo" },
@@ -2347,7 +2348,7 @@ function PowerDial({ leads }) {
 
 const BOARDS = {
   outreach: { label: "Outreach", stages: ["new", "appointment_booked", "voicemail", "waiting_reports", "app_sent", "wrong_number", "callback", "check_back"] },
-  funding: { label: "Funding", stages: ["report_pulled", "pending_scheduling", "scheduled", "app_received", "app_reports_received", "submitted", "looking_for_partner", "waiting_for_partner", "denied", "pre_approved", "contracts_out", "agreement_signed", "getting_approvals", "funded", "commission_paid"] },
+  funding: { label: "Funding", stages: ["report_pulled", "sent_to_giggle", "pending_scheduling", "scheduled", "app_received", "app_reports_received", "submitted", "looking_for_partner", "waiting_for_partner", "denied", "pre_approved", "contracts_out", "agreement_signed", "getting_approvals", "funded", "commission_paid"] },
   closed: { label: "Closed", stages: ["not_interested", "declined", "offer_cr", "referred_cr", "credit_repair", "dead"] },
 };
 

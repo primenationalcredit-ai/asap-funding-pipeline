@@ -4992,8 +4992,8 @@ function ActivityPanel({ lead, activities, addActivity, completeActivity, delete
 
   const [editAppt, setEditAppt] = useState(null);
   const saveAppt = (row) => {
-    if (row.id) updateActivity(row.id, { title: row.title, notes: row.notes, due_at: row.due_at, assigned_to: row.assigned_to, lead_id: row.lead_id });
-    else addActivity(row.lead_id, { type: "appointment", title: row.title, notes: row.notes, dueAt: new Date(row.due_at).getTime(), alarm: false, assignedTo: row.assigned_to });
+    if (row.id) updateActivity(row.id, { title: row.title, notes: row.notes, due_at: row.due_at, assigned_to: row.assigned_to, lead_id: row.lead_id, alarm: !!row.alarm });
+    else addActivity(row.lead_id, { type: "appointment", title: row.title, notes: row.notes, dueAt: new Date(row.due_at).getTime(), alarm: !!row.alarm, assignedTo: row.assigned_to });
     setEditAppt(null);
   };
   const openActs = activities.filter((a) => !a.done).sort((a, b) => new Date(a.due_at) - new Date(b.due_at));
@@ -5301,8 +5301,8 @@ function Conversations({ leads, comms, unreadLeadIds, onSend, onAddNote, onOpen,
     .filter((a) => a.lead_id === leadId && a.type === "appointment" && !a.done && new Date(a.due_at).getTime() >= Date.now() - 3600000)
     .sort((a, b) => new Date(a.due_at) - new Date(b.due_at))[0];
   const saveAppt = (row) => {
-    if (row.id) updateActivity(row.id, { title: row.title, notes: row.notes, due_at: row.due_at, assigned_to: row.assigned_to, lead_id: row.lead_id });
-    else addActivity(row.lead_id, { type: "appointment", title: row.title, notes: row.notes, dueAt: new Date(row.due_at).getTime(), alarm: false, assignedTo: row.assigned_to });
+    if (row.id) updateActivity(row.id, { title: row.title, notes: row.notes, due_at: row.due_at, assigned_to: row.assigned_to, lead_id: row.lead_id, alarm: !!row.alarm });
+    else addActivity(row.lead_id, { type: "appointment", title: row.title, notes: row.notes, dueAt: new Date(row.due_at).getTime(), alarm: !!row.alarm, assignedTo: row.assigned_to });
     setApptModal(null);
   };
   const withMsgs = useMemo(() => {
@@ -5440,6 +5440,7 @@ function ApptModal({ onClose, onSave, leads, team, userEmail, editing }) {
   const [owner, setOwner] = useState(editing?.assigned_to || userEmail || "");
   const [title, setTitle] = useState(editing?.title || "");
   const [note, setNote] = useState(editing?.notes || "");
+  const [alarm, setAlarm] = useState(editing ? !!editing.alarm : true);
 
   const matches = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -5459,6 +5460,7 @@ function ApptModal({ onClose, onSave, leads, team, userEmail, editing }) {
       notes: note || null,
       due_at: when.toISOString(),
       assigned_to: owner || userEmail || "all",
+      alarm,
     });
     onClose();
   };
@@ -5512,6 +5514,12 @@ function ApptModal({ onClose, onSave, leads, team, userEmail, editing }) {
             </select>
           </Labeled>
         </div>
+
+        <label className="mt-3 flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 hover:border-blue-300">
+          <input type="checkbox" checked={alarm} onChange={(e) => setAlarm(e.target.checked)} className="h-4 w-4" />
+          <span className="text-sm font-medium text-slate-700">Alert me when it is time</span>
+          <span className="ml-auto text-xs text-slate-400">Pops up and beeps in the app</span>
+        </label>
 
         <div className="mt-4 flex justify-end gap-2">
           <button onClick={onClose} className="rounded-lg px-3 py-2 text-sm font-medium text-slate-500 hover:bg-slate-100">Cancel</button>
@@ -5584,8 +5592,8 @@ function Calendar({ activities = [], leads = [], config = {}, userEmail, onOpen,
   const upcoming = useMemo(() => visible.filter((a) => new Date(a.due_at).getTime() >= Date.now()).sort((x, y) => new Date(x.due_at) - new Date(y.due_at)).slice(0, 8), [visible]);
 
   const save = (row) => {
-    if (row.id) updateActivity(row.id, { title: row.title, notes: row.notes, due_at: row.due_at, assigned_to: row.assigned_to, lead_id: row.lead_id });
-    else addActivity(row.lead_id, { type: "appointment", title: row.title, notes: row.notes, dueAt: new Date(row.due_at).getTime(), alarm: false, assignedTo: row.assigned_to });
+    if (row.id) updateActivity(row.id, { title: row.title, notes: row.notes, due_at: row.due_at, assigned_to: row.assigned_to, lead_id: row.lead_id, alarm: !!row.alarm });
+    else addActivity(row.lead_id, { type: "appointment", title: row.title, notes: row.notes, dueAt: new Date(row.due_at).getTime(), alarm: !!row.alarm, assignedTo: row.assigned_to });
   };
 
   const monthLabel = cursor.toLocaleDateString(undefined, { month: "long", year: "numeric" });

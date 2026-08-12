@@ -1203,6 +1203,18 @@ function fmtDateTime(ts) {
   if (!ts) return "";
   return new Date(ts).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
+// Compact stamp for the Inbox list: time alone for today, date + time otherwise,
+// so you can always see WHEN a text landed, not just the day.
+function fmtListTime(ts) {
+  if (!ts) return "";
+  const d = new Date(ts);
+  const time = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  const now = new Date();
+  if (d.toDateString() === now.toDateString()) return time;
+  const yest = new Date(now.getTime() - 86400000);
+  if (d.toDateString() === yest.toDateString()) return `Yest ${time}`;
+  return `${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })} ${time}`;
+}
 const STAGE_PLAYBOOK = {
   new: [
     "Call the lead now (use the Call button).",
@@ -5356,7 +5368,7 @@ function Conversations({ leads, comms, unreadLeadIds, onSend, onAddNote, onOpen,
                   title={unread ? "Mark as read" : "Mark as unread"}
                   className={`h-2.5 w-2.5 shrink-0 cursor-pointer rounded-full hover:ring-2 hover:ring-blue-200 ${unread ? "bg-blue-600" : "border border-slate-300 bg-white hover:border-blue-400"}`} />
                 <span className={`truncate text-sm ${unread ? "font-bold text-slate-900" : "font-medium text-slate-700"}`}>{leadTitle(lead)}</span>
-                <span className="ml-auto shrink-0 text-[10px] text-slate-400">{fmtDateTime(new Date(last.at).getTime()).split(",")[0]}</span>
+                <span className="ml-auto shrink-0 text-[10px] text-slate-400" title={fmtDateTime(new Date(last.at).getTime())}>{fmtListTime(new Date(last.at).getTime())}</span>
               </div>
               <div className="flex items-center gap-1 text-xs text-slate-400">
                 {last.direction === "in" ? "" : "You: "}

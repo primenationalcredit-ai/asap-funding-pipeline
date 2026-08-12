@@ -2174,13 +2174,13 @@ function Dashboard({ userEmail }) {
           {err && <div className="mt-3 flex items-center gap-2 rounded-lg bg-rose-50 px-4 py-2.5 text-sm text-rose-700 ring-1 ring-inset ring-rose-200"><AlertCircle size={16} /> {err}</div>}
 
           {tab === "pipeline" && (
-            <Pipeline leads={filtered} allLeads={leads} allCount={leads.length} dueList={dueList} stats={stats} config={config}
+            <Pipeline leads={filtered} allLeads={leads} allCount={leads.length} dueList={dueList} stats={stats} config={config} activities={activities}
               query={query} setQuery={setQuery} filter={filter} setFilter={setFilter} showAdd={showAdd} setShowAdd={setShowAdd}
               addLead={addLead} onOpen={setProfileId} logTouch={logTouch} updateLead={updateLead} cadences={cadences} templates={templates} openCompose={setCompose}
               onGoFollowups={() => setTab("followups")} removeLead={removeLead} />
           )}
           {tab === "followups" && <Followups dueList={dueList} config={config} onOpen={setProfileId} openCompose={setCompose} updateLead={updateLead} />}
-          {tab === "inbox" && <Conversations leads={leads} comms={comms} unreadLeadIds={unreadLeadIds} onSend={sendReply} onAddNote={addNote} onOpen={setProfileId} markRead={markRead} markAllRead={markAllRead} templates={templates} config={config} openCompose={setCompose} />}
+          {tab === "inbox" && <Conversations leads={leads} comms={comms} unreadLeadIds={unreadLeadIds} onSend={sendReply} onAddNote={addNote} onOpen={setProfileId} markRead={markRead} markAllRead={markAllRead} templates={templates} config={config} openCompose={setCompose} activities={activities} addActivity={addActivity} updateActivity={updateActivity} userEmail={userEmail} />}
           {tab === "tracker" && <Tracker leads={leads} config={config} onOpen={setProfileId} logTouch={logTouch} userEmail={userEmail} />}
           {tab === "activities" && <Activities activities={activities} leads={leads} onOpen={setProfileId} completeActivity={completeActivity} deleteActivity={deleteActivity} />}
           {tab === "powerdial" && <PowerDial leads={leads} />}
@@ -2196,7 +2196,7 @@ function Dashboard({ userEmail }) {
 
       {profileLead && (
         <Profile lead={profileLead} config={config} templates={templates} cadences={cadences} userEmail={userEmail} lenders={lenders}
-          comms={comms} activities={activities} addActivity={addActivity} completeActivity={completeActivity} deleteActivity={deleteActivity} sendReply={sendReply} addNote={addNote} markRead={markRead}
+          comms={comms} activities={activities} addActivity={addActivity} completeActivity={completeActivity} deleteActivity={deleteActivity} updateActivity={updateActivity} sendReply={sendReply} addNote={addNote} markRead={markRead} leads={leads}
           onClose={() => setProfileId(null)} updateLead={updateLead} removeLead={removeLead} logTouch={logTouch} openCompose={setCompose} />
       )}
 
@@ -2624,7 +2624,7 @@ function Tracker({ leads, config, onOpen, logTouch, userEmail }) {
   );
 }
 
-function Pipeline({ leads, allLeads, allCount, dueList, stats, config, query, setQuery, filter, setFilter, showAdd, setShowAdd, addLead, onOpen, logTouch, updateLead, cadences, templates, openCompose, onGoFollowups, removeLead }) {
+function Pipeline({ leads, allLeads, allCount, dueList, stats, config, query, setQuery, filter, setFilter, showAdd, setShowAdd, addLead, onOpen, logTouch, updateLead, cadences, templates, openCompose, onGoFollowups, removeLead, activities = [] }) {
   const [view, setView] = useState("board");
   const [boardTab, setBoardTab] = useState("outreach");
   const [dragId, setDragId] = useState(null);
@@ -2857,7 +2857,7 @@ function Pipeline({ leads, allLeads, allCount, dueList, stats, config, query, se
                     </div>
                     <div className="flex min-h-12 flex-col gap-2">
                       {items.map((l) => (
-                        <BoardCard key={l.id} lead={l} onOpen={() => onOpen(l.id)} cadences={cadences} templates={templates} config={config} openCompose={openCompose} updateLead={updateLead}
+                        <BoardCard key={l.id} lead={l} onOpen={() => onOpen(l.id)} cadences={cadences} templates={templates} config={config} openCompose={openCompose} updateLead={updateLead} activities={activities}
                           onDragStart={() => setDragId(l.id)} onDragEnd={() => setDragId(null)} dragging={dragId === l.id} />
                       ))}
                       {items.length === 0 && <div className="rounded-lg border border-dashed border-slate-200 py-4 text-center text-xs text-slate-300">Drop here</div>}
@@ -2893,12 +2893,17 @@ function Pipeline({ leads, allLeads, allCount, dueList, stats, config, query, se
   );
 }
 
-function BoardCard({ lead, onOpen, cadences, templates, config, openCompose, updateLead, onDragStart, onDragEnd, dragging }) {
+function BoardCard({ lead, onOpen, cadences, templates, config, openCompose, updateLead, onDragStart, onDragEnd, dragging, activities = [] }) {
   const step = nextDue(lead, cadences, templates);
   const rel = step ? relativeDue(step.dueAt) : null;
   const tplSms = pickFrom(poolTemplates(templates, "int_sms"), lead.id) || templates.find((t) => t.id === "first_sms");
   const tplEmail = pickFrom(poolTemplates(templates, "int_email"), lead.id) || templates.find((t) => t.id === "first_email");
   const stop = (e) => e.stopPropagation();
+  // Next upcoming appointment for this lead, so the board shows at a glance
+  // who is booked without opening the file.
+  const nextAppt = (activities || [])
+    .filter((a) => a.lead_id === lead.id && a.type === "appointment" && !a.done && new Date(a.due_at).getTime() >= Date.now() - 3600000)
+    .sort((a, b) => new Date(a.due_at) - new Date(b.due_at))[0];
   // Most recent typed note, shown on the card so the team sees the latest
   // context without opening the lead. Prefers real notes (kind "note") and
   // falls back to a call disposition note only if there are no typed notes.
@@ -2935,6 +2940,12 @@ function BoardCard({ lead, onOpen, cadences, templates, config, openCompose, upd
       {(lead.desiredAmount || lead.commissionAmount) && (
         <div className="mt-1 text-xs text-slate-500">
           {lead.commissionAmount ? <span className="font-semibold text-blue-700">{money(lead.commissionAmount)} comm</span> : lead.desiredAmount ? <span>Wants {lead.desiredAmount}</span> : null}
+        </div>
+      )}
+      {nextAppt && (
+        <div className="mt-1.5 flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1" title={nextAppt.title || "Appointment"}>
+          <CalendarDays size={12} className="shrink-0 text-emerald-600" />
+          <span className="truncate text-[11px] font-bold text-emerald-800">{apptWhen(nextAppt.due_at)}</span>
         </div>
       )}
       {lastNote && (
@@ -3321,7 +3332,7 @@ function Gated({ show, label, children }) {
   );
 }
 
-function Profile({ lead, config, templates, cadences, onClose, updateLead, removeLead, logTouch, openCompose, userEmail, lenders = [], comms = [], activities = [], addActivity, completeActivity, deleteActivity, sendReply, addNote, markRead }) {
+function Profile({ lead, config, templates, cadences, onClose, updateLead, removeLead, logTouch, openCompose, userEmail, lenders = [], comms = [], activities = [], addActivity, completeActivity, deleteActivity, updateActivity, sendReply, addNote, markRead, leads = [] }) {
   const phase = phaseOf(lead.status);
   const [linkCopied, setLinkCopied] = useState(false);
   const EDITABLE = ["name", "phone", "email", "notes", "loanProgram", "product", "lenderTag", "confirmedFields", "desiredAmount", "fundingPurpose", "fundingTimeline", "monthlyRevenue", "creditScore", "timeInBusiness",
@@ -3911,7 +3922,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
           <Conversation lead={lead} comms={comms} onSend={sendReply} onAddNote={addNote} templates={templates} config={config} compact />
 
           {/* scheduled calls and tasks */}
-          <ActivityPanel lead={lead} activities={leadActivities} addActivity={addActivity} completeActivity={completeActivity} deleteActivity={deleteActivity} config={config} userEmail={userEmail} />
+          <ActivityPanel lead={lead} activities={leadActivities} addActivity={addActivity} completeActivity={completeActivity} deleteActivity={deleteActivity} updateActivity={updateActivity} config={config} userEmail={userEmail} leads={leads} />
 
           {/* automation control */}
           {/* Do Not Contact: hard stop on all texting + emailing (manual and automated) */}
@@ -4925,7 +4936,7 @@ function actBucket(a) {
   return "later";
 }
 
-function ActivityPanel({ lead, activities, addActivity, completeActivity, deleteActivity, config = {}, userEmail }) {
+function ActivityPanel({ lead, activities, addActivity, completeActivity, deleteActivity, updateActivity, config = {}, userEmail, leads = [] }) {
   const [open, setOpen] = useState(false);
   const [type, setType] = useState("call");
   const [title, setTitle] = useState("");
@@ -4935,6 +4946,12 @@ function ActivityPanel({ lead, activities, addActivity, completeActivity, delete
   const [assignedTo, setAssignedTo] = useState("");
   const team = (() => { const seen = new Set(); return (config.team || []).filter((m) => { const e = (m.email || "").trim().toLowerCase(); if (!e || !m.first || seen.has(e)) return false; seen.add(e); return true; }); })();
 
+  const [editAppt, setEditAppt] = useState(null);
+  const saveAppt = (row) => {
+    if (row.id) updateActivity(row.id, { title: row.title, notes: row.notes, due_at: row.due_at, assigned_to: row.assigned_to, lead_id: row.lead_id });
+    else addActivity(row.lead_id, { type: "appointment", title: row.title, notes: row.notes, dueAt: new Date(row.due_at).getTime(), alarm: false, assignedTo: row.assigned_to });
+    setEditAppt(null);
+  };
   const openActs = activities.filter((a) => !a.done).sort((a, b) => new Date(a.due_at) - new Date(b.due_at));
   const doneActs = activities.filter((a) => a.done);
 
@@ -5014,6 +5031,7 @@ function ActivityPanel({ lead, activities, addActivity, completeActivity, delete
                 <span className="font-medium text-slate-800">{a.title}</span>
                 {a.notes && <span className="text-xs text-slate-400">{a.notes}</span>}
                 <span className={`ml-auto text-xs font-semibold ${overdue ? "text-rose-600" : "text-slate-500"}`}>{fmtDateTime(due)}</span>
+                {updateActivity && <button onClick={() => setEditAppt(a)} title="Edit" className="rounded p-1 text-slate-300 hover:text-blue-600"><Pencil size={13} /></button>}
                 <button onClick={() => deleteActivity(a.id)} className="rounded p-1 text-slate-300 hover:text-rose-500"><Trash2 size={13} /></button>
               </div>
             );
@@ -5022,6 +5040,7 @@ function ActivityPanel({ lead, activities, addActivity, completeActivity, delete
       )}
 
       {doneActs.length > 0 && <p className="mt-2 text-xs text-slate-400">{doneActs.length} completed</p>}
+      {editAppt && <ApptModal onClose={() => setEditAppt(null)} onSave={saveAppt} leads={leads.length ? leads : [lead]} team={team} userEmail={userEmail} editing={editAppt} />}
     </div>
   );
 }
@@ -5229,8 +5248,19 @@ function Conversation({ lead, comms, onSend, onAddNote, templates = [], config =
 }
 
 // GHL-style inbox: leads with messages on the left, the thread + reply on the right
-function Conversations({ leads, comms, unreadLeadIds, onSend, onAddNote, onOpen, markRead, markAllRead, templates = [], config = {}, openCompose }) {
+function Conversations({ leads, comms, unreadLeadIds, onSend, onAddNote, onOpen, markRead, markAllRead, templates = [], config = {}, openCompose, activities = [], addActivity, updateActivity, userEmail }) {
   const newText = () => openCompose && openCompose({ lead: null, channel: "sms", to: "", subject: "", body: "", kind: "message" });
+  const team = (config.team || []).filter((m) => m && m.email && m.first);
+  const [apptModal, setApptModal] = useState(null); // null | { editing } | {}
+  // Next upcoming appointment per lead, so a conversation shows booking status inline.
+  const apptFor = (leadId) => (activities || [])
+    .filter((a) => a.lead_id === leadId && a.type === "appointment" && !a.done && new Date(a.due_at).getTime() >= Date.now() - 3600000)
+    .sort((a, b) => new Date(a.due_at) - new Date(b.due_at))[0];
+  const saveAppt = (row) => {
+    if (row.id) updateActivity(row.id, { title: row.title, notes: row.notes, due_at: row.due_at, assigned_to: row.assigned_to, lead_id: row.lead_id });
+    else addActivity(row.lead_id, { type: "appointment", title: row.title, notes: row.notes, dueAt: new Date(row.due_at).getTime(), alarm: false, assignedTo: row.assigned_to });
+    setApptModal(null);
+  };
   const withMsgs = useMemo(() => {
     const latest = {};
     for (const c of comms) {
@@ -5289,6 +5319,11 @@ function Conversations({ leads, comms, unreadLeadIds, onSend, onAddNote, onOpen,
                 {last.direction === "in" ? "" : "You: "}
                 <span className="truncate">{last.body}</span>
               </div>
+              {(() => { const ap = apptFor(lead.id); return ap ? (
+                <div className="flex items-center gap-1 text-[10px] font-bold text-emerald-700">
+                  <CalendarDays size={10} /> {apptWhen(ap.due_at)}
+                </div>
+              ) : null; })()}
             </button>
           );
         })}
@@ -5299,6 +5334,21 @@ function Conversations({ leads, comms, unreadLeadIds, onSend, onAddNote, onOpen,
             <div className="mb-2 flex items-center gap-2">
               <button onClick={() => onOpen(selected.id)} className="text-sm font-bold text-slate-800 hover:text-blue-700">{leadTitle(selected)}</button>
               <StagePill status={selected.status} />
+              {(() => {
+                const ap = apptFor(selected.id);
+                return ap ? (
+                  <button onClick={() => setApptModal({ editing: ap })}
+                    className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-800 hover:bg-emerald-100"
+                    title="Edit this appointment">
+                    <CalendarDays size={13} /> {apptWhen(ap.due_at)}
+                  </button>
+                ) : (
+                  <button onClick={() => setApptModal({ editing: { lead_id: selected.id, assigned_to: userEmail } })}
+                    className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:border-blue-300 hover:text-blue-700">
+                    <Plus size={13} /> Book appointment
+                  </button>
+                );
+              })()}
             </div>
             {(() => {
               const bits = [
@@ -5324,6 +5374,7 @@ function Conversations({ leads, comms, unreadLeadIds, onSend, onAddNote, onOpen,
         )}
       </div>
       </div>
+      {apptModal && <ApptModal onClose={() => setApptModal(null)} onSave={saveAppt} leads={leads} team={team} userEmail={userEmail} editing={apptModal.editing} />}
     </div>
   );
 }
@@ -5426,6 +5477,16 @@ function ApptModal({ onClose, onSave, leads, team, userEmail, editing }) {
 // regardless of what timezone the browser happens to be in.
 const APPT_TZ = "America/Denver";
 const apptTime = (d) => new Date(d).toLocaleTimeString("en-US", { timeZone: APPT_TZ, hour: "numeric", minute: "2-digit" });
+// Short "when" for cards and lists: Today / Tomorrow / Mon Aug 18, plus the time.
+const apptWhen = (d) => {
+  const t = new Date(d);
+  const now = new Date();
+  const sameDay = (a, b) => a.toDateString() === b.toDateString();
+  const tomorrow = new Date(now.getTime() + 86400000);
+  const day = sameDay(t, now) ? "Today" : sameDay(t, tomorrow) ? "Tomorrow"
+    : t.toLocaleDateString("en-US", { timeZone: APPT_TZ, weekday: "short", month: "short", day: "numeric" });
+  return `${day} ${apptTime(d)}`;
+};
 const apptDate = (d, opts) => new Date(d).toLocaleDateString("en-US", { timeZone: APPT_TZ, ...opts });
 
 const CONFIRM_UI = {

@@ -989,6 +989,10 @@ function leadPatchToRow(patch) {
 /* ================================================================== */
 const firstName = (n) => (n || "").trim().split(/\s+/)[0] || "there";
 const leadTitle = (l) => (l.businessName && l.businessName.trim()) || l.name || "Unnamed";
+// In the Inbox you are talking to a PERSON, so lead with their name and keep the
+// business as secondary context (leadTitle leads with the business, which is what
+// the pipeline board wants).
+const personName = (l) => (l.name && l.name.trim()) || (l.businessName && l.businessName.trim()) || "Unnamed";
 
 function normalizeSource(s) {
   const v = String(s || "").toLowerCase().trim();
@@ -1723,6 +1727,12 @@ function Dashboard({ userEmail }) {
   const [activities, setActivities] = useState([]);
   // keep the auto-snooze setting available inside stable callbacks
   const autoSnoozeDaysRef = useRef(3);
+  // Mirror of leads that is always current. logTouch used to compute its patch
+  // INSIDE a setLeads updater and then read the result on the next line — but
+  // React runs that updater during render, after the handler returns, so the
+  // value was often still undefined and the whole database write was skipped.
+  // That is why notes saved only sometimes.
+  const leadsRef = useRef([]);
 
   const refetchComms = useCallback(async () => {
     const { data } = await supabase.from("communications").select("*").order("at", { ascending: false }).limit(2000);
@@ -1813,6 +1823,7 @@ function Dashboard({ userEmail }) {
   }, [refetchLeads, refetchComms, refetchActivities, debouncedRefetch]);
 
   useEffect(() => { autoSnoozeDaysRef.current = config.autoSnoozeDays ?? 3; }, [config.autoSnoozeDays]);
+  useEffect(() => { leadsRef.current = leads; }, [leads]);
 
   const saveConfigKey = useCallback(async (key, value) => {
     await supabase.from("app_config").upsert({ key, value });
@@ -1850,70 +1861,50 @@ function Dashboard({ userEmail }) {
 
   const logTouch = useCallback(async (id, channel, kind, extra = {}) => {
     const now = Date.now();
-    let computed;
-    setLeads((prev) => prev.map((l) => {
-      if (l.id !== id) return l;
-      const touches = [...(l.touches || []), { at: now, channel, kind, ...extra }];
-      const patch = { touches, lastTouchAt: now };
-      // Sending a link auto-advances the stage so nobody has to move the card by hand.
-      // A report/credit link moves an outreach lead to Sent Reports; the application
-      // link moves it to Sent Application. We only ever move FORWARD in the outreach
-      // flow, never drag a lead already deep in the funding stages backward.
-      const OUTREACH_MOVE = ["new", "called", "voicemail", "callback", "check_back", "link_sent", "waiting_reports"];
-      if (kind === "applink") {
-        if (OUTREACH_MOVE.includes(l.status)) { patch.status = "app_sent"; patch.stageEnteredAt = now; }
-        if (!l.linkSentAt) patch.linkSentAt = now;
-      } else if (kind === "link") {
-        if (!l.linkSentAt) patch.linkSentAt = now;
-        // Report link: move an early-stage lead to Sent Reports (but not past it,
-        // and not if the application already went out).
-        if (["new", "called", "link_sent"].includes(l.status)) { patch.status = "waiting_reports"; patch.stageEnteredAt = now; }
-      }
-      // A real human touch (a logged call, or a note) means we are mid-conversation.
-      // Push the next automated message out so we do not blast them.
-      if ((kind === "call" || extra.note) && !extra.noSnooze) {
-        const days = Number(autoSnoozeDaysRef.current) || 0;
-        if (days > 0) patch.snoozeUntil = now + days * DAY;
-      }
-      // A voicemail means nobody picked up, so clear any existing snooze and let
-      // the follow-up text and email go out instead of sitting idle.
-      if (extra.noSnooze) patch.snoozeUntil = null;
-      // First person to work the lead (call, message, or note) becomes the owner.
-      // Sticky: once set, a later touch by someone else does not steal it.
-      if (!l.ownerEmail && userEmail) patch.ownerEmail = userEmail;
-      computed = patch;
-      return { ...l, ...patch };
-    }));
-    if (computed) {
-      // Append the touch SERVER-SIDE so a concurrent write (the other user, a
-      // webhook, a poll landing mid-edit) can never be clobbered. The old code
-      // wrote the whole touches array back from browser state, which silently
-      // erased anything the browser had not yet seen — that is why notes went
-      // missing intermittently.
-      const { touches, ...rest } = computed;
-      const touch = { at: now, channel, kind, ...extra };
-      const { error: tErr } = await supabase.rpc("append_touch", { p_lead_id: id, p_touch: touch });
-      if (tErr) {
-        // Fall back to the old whole-array write so a note is never lost outright.
-        console.error("append_touch failed, falling back to full write:", tErr);
-        const { error } = await supabase.from("leads").update(leadPatchToRow(computed)).eq("id", id);
-        if (error) setErr(error.message);
-      } else if (Object.keys(rest).length) {
-        // Scalar fields (status, snooze, owner) are safe to overwrite normally.
-        const { error } = await supabase.from("leads").update(leadPatchToRow(rest)).eq("id", id);
-        if (error) setErr(error.message);
-      }
+    // Compute the patch SYNCHRONOUSLY from the current leads. (This used to be
+    // done inside a setLeads updater, which React runs later during render, so
+    // the code below often saw `undefined` and skipped the database write
+    // entirely — the real reason notes went missing at random.)
+    const lead = (leadsRef.current || []).find((l) => l.id === id);
+    if (!lead) return;
+    const touch = { at: now, channel, kind, ...extra };
+    const patch = { lastTouchAt: now };
+
+    // Sending a link auto-advances the stage so nobody has to move the card by hand.
+    const OUTREACH_MOVE = ["new", "called", "voicemail", "callback", "check_back", "link_sent", "waiting_reports"];
+    if (kind === "applink") {
+      if (OUTREACH_MOVE.includes(lead.status)) { patch.status = "app_sent"; patch.stageEnteredAt = now; }
+      if (!lead.linkSentAt) patch.linkSentAt = now;
+    } else if (kind === "link") {
+      if (!lead.linkSentAt) patch.linkSentAt = now;
+      if (["new", "called", "link_sent"].includes(lead.status)) { patch.status = "waiting_reports"; patch.stageEnteredAt = now; }
     }
-    // Working the lead by hand clears its outstanding reminders, so nobody has
-    // to tick off a task they already did. Appointments are left alone.
-    try {
-      await supabase.from("activities")
-        .update({ done: true, done_at: new Date(now).toISOString() })
-        .eq("lead_id", id).eq("done", false).neq("type", "appointment")
-        .lte("due_at", new Date(now).toISOString());
-      refetchActivities();
-    } catch { /* best effort */ }
-  }, [userEmail, refetchActivities]);
+    // A real human touch (a logged call, or a note) means we are mid-conversation.
+    if ((kind === "call" || extra.note) && !extra.noSnooze) {
+      const days = Number(autoSnoozeDaysRef.current) || 0;
+      if (days > 0) patch.snoozeUntil = now + days * DAY;
+    }
+    // A voicemail means nobody picked up, so clear any snooze and let follow-ups run.
+    if (extra.noSnooze) patch.snoozeUntil = null;
+    // First person to work the lead becomes the owner. Sticky once set.
+    if (!lead.ownerEmail && userEmail) patch.ownerEmail = userEmail;
+
+    // Optimistic UI update.
+    setLeads((prev) => prev.map((l) => (l.id === id
+      ? { ...l, ...patch, touches: [...(l.touches || []), touch] }
+      : l)));
+
+    // Append the touch server-side so a concurrent write can never clobber it,
+    // then apply the scalar fields.
+    const { error: tErr } = await supabase.rpc("append_touch", { p_lead_id: id, p_touch: touch });
+    if (tErr) {
+      console.error("append_touch failed:", tErr);
+      setErr("Could not save that note. " + tErr.message);
+      return;
+    }
+    const { error } = await supabase.from("leads").update(leadPatchToRow(patch)).eq("id", id);
+    if (error) setErr(error.message);
+  }, [userEmail]);
 
   const addLead = useCallback(async (data) => {
     const row = { name: data.name.trim(), phone: data.phone.trim(), email: data.email.trim(), notes: data.notes.trim(), status: "new", touches: [] };
@@ -5328,7 +5319,7 @@ function Conversations({ leads, comms, unreadLeadIds, onSend, onAddNote, onOpen,
               className={`flex flex-col gap-0.5 border-b border-slate-50 px-3 py-2.5 text-left last:border-0 ${active ? "bg-blue-50" : "hover:bg-slate-50"}`}>
               <div className="flex items-center gap-2">
                 {unread ? <span onClick={(e) => { e.stopPropagation(); markRead && markRead(lead.id); }} title="Mark read" className="h-2.5 w-2.5 shrink-0 cursor-pointer rounded-full bg-blue-600 hover:ring-2 hover:ring-blue-200" /> : <span className="h-2.5 w-2.5 shrink-0" />}
-                <span className={`truncate text-sm ${unread ? "font-bold text-slate-900" : "font-medium text-slate-700"}`}>{leadTitle(lead)}</span>
+                <span className={`truncate text-sm ${unread ? "font-bold text-slate-900" : "font-medium text-slate-700"}`}>{personName(lead)}</span>
                 <span className="ml-auto shrink-0 text-[10px] text-slate-400">{fmtDateTime(new Date(last.at).getTime()).split(",")[0]}</span>
               </div>
               <div className="flex items-center gap-1 text-xs text-slate-400">
@@ -5348,7 +5339,12 @@ function Conversations({ leads, comms, unreadLeadIds, onSend, onAddNote, onOpen,
         {selected && (
           <>
             <div className="mb-2 flex items-center gap-2">
-              <button onClick={() => onOpen(selected.id)} className="text-sm font-bold text-slate-800 hover:text-blue-700">{leadTitle(selected)}</button>
+              <button onClick={() => onOpen(selected.id)} className="text-left text-sm font-bold text-slate-800 hover:text-blue-700">
+                {personName(selected)}
+                {selected.businessName && selected.businessName.trim() && selected.businessName.trim() !== personName(selected) && (
+                  <span className="ml-1.5 font-normal text-slate-400">{selected.businessName}</span>
+                )}
+              </button>
               <StagePill status={selected.status} />
               {(() => {
                 const ap = apptFor(selected.id);

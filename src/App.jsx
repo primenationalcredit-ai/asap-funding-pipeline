@@ -1734,9 +1734,26 @@ function Dashboard({ userEmail }) {
   // That is why notes saved only sometimes.
   const leadsRef = useRef([]);
 
+  // A cheap signature (row count + newest timestamp + newest id) lets us skip
+  // setState when nothing actually changed. Without this every poll handed React
+  // a brand-new array and re-rendered the whole board, which is what made the
+  // app feel sluggish.
+  const sigOf = (rows, tsKey) => {
+    if (!rows || !rows.length) return "0";
+    const top = rows[0] || {};
+    return `${rows.length}|${top[tsKey] || ""}|${top.id || ""}`;
+  };
+  const commsSig = useRef("");
+  const actsSig = useRef("");
+  const leadsSig = useRef("");
+
   const refetchComms = useCallback(async () => {
-    const { data } = await supabase.from("communications").select("*").order("at", { ascending: false }).limit(2000);
-    if (data) setComms(data);
+    const { data } = await supabase.from("communications").select("*").order("at", { ascending: false }).limit(600);
+    if (!data) return;
+    const sig = sigOf(data, "at");
+    if (sig === commsSig.current) return; // nothing new, do not re-render
+    commsSig.current = sig;
+    setComms(data);
   }, []);
 
   const refetchActivities = useCallback(async () => {
@@ -1748,12 +1765,32 @@ function Dashboard({ userEmail }) {
       .order("created_at", { ascending: false })
       .limit(2000);
     if (error) { console.error("refetchActivities failed:", error); return; }
-    if (data) setActivities(data);
+    if (!data) return;
+    const sig = sigOf(data, "created_at");
+    if (sig === actsSig.current) return;
+    actsSig.current = sig;
+    setActivities(data);
   }, []);
 
   const refetchLeads = useCallback(async () => {
     const { data, error } = await supabase.from("leads").select("*").order("created_at", { ascending: false });
     if (error) { setErr(error.message); return; }
+    if (!data) return;
+    // Leads carry big touches arrays, so include updated-ish fields in the
+    // signature: count plus the newest created row plus the latest touch time
+    // across the set, which changes on every note, call, or cadence send.
+    // Cheap rolling hash over the fields that actually drive the UI, so a stage
+    // change made by someone else still comes through, while an identical poll
+    // result is skipped. (Signature must not be count-only: a card moved by the
+    // other user changes no count and no timestamp.)
+    let h = 0;
+    for (const r of data) {
+      const key = `${r.id}${r.status}${r.last_touch_at || ""}${r.snooze_until || ""}${r.opted_out ? 1 : 0}${r.owner_email || ""}${r.read_at || ""}`;
+      for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) | 0;
+    }
+    const sig = `${data.length}|${h}`;
+    if (sig === leadsSig.current) return;
+    leadsSig.current = sig;
     setLeads(data.map(rowToLead));
   }, []);
 
@@ -1762,7 +1799,7 @@ function Dashboard({ userEmail }) {
   useEffect(() => {
     const pingBooking = () => { try { fetch("/.netlify/functions/run-booking", { method: "POST", keepalive: true }).catch(() => {}); } catch { /* best effort */ } };
     const tick = () => { if (!document.hidden) { refetchComms(); refetchActivities(); refetchLeads(); pingBooking(); } };
-    const id = setInterval(tick, 15000);
+    const id = setInterval(tick, 60000); // realtime subscriptions handle live changes; this is just a safety net
     const onVisible = () => { if (!document.hidden) { refetchComms(); refetchActivities(); refetchLeads(); } };
     document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("focus", onVisible);

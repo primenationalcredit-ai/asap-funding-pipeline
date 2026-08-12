@@ -1739,10 +1739,16 @@ function Dashboard({ userEmail }) {
   // setState when nothing actually changed. Without this every poll handed React
   // a brand-new array and re-rendered the whole board, which is what made the
   // app feel sluggish.
-  const sigOf = (rows, tsKey) => {
+  // EXACT signature over the whole payload. An earlier version hashed only a few
+  // fields, so changes it did not cover (completing a task, editing a score or a
+  // name) produced an identical signature and the screen silently went stale.
+  // Hashing the serialized rows is a few milliseconds and is always correct.
+  const sigOf = (rows) => {
     if (!rows || !rows.length) return "0";
-    const top = rows[0] || {};
-    return `${rows.length}|${top[tsKey] || ""}|${top.id || ""}`;
+    const str = JSON.stringify(rows);
+    let h = 0;
+    for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) | 0;
+    return `${rows.length}|${h}`;
   };
   const commsSig = useRef("");
   const actsSig = useRef("");
@@ -1751,7 +1757,7 @@ function Dashboard({ userEmail }) {
   const refetchComms = useCallback(async () => {
     const { data } = await supabase.from("communications").select("*").order("at", { ascending: false }).limit(600);
     if (!data) return;
-    const sig = sigOf(data, "at");
+    const sig = sigOf(data);
     if (sig === commsSig.current) return; // nothing new, do not re-render
     commsSig.current = sig;
     setComms(data);
@@ -1767,7 +1773,7 @@ function Dashboard({ userEmail }) {
       .limit(2000);
     if (error) { console.error("refetchActivities failed:", error); return; }
     if (!data) return;
-    const sig = sigOf(data, "created_at");
+    const sig = sigOf(data);
     if (sig === actsSig.current) return;
     actsSig.current = sig;
     setActivities(data);
@@ -1784,12 +1790,7 @@ function Dashboard({ userEmail }) {
     // change made by someone else still comes through, while an identical poll
     // result is skipped. (Signature must not be count-only: a card moved by the
     // other user changes no count and no timestamp.)
-    let h = 0;
-    for (const r of data) {
-      const key = `${r.id}${r.status}${r.last_touch_at || ""}${r.snooze_until || ""}${r.opted_out ? 1 : 0}${r.owner_email || ""}${r.read_at || ""}`;
-      for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) | 0;
-    }
-    const sig = `${data.length}|${h}`;
+    const sig = sigOf(data);
     if (sig === leadsSig.current) return;
     leadsSig.current = sig;
     setLeads(data.map(rowToLead));

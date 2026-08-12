@@ -180,6 +180,11 @@ async function run() {
     touches.forEach((t) => {
       if (t.kind === "cadence" && t.stage === lead.status && t.at >= entered - 5000) sentInfo[t.step] = t.at;
     });
+    // Never send a lead more than one cadence message in a day. If two steps are
+    // both overdue, today's run sends the first and the next becomes due tomorrow.
+    const sentTodayAlready = touches.some((t) => t && t.kind === "cadence" && t.at && cDay(t.at) === cDay(now));
+    if (sentTodayAlready) { waiting++; continue; }
+
     let anchor = entered, prevDay = 0, dueStep = null;
     // Any recent interaction (manual text/email, note, call, edit) pushes the next
     // auto follow-up out, so nothing fires while you're actively working the lead.
@@ -217,11 +222,20 @@ async function run() {
           const bodyText = fillTokens(step.tpl.body, lead, config)
             + (isEmail && config.emailSignature ? "\n\n" + config.emailSignature : "");
           const subject = fillTokens(step.tpl.subject, lead, config);
+
+          // CLAIM THE STEP BEFORE SENDING. Previously we sent first and recorded
+          // after, so two overlapping runs could both see the step unsent and both
+          // fire it — that is the double-text. Claiming first means the second run
+          // sees it taken. append_touch appends server-side, so a concurrent write
+          // can never wipe the marker (the old whole-array write could).
+          const newTouch = { at: now, channel: step.tpl.channel, kind: "cadence", stage: lead.status, step: step.i, auto: true };
+          const { error: claimErr } = await supabase.rpc("append_touch", { p_lead_id: lead.id, p_touch: newTouch });
+          if (claimErr) { log.push(`claim failed ${lead.id}: ${claimErr.message}`); continue; }
+          await supabase.from("leads").update({ last_touch_at: new Date().toISOString() }).eq("id", lead.id);
+
           if (!isEmail) { rc = rc || await rcToken(); await sendSms(rc, to, bodyText); }
           else await sendEmail(to, subject, bodyText);
 
-          const newTouch = { at: now, channel: step.tpl.channel, kind: "cadence", stage: lead.status, step: step.i, auto: true };
-          await supabase.from("leads").update({ touches: [...touches, newTouch], last_touch_at: new Date().toISOString() }).eq("id", lead.id);
           await supabase.from("communications").insert({
             lead_id: lead.id, direction: "out", channel: step.tpl.channel,
             subject: isEmail ? subject : null, body: bodyText, to_addr: to, by_user: "automation",

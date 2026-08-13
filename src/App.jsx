@@ -1208,6 +1208,17 @@ function fmtDateTime(ts) {
   if (!ts) return "";
   return new Date(ts).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
+// Compact stamp for the Inbox list: time alone for today, date + time otherwise.
+function fmtListTime(ts) {
+  if (!ts) return "";
+  const d = new Date(ts);
+  const time = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  const now = new Date();
+  if (d.toDateString() === now.toDateString()) return time;
+  const yest = new Date(now.getTime() - 86400000);
+  if (d.toDateString() === yest.toDateString()) return `Yest ${time}`;
+  return `${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })} ${time}`;
+}
 const STAGE_PLAYBOOK = {
   new: [
     "Call the lead now (use the Call button).",
@@ -1745,7 +1756,8 @@ function Dashboard({ userEmail }) {
   // Hashing the serialized rows is a few milliseconds and is always correct.
   const sigOf = (rows) => {
     if (!rows || !rows.length) return "0";
-    const str = JSON.stringify(rows);
+    let str;
+    try { str = JSON.stringify(rows); } catch { return String(Math.random()); } // never block on a bad payload
     let h = 0;
     for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) | 0;
     return `${rows.length}|${h}`;
@@ -1783,16 +1795,9 @@ function Dashboard({ userEmail }) {
     const { data, error } = await supabase.from("leads").select("*").order("created_at", { ascending: false });
     if (error) { setErr(error.message); return; }
     if (!data) return;
-    // Leads carry big touches arrays, so include updated-ish fields in the
-    // signature: count plus the newest created row plus the latest touch time
-    // across the set, which changes on every note, call, or cadence send.
-    // Cheap rolling hash over the fields that actually drive the UI, so a stage
-    // change made by someone else still comes through, while an identical poll
-    // result is skipped. (Signature must not be count-only: a card moved by the
-    // other user changes no count and no timestamp.)
-    const sig = sigOf(data);
-    if (sig === leadsSig.current) return;
-    leadsSig.current = sig;
+    // No signature guard here on purpose. Leads carry large touches arrays, so
+    // hashing them ran on the boot path and could stall the initial load. The
+    // real win was cutting the poll from 15s to 60s, not skipping this render.
     setLeads(data.map(rowToLead));
   }, []);
 
@@ -1844,7 +1849,7 @@ function Dashboard({ userEmail }) {
         if (map.cadences) setCadences(map.cadences);
         else await supabase.from("app_config").upsert({ key: "cadences", value: DEFAULT_CADENCES });
         if (map.lenders) setLenders(map.lenders);
-        await refetchLeads();
+        try { await refetchLeads(); } catch (e) { console.error("refetchLeads failed:", e); }
         // Load each independently — a failure in one must NOT prevent the others.
         // (Previously these shared one try/catch, so if comms threw, activities
         // never loaded and the tasks panel was always empty.)
@@ -2131,6 +2136,17 @@ function Dashboard({ userEmail }) {
   const markAllRead = useCallback(() => {
     unreadLeadIds.forEach((id) => updateLead(id, { readAt: Date.now() }));
   }, [unreadLeadIds, updateLead]);
+  // Unread means "newest inbound is newer than readAt", so to mark unread we push
+  // readAt back to just before that message rather than clearing it.
+  const markUnread = useCallback((id) => {
+    let lastIn = 0;
+    for (const c of comms) {
+      if (c.lead_id !== id || c.direction !== "in") continue;
+      const t = new Date(c.at).getTime();
+      if (t > lastIn) lastIn = t;
+    }
+    updateLead(id, { readAt: lastIn ? lastIn - 1000 : 0 });
+  }, [comms, updateLead]);
 
   // Applications that have come in but haven't been sent to a lender yet (the queue that needs action).
   const newAppsCount = useMemo(() => {
@@ -2226,7 +2242,7 @@ function Dashboard({ userEmail }) {
               onGoFollowups={() => setTab("followups")} removeLead={removeLead} />
           )}
           {tab === "followups" && <Followups dueList={dueList} config={config} onOpen={setProfileId} openCompose={setCompose} updateLead={updateLead} />}
-          {tab === "inbox" && <Conversations leads={leads} comms={comms} unreadLeadIds={unreadLeadIds} onSend={sendReply} onAddNote={addNote} onOpen={setProfileId} markRead={markRead} markAllRead={markAllRead} templates={templates} config={config} openCompose={setCompose} activities={activities} addActivity={addActivity} updateActivity={updateActivity} userEmail={userEmail} />}
+          {tab === "inbox" && <Conversations leads={leads} comms={comms} unreadLeadIds={unreadLeadIds} onSend={sendReply} onAddNote={addNote} onOpen={setProfileId} markRead={markRead} markAllRead={markAllRead} markUnread={markUnread} templates={templates} config={config} openCompose={setCompose} activities={activities} addActivity={addActivity} updateActivity={updateActivity} userEmail={userEmail} />}
           {tab === "tracker" && <Tracker leads={leads} config={config} onOpen={setProfileId} logTouch={logTouch} userEmail={userEmail} />}
           {tab === "activities" && <Activities activities={activities} leads={leads} onOpen={setProfileId} completeActivity={completeActivity} deleteActivity={deleteActivity} />}
           {tab === "powerdial" && <PowerDial leads={leads} />}
@@ -5294,7 +5310,7 @@ function Conversation({ lead, comms, onSend, onAddNote, templates = [], config =
 }
 
 // GHL-style inbox: leads with messages on the left, the thread + reply on the right
-function Conversations({ leads, comms, unreadLeadIds, onSend, onAddNote, onOpen, markRead, markAllRead, templates = [], config = {}, openCompose, activities = [], addActivity, updateActivity, userEmail }) {
+function Conversations({ leads, comms, unreadLeadIds, onSend, onAddNote, onOpen, markRead, markAllRead, markUnread, templates = [], config = {}, openCompose, activities = [], addActivity, updateActivity, userEmail }) {
   const newText = () => openCompose && openCompose({ lead: null, channel: "sms", to: "", subject: "", body: "", kind: "message" });
   const team = (config.team || []).filter((m) => m && m.email && m.first);
   const [apptModal, setApptModal] = useState(null); // null | { editing } | {}
@@ -5307,7 +5323,8 @@ function Conversations({ leads, comms, unreadLeadIds, onSend, onAddNote, onOpen,
     else addActivity(row.lead_id, { type: "appointment", title: row.title, notes: row.notes, dueAt: new Date(row.due_at).getTime(), alarm: !!row.alarm, assignedTo: row.assigned_to });
     setApptModal(null);
   };
-  const withMsgs = useMemo(() => {
+  const [q, setQ] = useState("");
+  const allThreads = useMemo(() => {
     const latest = {};
     for (const c of comms) {
       const t = new Date(c.at).getTime();
@@ -5319,12 +5336,31 @@ function Conversations({ leads, comms, unreadLeadIds, onSend, onAddNote, onOpen,
       .sort((a, b) => b.t - a.t);
   }, [comms, leads]);
 
+  // Search matches the person (name, business, email, phone) OR the words inside
+  // any message in that thread. Phone compares digits only, so "5551234" finds
+  // "(555) 123-4567" no matter how either side is punctuated.
+  const withMsgs = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    if (!needle) return allThreads;
+    const digits = needle.replace(/\D/g, "");
+    const bodyHits = new Set();
+    for (const c of comms) {
+      if (String(c.body || "").toLowerCase().includes(needle)) bodyHits.add(c.lead_id);
+    }
+    return allThreads.filter(({ lead }) => {
+      const hay = `${lead.name || ""} ${lead.businessName || ""} ${lead.email || ""}`.toLowerCase();
+      if (hay.includes(needle)) return true;
+      if (digits.length >= 3 && String(lead.phone || "").replace(/\D/g, "").includes(digits)) return true;
+      return bodyHits.has(lead.id);
+    });
+  }, [allThreads, comms, q]);
+
   const [selId, setSelId] = useState(withMsgs[0]?.lead.id || null);
   const selected = leads.find((l) => l.id === selId) || withMsgs[0]?.lead || null;
   const openThread = (id) => { setSelId(id); markRead && markRead(id); };
   const unreadCount = unreadLeadIds.size;
 
-  if (withMsgs.length === 0) {
+  if (allThreads.length === 0) {
     return (
       <div className="mt-4">
         <div className="mb-3 flex justify-end"><button onClick={newText} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700"><MessageSquare size={15} /> New text</button></div>
@@ -5344,6 +5380,15 @@ function Conversations({ leads, comms, unreadLeadIds, onSend, onAddNote, onOpen,
       </div>
       <div className="grid gap-3 md:grid-cols-[320px_1fr]">
       <div className="flex max-h-[560px] flex-col overflow-y-auto rounded-xl border border-slate-200 bg-white">
+        <div className="sticky top-0 z-10 border-b border-slate-100 bg-white p-2">
+          <div className="relative">
+            <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, phone, or words in a text"
+              className="w-full rounded-lg border border-slate-200 py-1.5 pl-8 pr-7 text-sm outline-none focus:border-blue-400" />
+            {q && <button onClick={() => setQ("")} title="Clear" className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">&times;</button>}
+          </div>
+          {q && <p className="mt-1 px-0.5 text-[11px] text-slate-400">{withMsgs.length} match{withMsgs.length === 1 ? "" : "es"}</p>}
+        </div>
         {unreadCount > 0 && (
           <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2">
             <span className="text-xs font-semibold text-blue-700">{unreadCount} unread</span>
@@ -5357,9 +5402,12 @@ function Conversations({ leads, comms, unreadLeadIds, onSend, onAddNote, onOpen,
             <button key={lead.id} onClick={() => openThread(lead.id)}
               className={`flex flex-col gap-0.5 border-b border-slate-50 px-3 py-2.5 text-left last:border-0 ${active ? "bg-blue-50" : "hover:bg-slate-50"}`}>
               <div className="flex items-center gap-2">
-                {unread ? <span onClick={(e) => { e.stopPropagation(); markRead && markRead(lead.id); }} title="Mark read" className="h-2.5 w-2.5 shrink-0 cursor-pointer rounded-full bg-blue-600 hover:ring-2 hover:ring-blue-200" /> : <span className="h-2.5 w-2.5 shrink-0" />}
+                <span
+                  onClick={(e) => { e.stopPropagation(); if (unread) { markRead && markRead(lead.id); } else { markUnread && markUnread(lead.id); } }}
+                  title={unread ? "Mark as read" : "Mark as unread"}
+                  className={`h-2.5 w-2.5 shrink-0 cursor-pointer rounded-full hover:ring-2 hover:ring-blue-200 ${unread ? "bg-blue-600" : "border border-slate-300 bg-white hover:border-blue-400"}`} />
                 <span className={`truncate text-sm ${unread ? "font-bold text-slate-900" : "font-medium text-slate-700"}`}>{personName(lead)}</span>
-                <span className="ml-auto shrink-0 text-[10px] text-slate-400">{fmtDateTime(new Date(last.at).getTime()).split(",")[0]}</span>
+                <span className="ml-auto shrink-0 text-[10px] text-slate-400" title={fmtDateTime(new Date(last.at).getTime())}>{fmtListTime(new Date(last.at).getTime())}</span>
               </div>
               <div className="flex items-center gap-1 text-xs text-slate-400">
                 {last.direction === "in" ? "" : "You: "}
@@ -5385,6 +5433,10 @@ function Conversations({ leads, comms, unreadLeadIds, onSend, onAddNote, onOpen,
                 )}
               </button>
               <StagePill status={selected.status} />
+              <button onClick={() => markUnread && markUnread(selected.id)} title="Mark this conversation unread so it stays flagged"
+                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-500 hover:border-blue-300 hover:text-blue-700">
+                <MessageSquare size={12} /> Unread
+              </button>
               {(() => {
                 const ap = apptFor(selected.id);
                 return ap ? (

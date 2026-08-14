@@ -5074,6 +5074,46 @@ function actBucket(a) {
   return "later";
 }
 
+// A date + hour + minute + AM/PM picker. The native datetime-local input is
+// drawn by the BROWSER in the user's OS/browser language, so on a Spanish
+// (or any 24-hour) locale there is no AM/PM at all and reps have to know that
+// 10pm is 22:00. These explicit dropdowns read the same in every language.
+function WhenPicker({ value, onChange, className }) {
+  const [datePart, timePart] = String(value || "").split("T");
+  const h24 = timePart ? parseInt(timePart.slice(0, 2), 10) : NaN;
+  const min = timePart ? timePart.slice(3, 5) : "00";
+  const hour12 = isNaN(h24) ? "" : (h24 % 12 === 0 ? 12 : h24 % 12);
+  const ampm = isNaN(h24) ? "AM" : (h24 >= 12 ? "PM" : "AM");
+
+  const emit = (d, h, m, ap) => {
+    if (!d) { onChange(""); return; }
+    let hh = parseInt(h, 10);
+    if (isNaN(hh)) hh = 9;
+    if (ap === "PM" && hh !== 12) hh += 12;
+    if (ap === "AM" && hh === 12) hh = 0;
+    onChange(`${d}T${String(hh).padStart(2, "0")}:${m || "00"}`);
+  };
+
+  const sel = "rounded-lg border border-slate-300 px-2 py-2 text-sm";
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <input type="date" value={datePart || ""} onChange={(e) => emit(e.target.value, hour12 || 9, min, ampm)} className={className} style={{ flex: "1 1 130px", minWidth: 130 }} />
+      <select value={hour12 || ""} onChange={(e) => emit(datePart, e.target.value, min, ampm)} className={sel}>
+        <option value="" disabled>Hr</option>
+        {Array.from({ length: 12 }, (_, i) => i + 1).map((h) => <option key={h} value={h}>{h}</option>)}
+      </select>
+      <span className="text-slate-400">:</span>
+      <select value={min} onChange={(e) => emit(datePart, hour12 || 9, e.target.value, ampm)} className={sel}>
+        {["00", "05", "10", "15", "20", "25", "30", "35", "40", "45", "50", "55"].map((m) => <option key={m} value={m}>{m}</option>)}
+      </select>
+      <select value={ampm} onChange={(e) => emit(datePart, hour12 || 9, min, e.target.value)} className={sel}>
+        <option value="AM">AM</option>
+        <option value="PM">PM</option>
+      </select>
+    </div>
+  );
+}
+
 function ActivityPanel({ lead, activities, addActivity, completeActivity, deleteActivity, updateActivity, config = {}, userEmail, leads = [] }) {
   const [open, setOpen] = useState(false);
   const [type, setType] = useState("call");
@@ -5128,7 +5168,7 @@ function ActivityPanel({ lead, activities, addActivity, completeActivity, delete
               </select>
             </Labeled>
             <Labeled label="When">
-              <input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} className={inputCls} />
+              <WhenPicker value={when} onChange={setWhen} className={inputCls} />
             </Labeled>
           </div>
           <div className="mt-2"><Labeled label="Title"><input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Call back about the report" className={inputCls} /></Labeled></div>

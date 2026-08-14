@@ -35,13 +35,35 @@ export const handler = async (event) => {
     if (sErr || !secrets?.length) return resp(500, { error: "phoneburner_token missing from app_secrets" });
     const pbToken = secrets[0].value;
 
-    const { data: leads, error: lErr } = await admin.from("leads").select("id, name, email, phone").in("id", leadIds);
+    const { data: leads, error: lErr } = await admin.from("leads").select("id, name, email, phone, status").in("id", leadIds);
     if (lErr) return resp(500, { error: lErr.message });
 
-    // PhoneBurner folder ("category") that pushed leads land in. Without this the
-    // API drops them in the default "Contacts" folder. Overridable by env so the
-    // folder can change without a code deploy.
-    const PB_FOLDER_ID = Number(process.env.PB_FOLDER_ID || 3325925); // "New Leads"
+    // Each lead lands in the PhoneBurner folder matching its CRM stage, so a rep
+    // opening a folder sees only leads at that step. Without this the API drops
+    // everything into the default "Contacts" folder (65932).
+    const PB_NEW_LEADS = 3325925;
+    const STAGE_FOLDER = {
+      new: PB_NEW_LEADS,
+      appointment_booked: 3325865,
+      voicemail: 3325867,
+      waiting_reports: 3325861,       // Sent Reports
+      app_sent: 3325864,              // Sent Application
+      wrong_number: 3325868,
+      callback: 3325857,              // Call Back
+      check_back: 3325859,            // Check Back Later
+      app_reports_received: 3325866,  // App & Reports Received
+      not_interested: 3323960,
+    };
+    // Stages with no folder (Funding, Closed) fall back to New Leads and are
+    // logged, so a mapping can be added rather than silently misfiling them.
+    const unmapped = [];
+    const folderFor = (status) => {
+      const key = status || "new";
+      const id = STAGE_FOLDER[key];
+      if (id) return id;
+      unmapped.push(key);
+      return PB_NEW_LEADS;
+    };
 
     const contacts = (leads || [])
       .filter((l) => (l.phone || "").replace(/\D/g, "").length >= 10)
@@ -53,7 +75,7 @@ export const handler = async (event) => {
           phone: String(l.phone).replace(/\D/g, ""),
           email: l.email || "",
           lead_id: l.id, // our UUID rides along and comes back in the calldone webhook
-          category_id: PB_FOLDER_ID, // land in "New Leads", not the default Contacts folder
+          category_id: folderFor(l.status), // folder matches this lead's CRM stage
         };
       });
     if (!contacts.length) return resp(422, { error: "none of the selected leads have a dialable phone" });
@@ -78,7 +100,9 @@ export const handler = async (event) => {
       return resp(502, { error: j.message || `PhoneBurner error ${r.status}` });
     }
     const redirect = j.redirect_url || j.redirectUrl || j?.dialsession?.redirect_url;
-    console.log("[pb-start] session created for", contacts.length, "contacts into folder", PB_FOLDER_ID);
+    const spread = contacts.reduce((m, c) => { m[c.category_id] = (m[c.category_id] || 0) + 1; return m; }, {});
+    console.log("[pb-start] session created for", contacts.length, "contacts; folders:", JSON.stringify(spread));
+    if (unmapped.length) console.log("[pb-start] UNMAPPED stages sent to New Leads:", JSON.stringify([...new Set(unmapped)]));
     return resp(200, { ok: true, redirect_url: redirect, contacts: contacts.length, raw: redirect ? undefined : j });
   } catch (e) {
     console.log("[pb-start] error", e.message);

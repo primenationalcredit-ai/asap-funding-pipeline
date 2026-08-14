@@ -1694,6 +1694,10 @@ function Dashboard({ userEmail }) {
   const [templates, setTemplates] = useState(DEFAULT_TEMPLATES);
   const [cadences, setCadences] = useState(DEFAULT_CADENCES);
   const [loaded, setLoaded] = useState(false);
+  // The 8-second watchdog can show the app before the client list has arrived.
+  // Without this flag a search would say "no clients match" when the truth is
+  // "the clients are not here yet", and then they would appear a moment later.
+  const [leadsLoaded, setLeadsLoaded] = useState(false);
   const [err, setErr] = useState(null);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("active");
@@ -1825,6 +1829,7 @@ function Dashboard({ userEmail }) {
     // hashing them ran on the boot path and could stall the initial load. The
     // real win was cutting the poll from 15s to 60s, not skipping this render.
     setLeads(data.map(rowToLead));
+    setLeadsLoaded(true);
   }, []);
 
   // Live updates: poll every 15s so inbound texts/emails, new leads, and server-created
@@ -2312,7 +2317,7 @@ function Dashboard({ userEmail }) {
           {err && <div className="mt-3 flex items-center gap-2 rounded-lg bg-rose-50 px-4 py-2.5 text-sm text-rose-700 ring-1 ring-inset ring-rose-200"><AlertCircle size={16} /> {err}</div>}
 
           {tab === "pipeline" && (
-            <Pipeline leads={filtered} allLeads={leads} allCount={leads.length} dueList={dueList} stats={stats} config={config} activities={activities}
+            <Pipeline leads={filtered} allLeads={leads} allCount={leads.length} leadsLoaded={leadsLoaded} dueList={dueList} stats={stats} config={config} activities={activities}
               query={query} setQuery={setQuery} filter={filter} setFilter={setFilter} showAdd={showAdd} setShowAdd={setShowAdd}
               addLead={addLead} onOpen={setProfileId} logTouch={logTouch} updateLead={updateLead} cadences={cadences} templates={templates} openCompose={setCompose}
               onGoFollowups={() => setTab("followups")} removeLead={removeLead} />
@@ -2762,7 +2767,7 @@ function Tracker({ leads, config, onOpen, logTouch, userEmail }) {
   );
 }
 
-function Pipeline({ leads, allLeads, allCount, dueList, stats, config, query, setQuery, filter, setFilter, showAdd, setShowAdd, addLead, onOpen, logTouch, updateLead, cadences, templates, openCompose, onGoFollowups, removeLead, activities = [] }) {
+function Pipeline({ leads, allLeads, allCount, leadsLoaded = true, dueList, stats, config, query, setQuery, filter, setFilter, showAdd, setShowAdd, addLead, onOpen, logTouch, updateLead, cadences, templates, openCompose, onGoFollowups, removeLead, activities = [] }) {
   const [view, setView] = useState("board");
   const [boardTab, setBoardTab] = useState("outreach");
   const [dragId, setDragId] = useState(null);
@@ -2932,7 +2937,11 @@ function Pipeline({ leads, allLeads, allCount, dueList, stats, config, query, se
               <Search size={14} /> {leads.length} result{leads.length !== 1 ? "s" : ""} across all stages for "{query}"
               <button onClick={() => setQuery("")} className="ml-1 rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500 hover:bg-slate-200">Clear</button>
             </div>
-            {leads.length === 0 ? <div className="rounded-xl border border-dashed border-slate-200 py-10 text-center text-sm text-slate-400">No clients match "{query}".</div>
+            {leads.length === 0 ? (
+              leadsLoaded
+                ? <div className="rounded-xl border border-dashed border-slate-200 py-10 text-center text-sm text-slate-400">No clients match "{query}".</div>
+                : <div className="rounded-xl border border-dashed border-amber-200 bg-amber-50 py-10 text-center text-sm font-medium text-amber-700">Still loading your clients, one moment. Search again in a second.</div>
+            )
               : <div className="flex flex-col gap-2">{leads.map((l) => <LeadRow key={l.id} lead={l} onOpen={() => onOpen(l.id)} cadences={cadences} templates={templates} config={config} logTouch={logTouch} updateLead={updateLead} openCompose={openCompose} />)}</div>}
           </>
         ) : (

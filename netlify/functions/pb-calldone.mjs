@@ -52,10 +52,17 @@ export const handler = async (event) => {
     const d = disposition.toLowerCase();
     let newStatus = null;      // stage to move to, null = leave stage alone
     let optOut = false;        // Do Not Call flips the lead to opted out
-    if (/voicemail|left message|lvm/.test(d)) newStatus = "voicemail";
-    else if (/set appointment|appointment|booked/.test(d)) newStatus = "appointment_booked";
+    // Explicit entries for the ASAP Live Answer Set call statuses. These are
+    // matched FIRST because some overlap the looser patterns below (for example
+    // "Sent Application" must not be caught by the appointment rule).
+    if (/docs? received/.test(d)) newStatus = "app_reports_received";        // no ampersand survives PB, mapped by hand
+    else if (/sent reports?|reports? sent/.test(d)) newStatus = "waiting_reports";
+    else if (/sent application|app(lication)? sent/.test(d)) newStatus = "app_sent";
+    else if (/check back/.test(d)) newStatus = "check_back";
+    else if (/appt booked|set appointment|appointment|booked/.test(d)) newStatus = "appointment_booked";
+    else if (/voicemail|left message|lvm/.test(d)) newStatus = "voicemail";
     else if (/not interested/.test(d)) newStatus = "not_interested";
-    else if (/follow ?up/.test(d)) newStatus = "callback";
+    else if (/call ?back|follow ?up/.test(d)) newStatus = "callback";
     else if (/wrong number|bad (number|phone)/.test(d)) newStatus = "wrong_number";
     else if (/do not call|dnc/.test(d)) { newStatus = "dead"; optOut = true; }
     // "No Answer", "Busy Signal", "Unavailable" deliberately do NOT move the
@@ -78,7 +85,12 @@ export const handler = async (event) => {
       const patch = { snooze_until: new Date(Date.now() + 3 * 86400000).toISOString() };
       // Only ever move leads that are still in the outreach part of the funnel —
       // never yank someone who is already submitted/funded back to an early stage.
-      const OUTREACH = ["new", "appointment_booked", "voicemail", "waiting_reports", "app_sent", "wrong_number", "callback", "check_back", "not_interested", ""];
+      // Stages a dialer disposition is allowed to move a lead OUT of. Deliberately
+      // excludes the deep funding stages (submitted, approved, funded...) so a
+      // stray click can never yank a live deal back to the top of the pipeline.
+      const OUTREACH = ["new", "appointment_booked", "voicemail", "waiting_reports", "app_sent", "wrong_number",
+        "callback", "check_back", "not_interested", "pending_scheduling", "scheduled",
+        "report_pulled", "sent_to_giggle", "app_received", "app_reports_received", ""];
       if (newStatus) {
         const { data: cur } = await admin.from("leads").select("status").eq("id", leadId).maybeSingle();
         const st = (cur && cur.status) || "";

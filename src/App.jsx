@@ -282,6 +282,32 @@ Keep my number. When you are ready, we can usually get you a pre-approval fast. 
   { id: "app_sms_a", pool: "app_sms", name: "Application: more funding (text)", channel: "sms", subject: "",
     body: `Hi {{first}}, you are one step from moving forward. Quick application, your last few bank statements, about 10 minutes all in one place: {{applink}} Reply here if anything trips you up and I will walk you through it.` },
   // ============ MANUAL (never auto-sent, shows in the Insert-a-template picker) ============
+  { id: "shortterm_sms", pool: "manual", name: "Short term options (text)", channel: "sms", subject: "",
+    body: `{{first}}, as requested, here are the short term options. All soft check only:
+https://partners.gigglefinance.com/asap-funding/joe-mahlow
+https://tapinloan.com/full_form?tid=9f35cdf3-b095-48b3-b485-4bc620819de5&source=13773-1284710&session_id=097c7a56fff349408ed2d794b414da6c
+https://www.badcreditloans.com/?aid=14085&cid=5074&note=1284710&atrk=156384.4968775.4611686018427591474FOF3752391975983735
+Tell me what comes back and I will help you read the offers.` },
+  { id: "shortterm_email", pool: "manual", name: "Short term options (email)", channel: "email", subject: `{{first}}, your short term options`,
+    body: `Hi {{first}},
+
+As requested, here are three options worth checking. All three run a soft inquiry only, so looking does not affect your credit.
+
+GIGGLE FINANCE
+Revenue based funding for self employed and 1099 earners. They look at your recent deposits rather than your credit score. Up to $15,000, and up to $20,000 once you have repaid successfully. Funds can land the same day. Not available in New York, California or Oregon.
+[Click here](https://partners.gigglefinance.com/asap-funding/joe-mahlow)
+
+TAPIN LOAN
+A matching service that sends your request to multiple short term lenders at once, so one form gets you several answers instead of applying place by place.
+[Click here](https://tapinloan.com/full_form?tid=9f35cdf3-b095-48b3-b485-4bc620819de5&source=13773-1284710&session_id=097c7a56fff349408ed2d794b414da6c)
+
+BC LOANS
+A lending network operating since 1998 with no minimum credit score. Personal loans from $500 to $10,000, terms from three months up to six years, unsecured so nothing of yours is used as collateral.
+[Click here](https://www.badcreditloans.com/?aid=14085&cid=5074&note=1284710&atrk=156384.4968775.4611686018427591474FOF3752391975983735)
+
+Check as many as you like, they do not conflict with each other. Before you accept anything, send me the offer and I will tell you honestly whether the terms are fair or whether we should keep looking. Short term money can get expensive fast, and that is exactly the part I can help you with.
+
+{{signature}}` },
   { id: "cosigner_sms", pool: "manual", name: "Good news: need a cosigner (text)", channel: "sms", subject: "",
     body: `{{first}}, {{repfirst}} at ASAP. Good news, our partner said yes. Only gap is the personal profile on file, they need 680 or higher. Anyone strong you could add? They do not have to be in the business. Got 5 minutes for a call?` },
   { id: "cosigner_email", pool: "manual", name: "Good news: need a cosigner (email)", channel: "email", subject: `Good news, {{first}}, one more step`,
@@ -1767,7 +1793,7 @@ function Dashboard({ userEmail }) {
   const leadsSig = useRef("");
 
   const refetchComms = useCallback(async () => {
-    const { data } = await supabase.from("communications").select("*").order("at", { ascending: false }).limit(600);
+    const { data } = await supabase.from("communications").select("*").order("at", { ascending: false }).limit(1200);
     if (!data) return;
     const sig = sigOf(data);
     if (sig === commsSig.current) return; // nothing new, do not re-render
@@ -5347,13 +5373,25 @@ function Conversations({ leads, comms, unreadLeadIds, onSend, onAddNote, onOpen,
     for (const c of comms) {
       if (String(c.body || "").toLowerCase().includes(needle)) bodyHits.add(c.lead_id);
     }
-    return allThreads.filter(({ lead }) => {
+    const matches = (lead) => {
       const hay = `${lead.name || ""} ${lead.businessName || ""} ${lead.email || ""}`.toLowerCase();
       if (hay.includes(needle)) return true;
       if (digits.length >= 3 && String(lead.phone || "").replace(/\D/g, "").includes(digits)) return true;
       return bodyHits.has(lead.id);
-    });
-  }, [allThreads, comms, q]);
+    };
+    const hits = allThreads.filter(({ lead }) => matches(lead));
+    // Search EVERY lead, not just ones already in the list. A client with no
+    // messages yet, or whose conversation is older than the loaded window, is
+    // not in allThreads at all — searching should still find them so you can
+    // open the thread and start one.
+    const seen = new Set(hits.map((h) => h.lead.id));
+    for (const lead of leads) {
+      if (seen.has(lead.id)) continue;
+      if (!matches(lead)) continue;
+      hits.push({ lead, last: { body: "No messages yet", direction: "out", at: lead.lastTouchAt || lead.createdAt || Date.now() }, t: 0 });
+    }
+    return hits;
+  }, [allThreads, comms, q, leads]);
 
   const [selId, setSelId] = useState(withMsgs[0]?.lead.id || null);
   const selected = leads.find((l) => l.id === selId) || withMsgs[0]?.lead || null;

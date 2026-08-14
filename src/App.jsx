@@ -5225,14 +5225,14 @@ function Conversation({ lead, comms, onSend, onAddNote, templates = [], config =
     setBusy(true); setErr("");
     const outBody = mode === "email" ? emailPreviewBody : body;
     const label = mode === "sms" ? "Text sent" : "Email sent";
-    try { await onSend(lead, mode, subject, outBody); setBody(""); setSubject(""); setOkMsg(label); setTimeout(() => setOkMsg(""), 3000); }
+    try { await onSend(lead, mode, subject, outBody); setBody(""); setSubject(""); setOkMsg(label); setTimeout(() => setOkMsg(""), 6000); }
     catch (e) { setErr(String(e.message || e)); }
     finally { setBusy(false); }
   };
   const saveNote = async () => {
     if (!note.trim()) return;
     setBusy(true);
-    try { await onAddNote(lead, note); setNote(""); setOkMsg("Note added"); setTimeout(() => setOkMsg(""), 3000); }
+    try { await onAddNote(lead, note); setNote(""); setOkMsg("Note added"); setTimeout(() => setOkMsg(""), 6000); }
     finally { setBusy(false); }
   };
 
@@ -5359,7 +5359,20 @@ function Conversation({ lead, comms, onSend, onAddNote, templates = [], config =
               </div>
             )}
 
-            <div className="mt-2 flex justify-end">
+            <div className="mt-2 flex items-center justify-end gap-3">
+              {/* The button greys out until there is a message body, which looked
+                  like a bug to the team. Say why instead of leaving it silent. */}
+              {okMsg ? (
+                <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700">
+                  <Check size={13} /> {okMsg}
+                </span>
+              ) : (!busy && (!canSend || !body.trim()) && (
+                <span className="text-xs text-slate-400">
+                  {!canSend
+                    ? (mode === "sms" ? "No phone on file for this client" : "No email on file for this client")
+                    : (mode === "sms" ? "Type a message to send" : "Type a message to send (subject is optional)")}
+                </span>
+              ))}
               <button onClick={send} disabled={busy || !body.trim() || !canSend} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-40">
                 <Send size={15} /> {busy ? "Sending..." : mode === "sms" ? "Send text" : "Send email"}
               </button>
@@ -5367,7 +5380,7 @@ function Conversation({ lead, comms, onSend, onAddNote, templates = [], config =
           </>
         )}
         {err && <div className="mt-2 rounded-lg bg-rose-50 px-3 py-1.5 text-xs text-rose-700">{err}</div>}
-        {okMsg && <div className="mt-2 inline-flex items-center gap-1 rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700"><Check size={13} /> {okMsg}</div>}
+
       </div>
     </div>
   );

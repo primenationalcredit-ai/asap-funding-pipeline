@@ -1870,10 +1870,45 @@ function Dashboard({ userEmail }) {
         const map = Object.fromEntries((data || []).map((r) => [r.key, r.value]));
         if (map.config) setConfig({ ...DEFAULT_CONFIG, ...map.config });
         else await supabase.from("app_config").upsert({ key: "config", value: DEFAULT_CONFIG });
-        if (map.templates) setTemplates(map.templates);
-        else await supabase.from("app_config").upsert({ key: "templates", value: DEFAULT_TEMPLATES });
-        if (map.cadences) setCadences(map.cadences);
-        else await supabase.from("app_config").upsert({ key: "cadences", value: DEFAULT_CADENCES });
+        // AUTO-SYNC TEMPLATES. Templates live in the code but the app sends from
+        // the copy in app_config, and nothing kept the two in sync — so every
+        // template change needed someone to remember to click "Load recommended
+        // sequence", in the right browser, or it silently never went live. Any
+        // template whose id is in the code but missing from the database is now
+        // added automatically on load. Edits made in the app are preserved:
+        // we only ADD missing ids, we never overwrite an existing one.
+        if (map.templates) {
+          const saved = Array.isArray(map.templates) ? map.templates : [];
+          const have = new Set(saved.map((t) => t && t.id));
+          const missing = DEFAULT_TEMPLATES.filter((t) => !have.has(t.id));
+          if (missing.length) {
+            const merged = [...saved, ...missing];
+            setTemplates(merged);
+            await supabase.from("app_config").upsert({ key: "templates", value: merged });
+            console.log(`[templates] auto-added ${missing.length} new template(s):`, missing.map((t) => t.id).join(", "));
+          } else {
+            setTemplates(saved);
+          }
+        } else {
+          setTemplates(DEFAULT_TEMPLATES);
+          await supabase.from("app_config").upsert({ key: "templates", value: DEFAULT_TEMPLATES });
+        }
+        if (map.cadences) {
+          const savedC = Array.isArray(map.cadences) ? map.cadences : [];
+          const haveC = new Set(savedC.map((c) => c && (c.id || c.stage)));
+          const missingC = DEFAULT_CADENCES.filter((c) => !haveC.has(c.id || c.stage));
+          if (missingC.length) {
+            const mergedC = [...savedC, ...missingC];
+            setCadences(mergedC);
+            await supabase.from("app_config").upsert({ key: "cadences", value: mergedC });
+            console.log(`[cadences] auto-added ${missingC.length} new cadence(s)`);
+          } else {
+            setCadences(savedC);
+          }
+        } else {
+          setCadences(DEFAULT_CADENCES);
+          await supabase.from("app_config").upsert({ key: "cadences", value: DEFAULT_CADENCES });
+        }
         if (map.lenders) setLenders(map.lenders);
         try { await refetchLeads(); } catch (e) { console.error("refetchLeads failed:", e); }
         // Load each independently — a failure in one must NOT prevent the others.

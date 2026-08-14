@@ -38,6 +38,11 @@ export const handler = async (event) => {
     const { data: leads, error: lErr } = await admin.from("leads").select("id, name, email, phone").in("id", leadIds);
     if (lErr) return resp(500, { error: lErr.message });
 
+    // PhoneBurner folder ("category") that pushed leads land in. Without this the
+    // API drops them in the default "Contacts" folder. Overridable by env so the
+    // folder can change without a code deploy.
+    const PB_FOLDER_ID = Number(process.env.PB_FOLDER_ID || 3325925); // "New Leads"
+
     const contacts = (leads || [])
       .filter((l) => (l.phone || "").replace(/\D/g, "").length >= 10)
       .map((l) => {
@@ -48,6 +53,7 @@ export const handler = async (event) => {
           phone: String(l.phone).replace(/\D/g, ""),
           email: l.email || "",
           lead_id: l.id, // our UUID rides along and comes back in the calldone webhook
+          category_id: PB_FOLDER_ID, // land in "New Leads", not the default Contacts folder
         };
       });
     if (!contacts.length) return resp(422, { error: "none of the selected leads have a dialable phone" });
@@ -72,7 +78,7 @@ export const handler = async (event) => {
       return resp(502, { error: j.message || `PhoneBurner error ${r.status}` });
     }
     const redirect = j.redirect_url || j.redirectUrl || j?.dialsession?.redirect_url;
-    console.log("[pb-start] session created for", contacts.length, "contacts");
+    console.log("[pb-start] session created for", contacts.length, "contacts into folder", PB_FOLDER_ID);
     return resp(200, { ok: true, redirect_url: redirect, contacts: contacts.length, raw: redirect ? undefined : j });
   } catch (e) {
     console.log("[pb-start] error", e.message);

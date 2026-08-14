@@ -1863,13 +1863,20 @@ function Dashboard({ userEmail }) {
   }, []);
 
   useEffect(() => {
+    // WATCHDOG: never leave the user staring at "Loading your pipeline..." because
+    // one network call stalled. After 8 seconds we show the app regardless and let
+    // whatever is still in flight fill in when it lands.
+    const watchdog = setTimeout(() => {
+      setLoaded((was) => { if (!was) console.warn("[boot] slow start, showing the app anyway"); return true; });
+    }, 8000);
     (async () => {
       try {
         const keys = ["config", "templates", "cadences", "lenders"];
         const { data } = await supabase.from("app_config").select("key,value").in("key", keys);
         const map = Object.fromEntries((data || []).map((r) => [r.key, r.value]));
         if (map.config) setConfig({ ...DEFAULT_CONFIG, ...map.config });
-        else await supabase.from("app_config").upsert({ key: "config", value: DEFAULT_CONFIG });
+        else supabase.from("app_config").upsert({ key: "config", value: DEFAULT_CONFIG })
+          .then(({ error }) => error && console.error("[config] seed write failed:", error));
         // AUTO-SYNC TEMPLATES. Templates live in the code but the app sends from
         // the copy in app_config, and nothing kept the two in sync — so every
         // template change needed someone to remember to click "Load recommended
@@ -1884,14 +1891,17 @@ function Dashboard({ userEmail }) {
           if (missing.length) {
             const merged = [...saved, ...missing];
             setTemplates(merged);
-            await supabase.from("app_config").upsert({ key: "templates", value: merged });
+            // fire and forget: the UI already has the merged list, the write can finish later
+            supabase.from("app_config").upsert({ key: "templates", value: merged })
+              .then(({ error }) => error && console.error("[templates] sync write failed:", error));
             console.log(`[templates] auto-added ${missing.length} new template(s):`, missing.map((t) => t.id).join(", "));
           } else {
             setTemplates(saved);
           }
         } else {
           setTemplates(DEFAULT_TEMPLATES);
-          await supabase.from("app_config").upsert({ key: "templates", value: DEFAULT_TEMPLATES });
+          supabase.from("app_config").upsert({ key: "templates", value: DEFAULT_TEMPLATES })
+            .then(({ error }) => error && console.error("[templates] seed write failed:", error));
         }
         if (map.cadences) {
           // DEFAULT_CADENCES is an OBJECT keyed by stage, not an array. Add any
@@ -1903,24 +1913,26 @@ function Dashboard({ userEmail }) {
             const mergedC = { ...savedC };
             for (const k of missingKeys) mergedC[k] = DEFAULT_CADENCES[k];
             setCadences(mergedC);
-            await supabase.from("app_config").upsert({ key: "cadences", value: mergedC });
+            supabase.from("app_config").upsert({ key: "cadences", value: mergedC })
+              .then(({ error }) => error && console.error("[cadences] sync write failed:", error));
             console.log(`[cadences] auto-added stages: ${missingKeys.join(", ")}`);
           } else {
             setCadences(savedC);
           }
         } else {
           setCadences(DEFAULT_CADENCES);
-          await supabase.from("app_config").upsert({ key: "cadences", value: DEFAULT_CADENCES });
+          supabase.from("app_config").upsert({ key: "cadences", value: DEFAULT_CADENCES })
+            .then(({ error }) => error && console.error("[cadences] seed write failed:", error));
         }
         if (map.lenders) setLenders(map.lenders);
         try { await refetchLeads(); } catch (e) { console.error("refetchLeads failed:", e); }
-        // Load each independently — a failure in one must NOT prevent the others.
-        // (Previously these shared one try/catch, so if comms threw, activities
-        // never loaded and the tasks panel was always empty.)
-        try { await refetchComms(); } catch (e) { console.error("refetchComms failed:", e); }
-        try { await refetchActivities(); } catch (e) { console.error("refetchActivities failed:", e); }
+        // Comms and activities are NOT awaited: the pipeline only needs leads to
+        // be usable, and awaiting these meant one slow query froze the app on
+        // "Loading your pipeline..." forever. They fill in a moment later.
+        refetchComms().catch((e) => console.error("refetchComms failed:", e));
+        refetchActivities().catch((e) => console.error("refetchActivities failed:", e));
       } catch (e) { setErr(String(e.message || e)); }
-      finally { setLoaded(true); }
+      finally { clearTimeout(watchdog); setLoaded(true); }
     })();
     const channel = supabase.channel("leads-stream")
       .on("postgres_changes", { event: "*", schema: "public", table: "leads" }, () => debouncedRefetch("leads", refetchLeads))

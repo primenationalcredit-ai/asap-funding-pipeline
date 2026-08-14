@@ -76,6 +76,13 @@ export const handler = async (event) => {
           email: l.email || "",
           lead_id: l.id, // our UUID rides along and comes back in the calldone webhook
           category_id: folderFor(l.status), // folder matches this lead's CRM stage
+          // These leads usually already exist in PhoneBurner from an earlier push.
+          // Without explicit duplicate handling the existing contact is matched but
+          // NOT moved, so it stays in whatever folder it was in (the default
+          // "Contacts"). Forcing an update makes category_id apply to existing
+          // contacts too, which is what makes the folder mapping actually stick.
+          on_duplicate: "update",
+          duplicate_checks: { email: true, phone: true },
         };
       });
     if (!contacts.length) return resp(422, { error: "none of the selected leads have a dialable phone" });
@@ -99,8 +106,12 @@ export const handler = async (event) => {
       console.log("[pb-start] PB error", r.status, JSON.stringify(j).slice(0, 400));
       return resp(502, { error: j.message || `PhoneBurner error ${r.status}` });
     }
-    const redirect = j.redirect_url || j.redirectUrl || j?.dialsession?.redirect_url;
+    // PhoneBurner nests this under "dialsessions" (PLURAL) per their API docs.
+    // We were reading j.dialsession (singular), which is why the dialer never
+    // opened and the app said "session created but no link".
+    const redirect = j?.dialsessions?.redirect_url || j?.dialsession?.redirect_url || j.redirect_url || j.redirectUrl;
     const spread = contacts.reduce((m, c) => { m[c.category_id] = (m[c.category_id] || 0) + 1; return m; }, {});
+    if (!redirect) console.log("[pb-start] NO redirect_url. Raw response:", JSON.stringify(j).slice(0, 800));
     console.log("[pb-start] session created for", contacts.length, "contacts; folders:", JSON.stringify(spread));
     if (unmapped.length) console.log("[pb-start] UNMAPPED stages sent to New Leads:", JSON.stringify([...new Set(unmapped)]));
     return resp(200, { ok: true, redirect_url: redirect, contacts: contacts.length, raw: redirect ? undefined : j });

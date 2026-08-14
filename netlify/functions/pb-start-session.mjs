@@ -96,6 +96,54 @@ export const handler = async (event) => {
       ],
     };
 
+    // ------------------------------------------------------------------
+    // FOLDER SYNC. PhoneBurner ignores category_id when the dialsession call
+    // matches an EXISTING contact — it dedupes but leaves the contact in
+    // whatever folder it was already in. So before starting the session we
+    // upsert each contact through the contacts endpoint (which returns the
+    // contact_user_id) and then PUT that contact with its category_id, which
+    // is the documented way to move a contact between folders.
+    // Run with bounded concurrency so a big push does not blow the function
+    // timeout or hammer their rate limit.
+    const pbHeaders = { Authorization: `Bearer ${pbToken}`, "Content-Type": "application/json" };
+    const moveResults = { moved: 0, created: 0, failed: 0 };
+
+    const syncOne = async (c) => {
+      try {
+        const up = await fetch("https://www.phoneburner.com/rest/1/contacts", {
+          method: "POST", headers: pbHeaders, body: JSON.stringify(c),
+        });
+        const uj = await up.json().catch(() => ({}));
+        const rec = uj?.contacts?.contacts;
+        const id = Array.isArray(rec) ? rec[0]?.contact_user_id : rec?.contact_user_id;
+        if (!id) { moveResults.failed++; console.log("[pb-sync] no contact id for", c.lead_id, JSON.stringify(uj).slice(0, 200)); return; }
+        if (up.status === 201) moveResults.created++;
+        // Force the folder even when the contact already existed.
+        const mv = await fetch(`https://www.phoneburner.com/rest/1/contacts/${id}`, {
+          method: "PUT", headers: pbHeaders, body: JSON.stringify({ category_id: c.category_id }),
+        });
+        if (mv.ok) moveResults.moved++;
+        else { moveResults.failed++; console.log("[pb-sync] move failed", id, mv.status, (await mv.text()).slice(0, 200)); }
+      } catch (e) { moveResults.failed++; console.log("[pb-sync] error", e.message); }
+    };
+
+    // Two API calls per contact, so a large push could exceed the function
+    // timeout. Work in parallel batches against a time budget and stop syncing
+    // if we run long — the dial session still starts, we just log what was left.
+    const CONCURRENCY = 8;
+    const DEADLINE = Date.now() + 7000;
+    let synced = 0;
+    for (let i = 0; i < contacts.length; i += CONCURRENCY) {
+      if (Date.now() > DEADLINE) {
+        console.log(`[pb-sync] time budget reached, ${contacts.length - synced} contact(s) not folder-synced this run`);
+        break;
+      }
+      const batch = contacts.slice(i, i + CONCURRENCY);
+      await Promise.all(batch.map(syncOne));
+      synced += batch.length;
+    }
+    console.log("[pb-sync]", JSON.stringify({ ...moveResults, synced, total: contacts.length }));
+
     const r = await fetch("https://www.phoneburner.com/rest/1/dialsession", {
       method: "POST",
       headers: { Authorization: `Bearer ${pbToken}`, "Content-Type": "application/json" },
@@ -114,7 +162,7 @@ export const handler = async (event) => {
     if (!redirect) console.log("[pb-start] NO redirect_url. Raw response:", JSON.stringify(j).slice(0, 800));
     console.log("[pb-start] session created for", contacts.length, "contacts; folders:", JSON.stringify(spread));
     if (unmapped.length) console.log("[pb-start] UNMAPPED stages sent to New Leads:", JSON.stringify([...new Set(unmapped)]));
-    return resp(200, { ok: true, redirect_url: redirect, contacts: contacts.length, raw: redirect ? undefined : j });
+    return resp(200, { ok: true, redirect_url: redirect, contacts: contacts.length, folders: spread, sync: moveResults, raw: redirect ? undefined : j });
   } catch (e) {
     console.log("[pb-start] error", e.message);
     return resp(500, { error: e.message });

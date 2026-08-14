@@ -14,6 +14,40 @@ async function requireUser(event) {
   return data.user;
 }
 
+
+// Templates are written as plain text but may use [Label](https://url) for a
+// real hyperlink. We send BOTH parts: plain text for clients that want it, and
+// HTML so links are clickable. Bare URLs are auto-linked too, so every existing
+// template gets clickable links with no rewriting.
+const LINK_RE = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+
+function toPlain(t) {
+  // "[Click here](url)" reads as "Click here: url" with no HTML client.
+  return String(t || "").replace(LINK_RE, (_m, label, url) => `${label}: ${url}`);
+}
+
+function escapeHtml(t) {
+  return String(t || "")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function toHtml(t) {
+  const raw = String(t || "");
+  // Protect the markdown links from escaping, then restore them as anchors.
+  const slots = [];
+  const withSlots = raw.replace(LINK_RE, (_m, label, url) => {
+    slots.push(`<a href="${url.replace(/"/g, "&quot;")}">${escapeHtml(label)}</a>`);
+    return `\u0000${slots.length - 1}\u0000`;
+  });
+  let html = escapeHtml(withSlots);
+  // Auto-link any bare URL left over.
+  html = html.replace(/(^|[\s])((?:https?:\/\/)[^\s<]+)/g, (_m, pre, url) => `${pre}<a href="${url}">${url}</a>`);
+  html = html.replace(/\u0000(\d+)\u0000/g, (_m, i) => slots[Number(i)]);
+  html = html.replace(/\r?\n/g, "<br>");
+  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:#1f2937">${html}</div>`;
+}
+
 export const handler = async (event) => {
   if (event.httpMethod !== "POST") return resp(405, { error: "Method not allowed" });
   const user = await requireUser(event);
@@ -35,7 +69,10 @@ export const handler = async (event) => {
     personalizations: [{ to: [{ email: to }] }],
     from: { email: fromAddr, name: fromName || undefined },
     subject: subject || "",
-    content: [{ type: "text/plain", value: text }],
+    content: [
+      { type: "text/plain", value: toPlain(text) },
+      { type: "text/html", value: toHtml(text) },
+    ],
   };
   if (process.env.EMAIL_REPLY_TO) payload.reply_to = { email: process.env.EMAIL_REPLY_TO };
 

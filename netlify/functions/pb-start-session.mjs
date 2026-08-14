@@ -106,6 +106,37 @@ export const handler = async (event) => {
     // Run with bounded concurrency so a big push does not blow the function
     // timeout or hammer their rate limit.
     const pbHeaders = { Authorization: `Bearer ${pbToken}`, "Content-Type": "application/json" };
+
+    // STEP 1 DIAGNOSTIC: ask PhoneBurner for its REAL folder ids and check our
+    // mapped ids against them. If a mapped id is not a real folder, PhoneBurner
+    // accepts the value and silently leaves the contact where it was, which is
+    // indistinguishable from "the move did nothing". This runs on every push so
+    // nobody has to hunt for a token and run curl by hand.
+    try {
+      const fr = await fetch("https://www.phoneburner.com/rest/1/folders", { headers: pbHeaders });
+      const fj = await fr.json().catch(() => ({}));
+      const raw = fj?.folders ?? {};
+      const list = Array.isArray(raw) ? raw : Object.values(raw);
+      const real = list
+        .filter((f) => f && typeof f === "object" && (f.folder_id || f.id))
+        .map((f) => ({ id: String(f.folder_id || f.id), name: f.folder_name || f.name || "" }));
+      console.log("[pb-folders] status", fr.status, "| PhoneBurner's real folders:", JSON.stringify(real));
+      if (real.length) {
+        const realIds = new Set(real.map((f) => f.id));
+        const bad = Object.entries(STAGE_FOLDER)
+          .filter(([, id]) => !realIds.has(String(id)))
+          .map(([stage, id]) => `${stage}=${id}`);
+        if (bad.length) {
+          console.log("[pb-folders] *** THESE MAPPED IDS DO NOT EXIST IN PHONEBURNER ***", JSON.stringify(bad));
+          console.log("[pb-folders] Replace them with the ids above. Contacts can never move to a folder id that is not real.");
+        } else {
+          console.log("[pb-folders] all mapped ids are valid -> the ids are NOT the problem, the move call is");
+        }
+      } else {
+        console.log("[pb-folders] could not parse a folder list. Raw response:", JSON.stringify(fj).slice(0, 600));
+      }
+    } catch (e) { console.log("[pb-folders] lookup failed:", e.message); }
+
     const moveResults = { moved: 0, created: 0, failed: 0 };
 
     const syncOne = async (c) => {
@@ -122,7 +153,13 @@ export const handler = async (event) => {
         const mv = await fetch(`https://www.phoneburner.com/rest/1/contacts/${id}`, {
           method: "PUT", headers: pbHeaders, body: JSON.stringify({ category_id: c.category_id }),
         });
-        if (mv.ok) moveResults.moved++;
+        if (mv.ok) {
+          moveResults.moved++;
+          if (moveResults.moved === 1) {
+            const body = await mv.clone().text().catch(() => "");
+            console.log("[pb-sync] first successful move -> status", mv.status, "body:", body.slice(0, 500));
+          }
+        }
         else { moveResults.failed++; console.log("[pb-sync] move failed", id, mv.status, (await mv.text()).slice(0, 200)); }
       } catch (e) { moveResults.failed++; console.log("[pb-sync] error", e.message); }
     };

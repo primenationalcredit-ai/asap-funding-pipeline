@@ -1894,14 +1894,17 @@ function Dashboard({ userEmail }) {
           await supabase.from("app_config").upsert({ key: "templates", value: DEFAULT_TEMPLATES });
         }
         if (map.cadences) {
-          const savedC = Array.isArray(map.cadences) ? map.cadences : [];
-          const haveC = new Set(savedC.map((c) => c && (c.id || c.stage)));
-          const missingC = DEFAULT_CADENCES.filter((c) => !haveC.has(c.id || c.stage));
-          if (missingC.length) {
-            const mergedC = [...savedC, ...missingC];
+          // DEFAULT_CADENCES is an OBJECT keyed by stage, not an array. Add any
+          // stage the saved copy is missing (e.g. a newly added stage) without
+          // touching sequences that already exist.
+          const savedC = (map.cadences && typeof map.cadences === "object" && !Array.isArray(map.cadences)) ? map.cadences : {};
+          const missingKeys = Object.keys(DEFAULT_CADENCES).filter((k) => !(k in savedC));
+          if (missingKeys.length) {
+            const mergedC = { ...savedC };
+            for (const k of missingKeys) mergedC[k] = DEFAULT_CADENCES[k];
             setCadences(mergedC);
             await supabase.from("app_config").upsert({ key: "cadences", value: mergedC });
-            console.log(`[cadences] auto-added ${missingC.length} new cadence(s)`);
+            console.log(`[cadences] auto-added stages: ${missingKeys.join(", ")}`);
           } else {
             setCadences(savedC);
           }

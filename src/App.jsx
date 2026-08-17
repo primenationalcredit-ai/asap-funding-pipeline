@@ -2339,7 +2339,7 @@ function Dashboard({ userEmail }) {
 
       {profileLead && (
         <Profile lead={profileLead} config={config} templates={templates} cadences={cadences} userEmail={userEmail} lenders={lenders}
-          comms={comms} activities={activities} addActivity={addActivity} completeActivity={completeActivity} deleteActivity={deleteActivity} updateActivity={updateActivity} sendReply={sendReply} addNote={addNote} markRead={markRead} leads={leads}
+          comms={comms} activities={activities} addActivity={addActivity} completeActivity={completeActivity} deleteActivity={deleteActivity} updateActivity={updateActivity} sendReply={sendReply} addNote={addNote} markRead={markRead} leads={leads} refetchLeads={refetchLeads}
           onClose={() => setProfileId(null)} updateLead={updateLead} removeLead={removeLead} logTouch={logTouch} openCompose={setCompose} />
       )}
 
@@ -3479,7 +3479,7 @@ function Gated({ show, label, children }) {
   );
 }
 
-function Profile({ lead, config, templates, cadences, onClose, updateLead, removeLead, logTouch, openCompose, userEmail, lenders = [], comms = [], activities = [], addActivity, completeActivity, deleteActivity, updateActivity, sendReply, addNote, markRead, leads = [] }) {
+function Profile({ lead, config, templates, cadences, onClose, updateLead, removeLead, logTouch, openCompose, userEmail, lenders = [], comms = [], activities = [], addActivity, completeActivity, deleteActivity, updateActivity, sendReply, addNote, markRead, leads = [], refetchLeads }) {
   const phase = phaseOf(lead.status);
   const [linkCopied, setLinkCopied] = useState(false);
   const EDITABLE = ["name", "phone", "email", "notes", "loanProgram", "product", "lenderTag", "confirmedFields", "desiredAmount", "fundingPurpose", "fundingTimeline", "monthlyRevenue", "creditScore", "timeInBusiness",
@@ -3581,7 +3581,16 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
       const path = `${lead.id}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.\-_]/g, "_")}`;
       const { error } = await supabase.storage.from("reports").upload(path, file, { upsert: true });
       if (error) throw error;
+      // reportPath stays as the LATEST report (everything downstream reads it),
+      // but every report is also appended to documents so earlier ones are kept
+      // instead of being overwritten. That is what allows more than one report.
       await updateLead(lead.id, { reportPath: path, reportUploadedAt: Date.now(), status: lead.status === "submitted" || lead.status === "funded" ? lead.status : "report_pulled" });
+      const { error: aErr } = await supabase.rpc("append_documents", {
+        p_lead_id: lead.id,
+        p_docs: [{ name: file.name, path, label: "Credit report", uploadedAt: Date.now(), by: userEmail }],
+      });
+      if (aErr) console.error("append_documents failed for report:", aErr);
+      else if (refetchLeads) await refetchLeads();
       pushReportToDrive(path, file.name);
     } catch (e) { alert("Upload failed: " + (e.message || e)); }
     finally { setUploading(false); }
@@ -3591,20 +3600,41 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
     const files = Array.from(fileList || []).filter(Boolean);
     if (!files.length) return;
     setDocBusy(true);
+    const added = [];
+    const failed = [];
     try {
-      const added = [];
+      // Upload each file independently. Previously one bad file threw out of the
+      // loop and the save never ran, so EVERY file in that batch was lost even
+      // though most had uploaded fine.
       for (const file of files) {
-        const safe = file.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
-        const path = `${lead.id}/doc-${Date.now()}-${Math.random().toString(36).slice(2, 7)}-${safe}`;
-        const { error } = await supabase.storage.from("reports").upload(path, file, { upsert: true });
-        if (error) throw error;
-        added.push({ name: file.name, path, label: docLabel, uploadedAt: Date.now(), by: userEmail });
+        try {
+          const safe = file.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
+          const path = `${lead.id}/doc-${Date.now()}-${Math.random().toString(36).slice(2, 7)}-${safe}`;
+          const { error } = await supabase.storage.from("reports").upload(path, file, { upsert: true });
+          if (error) throw error;
+          added.push({ name: file.name, path, label: docLabel, uploadedAt: Date.now(), by: userEmail });
+        } catch (e) {
+          failed.push(`${file.name} (${e.message || e})`);
+        }
       }
-      await updateLead(lead.id, { documents: [...(lead.documents || []), ...added], lastTouchAt: Date.now() });
-      // Uploading a credit report counts as obtaining a report, log it for tracking.
-      if (docLabel === "Credit report") {
-        logTouch(lead.id, "report", "report", { by: userEmail, label: "Credit report" });
-        for (const a of added) pushReportToDrive(a.path, a.name);
+      if (added.length) {
+        // Append SERVER-SIDE so a second upload, or the other user, cannot wipe
+        // these by writing back a stale copy of the whole documents array.
+        const { error: aErr } = await supabase.rpc("append_documents", { p_lead_id: lead.id, p_docs: added });
+        if (aErr) {
+          // Fall back to the old whole-array write rather than lose the upload.
+          console.error("append_documents failed, falling back:", aErr);
+          await updateLead(lead.id, { documents: [...(lead.documents || []), ...added], lastTouchAt: Date.now() });
+        } else if (refetchLeads) {
+          await refetchLeads();
+        }
+        if (docLabel === "Credit report") {
+          logTouch(lead.id, "report", "report", { by: userEmail, label: "Credit report" });
+          for (const a of added) pushReportToDrive(a.path, a.name);
+        }
+      }
+      if (failed.length) {
+        alert(`${added.length} of ${files.length} uploaded.\n\nThese did not upload:\n${failed.join("\n")}`);
       }
     } catch (e) { alert("Upload failed: " + (e.message || e)); }
     finally { setDocBusy(false); }

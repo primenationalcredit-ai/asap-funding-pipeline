@@ -6,6 +6,13 @@
 [functions]
   node_bundler = "esbuild"
 
+# Run the cadence every 3 minutes, all day. The function itself checks business
+# hours (9am-5pm Mountain, weekdays) and returns immediately outside them, so the
+# off-hours runs are cheap no-ops. This replaces the external cron that used to
+# poke it every 30 minutes, which is why things needed nudging by hand.
+[functions."auto-runner"]
+  schedule = "*/3 * * * *"
+
 
 # Friendly path for the GHL webhook
 [[redirects]]

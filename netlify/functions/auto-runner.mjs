@@ -18,8 +18,8 @@ import { createClient } from "@supabase/supabase-js";
 const DAY = 86400000;
 const CALL_DAYS = [0, 1, 2, 3, 4, 6, 8, 10, 17, 24, 31, 45, 66, 90];
 const DEFAULT_STAGES = ["voicemail", "interested", "callback", "not_interested", "check_back", "report_pulled", "app_sent"];
-const MAX_SENDS_PER_RUN = 30; // clear the day's due items across the morning runs
-const MAX_EMAILS_PER_RUN = 8; // throttle EMAIL specifically so we don't trip spam filters (~16/hour with the 30-min schedule)
+const MAX_SENDS_PER_RUN = Number(process.env.MAX_SENDS_PER_RUN || 1); // one message per run; the 3-minute schedule sets the actual pace
+const MAX_EMAILS_PER_RUN = Number(process.env.MAX_EMAILS_PER_RUN || 1); // with one send per run this just mirrors the cap above
 const SEND_SPACING_MS = 400; // small gap between sends so we never burst all at once
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 

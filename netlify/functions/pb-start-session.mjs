@@ -38,32 +38,70 @@ export const handler = async (event) => {
     const { data: leads, error: lErr } = await admin.from("leads").select("id, name, email, phone, status").in("id", leadIds);
     if (lErr) return resp(500, { error: lErr.message });
 
+    const pbHeadersEarly = { Authorization: `Bearer ${pbToken}`, "Content-Type": "application/json" };
+
     // Each lead lands in the PhoneBurner folder matching its CRM stage, so a rep
     // opening a folder sees only leads at that step. Without this the API drops
     // everything into the default "Contacts" folder (65932).
-    const PB_NEW_LEADS = 3325925;
-    const STAGE_FOLDER = {
-      new: PB_NEW_LEADS,
-      appointment_booked: 3325865,
-      voicemail: 3325867,
-      waiting_reports: 3325861,       // Sent Reports
-      app_sent: 3325864,              // Sent Application
-      wrong_number: 3325868,
-      callback: 3325857,              // Call Back
-      check_back: 3325859,            // Check Back Later
-      app_reports_received: 3325866,  // App & Reports Received
+    //
+    // RESOLVE FOLDERS BY NAME AT RUNTIME. Hardcoded ids drift (and the ones we
+    // were given look like contact-manager/web ids rather than REST folder_ids,
+    // which is why contacts were accepted and then never moved). Matching on the
+    // folder NAME means the ids can never go stale again, and it self-corrects
+    // whether or not the hardcoded numbers happen to be right.
+    const STAGE_FOLDER_NAME = {
+      new: "New Leads",
+      appointment_booked: "Appt Booked",
+      voicemail: "Left Voicemail",
+      waiting_reports: "Sent Reports",
+      app_sent: "Sent Application",
+      wrong_number: "Wrong Number",
+      callback: "Call Back",
+      check_back: "Check Back Later",
+      app_reports_received: "App & Reports Received",
+      not_interested: "Not Interested",
+    };
+    // Kept only as a fallback if the folders lookup fails entirely.
+    const STAGE_FOLDER_FALLBACK = {
+      new: 3325925, appointment_booked: 3325865, voicemail: 3325867,
+      waiting_reports: 3325861, app_sent: 3325864, wrong_number: 3325868,
+      callback: 3325857, check_back: 3325859, app_reports_received: 3325866,
       not_interested: 3323960,
     };
-    // Stages with no folder (Funding, Closed) fall back to New Leads and are
-    // logged, so a mapping can be added rather than silently misfiling them.
+
+    // Names are normalized before comparing: PhoneBurner will not store an
+    // ampersand, so "App & Reports Received" may come back as "App Reports
+    // Received" or "App and Reports Received".
+    const norm = (v) => String(v || "").toLowerCase().replace(/&/g, "and").replace(/[^a-z0-9]/g, "");
+    const nameToId = new Map();
+    let foldersOk = false;
+    try {
+      const fr = await fetch("https://www.phoneburner.com/rest/1/folders", { headers: pbHeadersEarly });
+      const fj = await fr.json().catch(() => ({}));
+      const raw = fj?.folders ?? {};
+      const list = Array.isArray(raw) ? raw : Object.values(raw);
+      const real = list
+        .filter((f) => f && typeof f === "object" && (f.folder_id || f.id))
+        .map((f) => ({ id: String(f.folder_id || f.id), name: f.folder_name || f.name || "" }));
+      for (const f of real) if (f.name) nameToId.set(norm(f.name), f.id);
+      foldersOk = real.length > 0;
+      console.log("[pb-folders] status", fr.status, "| real folders:", JSON.stringify(real));
+    } catch (e) { console.log("[pb-folders] lookup failed:", e.message); }
+
     const unmapped = [];
-    const folderFor = (status) => {
+    const unresolved = [];
+    const resolveFolder = (status) => {
       const key = status || "new";
-      const id = STAGE_FOLDER[key];
-      if (id) return id;
-      unmapped.push(key);
-      return PB_NEW_LEADS;
+      const wanted = STAGE_FOLDER_NAME[key];
+      if (!wanted) { unmapped.push(key); return resolveFolder("new"); }
+      if (foldersOk) {
+        const hit = nameToId.get(norm(wanted));
+        if (hit) return Number(hit);
+        unresolved.push(wanted);
+      }
+      return STAGE_FOLDER_FALLBACK[key] || STAGE_FOLDER_FALLBACK.new;
     };
+    const folderFor = resolveFolder;
 
     const contacts = (leads || [])
       .filter((l) => (l.phone || "").replace(/\D/g, "").length >= 10)
@@ -107,35 +145,6 @@ export const handler = async (event) => {
     // timeout or hammer their rate limit.
     const pbHeaders = { Authorization: `Bearer ${pbToken}`, "Content-Type": "application/json" };
 
-    // STEP 1 DIAGNOSTIC: ask PhoneBurner for its REAL folder ids and check our
-    // mapped ids against them. If a mapped id is not a real folder, PhoneBurner
-    // accepts the value and silently leaves the contact where it was, which is
-    // indistinguishable from "the move did nothing". This runs on every push so
-    // nobody has to hunt for a token and run curl by hand.
-    try {
-      const fr = await fetch("https://www.phoneburner.com/rest/1/folders", { headers: pbHeaders });
-      const fj = await fr.json().catch(() => ({}));
-      const raw = fj?.folders ?? {};
-      const list = Array.isArray(raw) ? raw : Object.values(raw);
-      const real = list
-        .filter((f) => f && typeof f === "object" && (f.folder_id || f.id))
-        .map((f) => ({ id: String(f.folder_id || f.id), name: f.folder_name || f.name || "" }));
-      console.log("[pb-folders] status", fr.status, "| PhoneBurner's real folders:", JSON.stringify(real));
-      if (real.length) {
-        const realIds = new Set(real.map((f) => f.id));
-        const bad = Object.entries(STAGE_FOLDER)
-          .filter(([, id]) => !realIds.has(String(id)))
-          .map(([stage, id]) => `${stage}=${id}`);
-        if (bad.length) {
-          console.log("[pb-folders] *** THESE MAPPED IDS DO NOT EXIST IN PHONEBURNER ***", JSON.stringify(bad));
-          console.log("[pb-folders] Replace them with the ids above. Contacts can never move to a folder id that is not real.");
-        } else {
-          console.log("[pb-folders] all mapped ids are valid -> the ids are NOT the problem, the move call is");
-        }
-      } else {
-        console.log("[pb-folders] could not parse a folder list. Raw response:", JSON.stringify(fj).slice(0, 600));
-      }
-    } catch (e) { console.log("[pb-folders] lookup failed:", e.message); }
 
     const moveResults = { moved: 0, created: 0, failed: 0 };
 
@@ -195,6 +204,8 @@ export const handler = async (event) => {
     // We were reading j.dialsession (singular), which is why the dialer never
     // opened and the app said "session created but no link".
     const redirect = j?.dialsessions?.redirect_url || j?.dialsession?.redirect_url || j.redirect_url || j.redirectUrl;
+    if (unresolved.length) console.log("[pb-folders] *** FOLDER NAMES NOT FOUND IN PHONEBURNER ***", JSON.stringify([...new Set(unresolved)]), "- create them or rename to match, fell back to hardcoded ids");
+    if (unmapped.length) console.log("[pb-folders] stages with no folder mapping (sent to New Leads):", JSON.stringify([...new Set(unmapped)]));
     const spread = contacts.reduce((m, c) => { m[c.category_id] = (m[c.category_id] || 0) + 1; return m; }, {});
     if (!redirect) console.log("[pb-start] NO redirect_url. Raw response:", JSON.stringify(j).slice(0, 800));
     console.log("[pb-start] session created for", contacts.length, "contacts; folders:", JSON.stringify(spread));

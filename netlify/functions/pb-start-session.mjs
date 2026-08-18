@@ -107,21 +107,25 @@ export const handler = async (event) => {
       .filter((l) => (l.phone || "").replace(/\D/g, "").length >= 10)
       .map((l) => {
         const parts = String(l.name || "").trim().split(/\s+/);
-        return {
+        const email = String(l.email || "").trim();
+        const c = {
           first_name: parts[0] || "Lead",
           last_name: parts.slice(1).join(" ") || "-",
           phone: String(l.phone).replace(/\D/g, ""),
-          email: l.email || "",
           lead_id: l.id, // our UUID rides along and comes back in the calldone webhook
           category_id: folderFor(l.status), // folder matches this lead's CRM stage
-          // These leads usually already exist in PhoneBurner from an earlier push.
-          // Without explicit duplicate handling the existing contact is matched but
-          // NOT moved, so it stays in whatever folder it was in (the default
-          // "Contacts"). Forcing an update makes category_id apply to existing
-          // contacts too, which is what makes the folder mapping actually stick.
+          // PhoneBurner's dedup default is on_duplicate "update" checking BOTH
+          // email and phone. Many leads have no email, and sending email:"" made
+          // the email check unmatchable, so dedup fell through and PhoneBurner
+          // created a second record instead of updating and moving the existing
+          // one. So: omit email entirely when we do not have one, and only ask
+          // for the email check when there is an address to check.
           on_duplicate: "update",
-          duplicate_checks: { email: true, phone: true },
+          duplicate_checks: { email: !!email, phone: true },
+          duplicate_scrubbing_policy: 0, // match within this account
         };
+        if (email) c.email = email;
+        return c;
       });
     if (!contacts.length) return resp(422, { error: "none of the selected leads have a dialable phone" });
 
@@ -146,7 +150,7 @@ export const handler = async (event) => {
     const pbHeaders = { Authorization: `Bearer ${pbToken}`, "Content-Type": "application/json" };
 
 
-    const moveResults = { moved: 0, created: 0, failed: 0 };
+    const moveResults = { moved: 0, created: 0, failed: 0, status: {} };
 
     const syncOne = async (c) => {
       try {
@@ -157,6 +161,9 @@ export const handler = async (event) => {
         const rec = uj?.contacts?.contacts;
         const id = Array.isArray(rec) ? rec[0]?.contact_user_id : rec?.contact_user_id;
         if (!id) { moveResults.failed++; console.log("[pb-sync] no contact id for", c.lead_id, JSON.stringify(uj).slice(0, 200)); return; }
+        // PhoneBurner returns 201 for a create. Track the raw statuses so we can
+        // tell a genuine create from an update rather than guessing.
+        moveResults.status[up.status] = (moveResults.status[up.status] || 0) + 1;
         if (up.status === 201) moveResults.created++;
         // Force the folder even when the contact already existed.
         const mv = await fetch(`https://www.phoneburner.com/rest/1/contacts/${id}`, {

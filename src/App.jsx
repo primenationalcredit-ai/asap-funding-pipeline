@@ -283,11 +283,7 @@ Keep my number. When you are ready, we can usually get you a pre-approval fast. 
     body: `Hi {{first}}, you are one step from moving forward. Quick application, your last few bank statements, about 10 minutes all in one place: {{applink}} Reply here if anything trips you up and I will walk you through it.` },
   // ============ MANUAL (never auto-sent, shows in the Insert-a-template picker) ============
   { id: "shortterm_sms", pool: "manual", name: "Short term options (text)", channel: "sms", subject: "",
-    body: `{{first}}, as requested, here are the short term options. All soft check only:
-https://partners.gigglefinance.com/asap-funding/joe-mahlow
-https://tapinloan.com/full_form?tid=9f35cdf3-b095-48b3-b485-4bc620819de5&source=13773-1284710&session_id=097c7a56fff349408ed2d794b414da6c
-https://www.badcreditloans.com/?aid=14085&cid=5074&note=1284710&atrk=156384.4968775.4611686018427591474FOF3752391975983735
-Tell me what comes back and I will help you read the offers.` },
+    body: `{{first}}, as requested. I emailed you three options to look at, all soft check only, nothing that affects you. Take a look and tell me which one you want to start with?` },
   { id: "shortterm_email", pool: "manual", name: "Short term options (email)", channel: "email", subject: `{{first}}, your short term options`,
     body: `Hi {{first}},
 
@@ -309,7 +305,7 @@ Check as many as you like, they do not conflict with each other. Before you acce
 
 {{signature}}` },
   { id: "cosigner_sms", pool: "manual", name: "Good news: need a cosigner (text)", channel: "sms", subject: "",
-    body: `{{first}}, {{repfirst}} at ASAP. Good news, our partner said yes. Only gap is the personal profile on file, they need 680 or higher. Anyone strong you could add? They do not have to be in the business. Got 5 minutes for a call?` },
+    body: `{{first}}, {{repfirst}} at ASAP. Good news on your side, and one thing we need to sort to finish. Easier to explain by phone than by text. Got 5 minutes today?` },
   { id: "cosigner_email", pool: "manual", name: "Good news: need a cosigner (email)", channel: "email", subject: `Good news, {{first}}, one more step`,
     body: `Hi {{first}},
 
@@ -669,6 +665,10 @@ If you want to know how yours read before anyone else sees them, reply CALL.
 {{signature}}` },
   { id: "urgency_sms_h1", pool: "urgency_sms", name: "Nurture: still open or sorted", channel: "sms", subject: "",
     body: `Hey {{first}}, {{repfirst}} at ASAP. Still looking at options for {{business}}, or did you get it sorted? Either answer is fine, I just want to know whether to keep your file open.` },
+  { id: "reengage_sms_v2", pool: "reengage_sms", name: "Re-engage: keep file open (b)", channel: "sms", subject: "",
+    body: `{{first}}, {{repfirst}} here at ASAP. Quick one so I am not bothering you. Should I keep working on {{business}} or park it for now?` },
+  { id: "reengage_sms_v3", pool: "reengage_sms", name: "Re-engage: keep file open (c)", channel: "sms", subject: "",
+    body: `Hi {{first}}, {{repfirst}} at ASAP. Are you still working on this for {{business}}, or has it moved to the back burner? Happy either way, just tell me which.` },
   { id: "ni_email_h1", pool: "ni_email", name: "Nurture: door open", channel: "email", subject: "Keeping your file open, {{first}}",
     body: `Hey {{first}},
 

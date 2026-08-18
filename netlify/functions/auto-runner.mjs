@@ -148,6 +148,7 @@ async function run() {
   const now = Date.now();
   let rc = null;
   let sent = 0, scheduled = 0, skipped = 0, waiting = 0, noContact = 0, noCadence = 0, capped = 0, emailsSent = 0;
+  let sentToday = 0; const notDueSample = [];
   const stageCounts = {};
 
   const leadIds = (leads || []).map((l) => l.id);
@@ -183,7 +184,7 @@ async function run() {
     // Never send a lead more than one cadence message in a day. If two steps are
     // both overdue, today's run sends the first and the next becomes due tomorrow.
     const sentTodayAlready = touches.some((t) => t && t.kind === "cadence" && t.at && cDay(t.at) === cDay(now));
-    if (sentTodayAlready) { waiting++; continue; }
+    if (sentTodayAlready) { sentToday++; continue; }
 
     let anchor = entered, prevDay = 0, dueStep = null;
     // Any recent interaction (manual text/email, note, call, edit) pushes the next
@@ -206,7 +207,33 @@ async function run() {
     }
 
     if (!rawSteps.length) noCadence++;
-    else if (!dueStep) waiting++;
+    else if (!dueStep) {
+      waiting++;
+      // Log a handful so we can see WHY the runner disagrees with the app's
+      // "Nd overdue" badge — which step, when it thinks it is due, and what
+      // pushed it out (stage entry, last touch, or a snooze).
+      if (notDueSample.length < 5) {
+        const first = rawSteps.find((s2) => sentInfo[s2.i] == null);
+        let calc = null;
+        if (first) {
+          let a = entered, pd = 0;
+          for (const s2 of rawSteps) {
+            if (sentInfo[s2.i] != null) { a = sentInfo[s2.i]; pd = s2.day; continue; }
+            const g = Math.max(0, s2.day - pd) * DAY;
+            const b = Math.max(a, lastTouch);
+            calc = { step: s2.i, day: s2.day, pool: s2.pool, dueAt: new Date(Math.max(b + g, lead.snooze_until ? new Date(lead.snooze_until).getTime() : 0)).toISOString(), hasTemplate: !!(s2.pool ? poolTemplates(templates, s2.pool).length : templates.find((t) => t.id === s2.templateId)) };
+            break;
+          }
+        }
+        notDueSample.push({
+          name: lead.name, status: lead.status,
+          entered: new Date(entered).toISOString(),
+          lastTouch: lastTouch ? new Date(lastTouch).toISOString() : null,
+          snooze: lead.snooze_until || null,
+          steps: rawSteps.length, calc,
+        });
+      }
+    }
 
     if (dueStep && sent >= MAX_SENDS_PER_RUN) { capped++; }
     if (dueStep && sent < MAX_SENDS_PER_RUN) {
@@ -271,7 +298,8 @@ async function run() {
     }
   }
 
-  return { ok: true, sent, scheduled, skipped, waiting, noContact, noCadence, capped, emailsSent, leads: (leads || []).length, stageCounts, log: log.slice(0, 40) };
+  if (notDueSample.length) console.log("[auto-runner] not-due sample:", JSON.stringify(notDueSample));
+  return { ok: true, sent, scheduled, skipped, waiting, sentToday, noContact, noCadence, capped, emailsSent, leads: (leads || []).length, stageCounts, log: log.slice(0, 40) };
 }
 
 export const handler = async (event) => {

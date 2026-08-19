@@ -17,7 +17,11 @@ import { createClient } from "@supabase/supabase-js";
 
 const DAY = 86400000;
 const CALL_DAYS = [0, 1, 2, 3, 4, 6, 8, 10, 17, 24, 31, 45, 66, 90];
-const DEFAULT_STAGES = ["voicemail", "interested", "callback", "not_interested", "check_back", "report_pulled", "app_sent"];
+// OUTREACH PIPELINE ONLY. Previously this also included not_interested (Closed)
+// and report_pulled (Funding), so clients past the outreach stage were still
+// being chased by automation. wrong_number is left out on purpose — texting a
+// number we know is wrong burns sends and hurts sender reputation.
+const DEFAULT_STAGES = ["new", "voicemail", "callback", "check_back", "waiting_reports", "app_sent", "appointment_booked"];
 const MAX_SENDS_PER_RUN = Number(process.env.MAX_SENDS_PER_RUN || 1); // one message per run; the 3-minute schedule sets the actual pace
 const MAX_EMAILS_PER_RUN = Number(process.env.MAX_EMAILS_PER_RUN || 1); // with one send per run this just mirrors the cap above
 const SEND_SPACING_MS = 400; // small gap between sends so we never burst all at once
@@ -146,8 +150,21 @@ async function run() {
   if (error) throw error;
 
   const now = Date.now();
+
+  // RULE: a client with an appointment on the books is NOT chased by automation.
+  // The rep owns that conversation until the appointment happens.
+  const apptLeadIds = new Set();
+  try {
+    const { data: appts } = await supabase.from("activities")
+      .select("lead_id")
+      .eq("type", "appointment")
+      .eq("done", false)
+      .gte("due_at", new Date(now - 3600000).toISOString()); // an hour's grace either side
+    for (const a of appts || []) if (a && a.lead_id) apptLeadIds.add(a.lead_id);
+  } catch (e) { console.log("[auto-runner] appointment lookup failed:", e.message); }
+
   let rc = null;
-  let sent = 0, scheduled = 0, skipped = 0, waiting = 0, noContact = 0, noCadence = 0, capped = 0, emailsSent = 0;
+  let sent = 0, scheduled = 0, skipped = 0, waiting = 0, noContact = 0, noCadence = 0, capped = 0, emailsSent = 0, hasAppt = 0;
   let sentToday = 0; const notDueSample = [];
   const stageCounts = {};
 
@@ -165,6 +182,7 @@ async function run() {
   for (const lead of leads || []) {
     stageCounts[lead.status] = (stageCounts[lead.status] || 0) + 1;
     if (lead.opted_out || lead.automation_paused) { skipped++; continue; }
+    if (apptLeadIds.has(lead.id)) { hasAppt++; continue; } // appointment booked, leave them alone
     if (lead.snooze_until && new Date(lead.snooze_until).getTime() > now) { skipped++; continue; }
 
     // hard stop on repliers: if they ever sent us an inbound message, hands off to a human
@@ -299,7 +317,7 @@ async function run() {
   }
 
   if (notDueSample.length) console.log("[auto-runner] not-due sample:", JSON.stringify(notDueSample));
-  return { ok: true, sent, scheduled, skipped, waiting, sentToday, noContact, noCadence, capped, emailsSent, leads: (leads || []).length, stageCounts, log: log.slice(0, 40) };
+  return { ok: true, sent, scheduled, skipped, waiting, sentToday, hasAppt, noContact, noCadence, capped, emailsSent, leads: (leads || []).length, stageCounts, log: log.slice(0, 40) };
 }
 
 export const handler = async (event) => {

@@ -84,7 +84,7 @@ const DEFAULT_CONFIG = {
   team: [],
   funderName: "Torro",
   funderEmail: "slocsubmissions@torro.com",
-  autoSnoozeDays: 3,
+  autoSnoozeDays: 1, // 24 hours after a logged call or note before automation resumes
   emailSignature: "Joe Mahlow\nASAP Funding USA\nfunding@asapfundingusa.com",
   autoSendEnabled: false,
   autoSendStages: ["voicemail", "waiting_reports", "callback"],
@@ -1768,7 +1768,7 @@ function Dashboard({ userEmail }) {
   const [comms, setComms] = useState([]);
   const [activities, setActivities] = useState([]);
   // keep the auto-snooze setting available inside stable callbacks
-  const autoSnoozeDaysRef = useRef(3);
+  const autoSnoozeDaysRef = useRef(1);
   // Mirror of leads that is always current. logTouch used to compute its patch
   // INSIDE a setLeads updater and then read the result on the next line — but
   // React runs that updater during render, after the handler returns, so the
@@ -1947,7 +1947,7 @@ function Dashboard({ userEmail }) {
     return () => { supabase.removeChannel(channel); };
   }, [refetchLeads, refetchComms, refetchActivities, debouncedRefetch]);
 
-  useEffect(() => { autoSnoozeDaysRef.current = config.autoSnoozeDays ?? 3; }, [config.autoSnoozeDays]);
+  useEffect(() => { autoSnoozeDaysRef.current = config.autoSnoozeDays ?? 1; }, [config.autoSnoozeDays]);
   useEffect(() => { leadsRef.current = leads; }, [leads]);
 
   const saveConfigKey = useCallback(async (key, value) => {
@@ -4168,7 +4168,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
               </div>
             )}
             <p className="mt-2 text-xs text-slate-400">
-              Logging a call or note automatically pushes the next message out {config.autoSnoozeDays ?? 3} days, so nobody gets blasted mid-conversation.
+              Logging a call or note automatically pushes the next message out {config.autoSnoozeDays ?? 1} day(s), so nobody gets blasted mid-conversation.
             </p>
           </div>
 
@@ -4928,7 +4928,7 @@ function Settings({ config, persistConfig, lenders = [], persistLenders, leads =
         <div className="flex flex-col gap-3">
           <Labeled label="MyScoreIQ link (under $10k path)"><input value={draft.reportLink} onChange={set("reportLink")} className={`${inputCls} font-mono`} /></Labeled>
           <Labeled label="SmartCredit link (backup report tool)"><input value={draft.smartCreditLink || ""} onChange={set("smartCreditLink")} className={`${inputCls} font-mono`} /></Labeled>
-          <Labeled label="Auto-snooze days after a logged call or note"><input type="number" min={0} value={draft.autoSnoozeDays ?? 3} onChange={(e) => setDraft({ ...draft, autoSnoozeDays: Number(e.target.value) })} className={inputCls} /></Labeled>
+          <Labeled label="Auto-snooze days after a logged call or note"><input type="number" min={0} value={draft.autoSnoozeDays ?? 1} onChange={(e) => setDraft({ ...draft, autoSnoozeDays: Number(e.target.value) })} className={inputCls} /></Labeled>
           <Labeled label="Email signature (added to the bottom of emails you send)"><textarea value={draft.emailSignature || ""} onChange={set("emailSignature")} rows={3} className={`${inputCls} resize-none`} /></Labeled>
           <Labeled label="Application link (over $10k path)"><input value={draft.appLink || ""} onChange={set("appLink")} placeholder="https://tranquil-muffin-691d4e.netlify.app/apply.html" className={`${inputCls} font-mono`} /></Labeled>
           <Labeled label="Signature / who it is from"><input value={draft.signature} onChange={set("signature")} className={inputCls} /></Labeled>

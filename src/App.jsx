@@ -955,6 +955,10 @@ function rowToLead(r) {
     appointmentAt: r.appointment_at || "",
     product: r.product || "",
     lenderTag: r.lender_tag || "",
+    referredBy: r.referred_by || "",
+    referredByName: r.referred_by_name || "",
+    referralFee: r.referral_fee == null ? "" : r.referral_fee,
+    referralPaidAt: r.referral_paid_at ? new Date(r.referral_paid_at).getTime() : null,
     snoozeUntil: r.snooze_until ? new Date(r.snooze_until).getTime() : null,
     fundedAt: r.funded_at ? new Date(r.funded_at).getTime() : null,
     commissionPaidAt: r.commission_paid_at ? new Date(r.commission_paid_at).getTime() : null,
@@ -984,6 +988,7 @@ const FIELD_MAP = {
   reportPath: "report_path",
   fundedAmount: "funded_amount", commissionAmount: "commission_amount", declineReason: "decline_reason", loanProgram: "loan_program",
   automationPaused: "automation_paused", ownerEmail: "owner_email", product: "product", lenderTag: "lender_tag",
+  referredBy: "referred_by", referredByName: "referred_by_name", referralFee: "referral_fee", referralPaidAt: "referral_paid_at",
 };
 // Format a US phone as xxx-xxx-xxxx. Leaves anything that isn't 10/11 digits untouched.
 function fmtPhone(v) {
@@ -4260,6 +4265,30 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
               <Labeled label="Email"><input value={draft.email} onChange={set("email")} className={`${inputCls} font-mono`} /></Labeled>
               <Labeled label="Next step"><input value={draft.nextStep} onChange={set("nextStep")} className={inputCls} /></Labeled>
             </div>
+            {lead.referredByName && (
+              <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-bold uppercase tracking-wide text-amber-700">Referred by</span>
+                  <span className="text-sm font-bold text-amber-900">{lead.referredByName}</span>
+                  {lead.referralPaidAt
+                    ? <span className="ml-auto rounded bg-emerald-100 px-2 py-0.5 text-[11px] font-bold text-emerald-700">Fee paid {new Date(lead.referralPaidAt).toLocaleDateString()}</span>
+                    : <span className="ml-auto text-[11px] font-semibold text-amber-600">Fee not paid yet</span>}
+                </div>
+                <div className="mt-2 flex flex-wrap items-end gap-3">
+                  <label className="block">
+                    <span className="block text-[11px] font-semibold text-amber-700">Referral fee for this client</span>
+                    <input type="number" min="0" step="1" value={draft.referralFee ?? ""}
+                      onChange={set("referralFee")} placeholder="0"
+                      className="mt-1 w-32 rounded-lg border border-amber-300 px-3 py-2 text-sm" />
+                  </label>
+                  <button
+                    onClick={() => updateLead(lead.id, { referralPaidAt: lead.referralPaidAt ? null : Date.now() })}
+                    className="rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-bold text-amber-800 hover:bg-amber-100">
+                    {lead.referralPaidAt ? "Mark unpaid" : "Mark fee paid"}
+                  </button>
+                </div>
+              </div>
+            )}
           </Section>
 
           {/* MyScoreIQ credentials (sensitive) */}

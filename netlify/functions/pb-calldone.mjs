@@ -55,7 +55,19 @@ export const handler = async (event) => {
     // Explicit entries for the ASAP Live Answer Set call statuses. These are
     // matched FIRST because some overlap the looser patterns below (for example
     // "Sent Application" must not be caught by the appointment rule).
-    if (/docs? received/.test(d)) newStatus = "app_reports_received";        // no ampersand survives PB, mapped by hand
+    // DO NOT CALL IS CHECKED FIRST, DELIBERATELY. It is the only outcome with a
+    // legal consequence, and it used to be checked LAST — so a button named
+    // anything like "Not Interested - DNC" matched "not interested" first and
+    // the opt-out flag was never set. When a client asks not to be contacted
+    // that must win over every other pattern, whatever the button is called.
+    const DNC = /do ?not ?(call|contact|text)|\bdnc\b|opt(ed)? ?out|opting out|remove me|take me off|stop calling|stop contact|unsubscribe|asked to stop/;
+    // Calls with no conversation. These LOG ONLY and never move the stage, so a
+    // dropped or unanswered call cannot push a client into a wrong stage.
+    const NO_CONTACT = /no answer|hung ?up|no conversation|did ?n[o']?t (answer|connect)|busy|unavailable|disconnected|abandoned|dropped/;
+
+    if (DNC.test(d)) { newStatus = "dead"; optOut = true; }
+    else if (NO_CONTACT.test(d) && !/voicemail|lvm|left message/.test(d)) { newStatus = null; }
+    else if (/docs? received/.test(d)) newStatus = "app_reports_received";        // no ampersand survives PB, mapped by hand
     else if (/sent reports?|reports? sent/.test(d)) newStatus = "waiting_reports";
     else if (/sent application|app(lication)? sent/.test(d)) newStatus = "app_sent";
     else if (/check back/.test(d)) newStatus = "check_back";
@@ -64,7 +76,6 @@ export const handler = async (event) => {
     else if (/not interested/.test(d)) newStatus = "not_interested";
     else if (/call ?back|follow ?up/.test(d)) newStatus = "callback";
     else if (/wrong number|bad (number|phone)/.test(d)) newStatus = "wrong_number";
-    else if (/do not call|dnc/.test(d)) { newStatus = "dead"; optOut = true; }
     // "No Answer", "Busy Signal", "Unavailable" deliberately do NOT move the
     // stage — they just log the attempt, same as the CRM's own call buttons.
 

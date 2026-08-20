@@ -247,6 +247,25 @@
       // Build the file list: generated application PDF + every uploaded document.
       var pdfBytes = await fillTemplate(data); var pdfBlob = new Blob([pdfBytes], {type:'application/pdf'});
       var appName = 'Application-' + (data.legal_name||'form').replace(/[^a-zA-Z0-9]+/g,'-').slice(0,40) + '.pdf';
+      // REQUIRE BANK STATEMENTS. These inputs had no validation at all, so a
+      // client could fill in every field, sign, and submit with nothing attached
+      // — the form accepted it and the file arrived with only the application.
+      // Lenders cannot do anything without statements, so stop it at the door.
+      var stmts = files.filter(function (f) { return /bank statement/i.test(f._label || ''); });
+      if (stmts.length === 0) {
+        errBox.innerHTML = '<div class="err">Please attach your business bank statements before submitting. Scroll up to the documents section and upload the last 4 months. We cannot review your application without them.</div>';
+        btn.disabled = false; btn.textContent = 'Submit Application';
+        var ds = document.querySelector('.docinput');
+        if (ds) ds.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
+      if (stmts.length < 3) {
+        if (!window.confirm('You have attached ' + stmts.length + ' bank statement file' + (stmts.length === 1 ? '' : 's') + '. Lenders normally want the last 4 months. Submit anyway?')) {
+          btn.disabled = false; btn.textContent = 'Submit Application';
+          return;
+        }
+      }
+
       var toUpload = [{ name: appName, label: 'Application', blob: pdfBlob }];
       for (var i=0;i<files.length;i++){ toUpload.push({ name: files[i].name, label: files[i]._label||'Other', blob: files[i] }); }
 

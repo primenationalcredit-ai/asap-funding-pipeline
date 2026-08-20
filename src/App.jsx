@@ -3691,7 +3691,14 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
   const deleteDoc = async (path) => {
     if (!confirm("Remove this document?")) return;
     try { await supabase.storage.from("reports").remove([path]); } catch {}
-    await updateLead(lead.id, { documents: (lead.documents || []).filter((d) => d.path !== path) });
+    // Remove server-side by path. This used to write the browser's WHOLE copy of
+    // the documents list back minus one item, so anything added since this screen
+    // last refreshed (a client submitting their application, the other user
+    // uploading) was silently erased. That is how a client's bank statements
+    // disappeared while only the application survived.
+    const { error } = await supabase.rpc("remove_document", { p_lead_id: lead.id, p_path: path });
+    if (error) { alert("Could not remove that document: " + error.message); return; }
+    if (refetchLeads) await refetchLeads();
   };
   const sendToLender = async () => {
     if (!lenderEmail.trim()) return;

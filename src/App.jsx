@@ -2991,6 +2991,39 @@ function Pipeline({ leads, allLeads, allCount, leadsLoaded = true, dueList, stat
           </>
         ) : (
         <>
+          {/* A lead whose status is not on ANY board renders nowhere and is
+              invisible in the app. That is how a deal "goes missing". Surface
+              them loudly instead of letting them sit unseen. */}
+          {(() => {
+            const onBoards = new Set([].concat(...Object.values(BOARDS).map((b) => b.stages)));
+            const stranded = (allLeads || []).filter((l) => !onBoards.has(l.status || "new"));
+            if (!stranded.length) return null;
+            return (
+              <div className="mb-3 rounded-xl border-2 border-rose-300 bg-rose-50 p-3">
+                <div className="mb-1.5 flex items-center gap-2">
+                  <AlertCircle size={16} className="text-rose-600" />
+                  <span className="text-sm font-bold text-rose-900">
+                    {stranded.length} client{stranded.length === 1 ? " is" : "s are"} in a stage that is not on any board
+                  </span>
+                </div>
+                <p className="mb-2 text-xs text-rose-700">These do not show anywhere else in the app. Move each one to a real stage and they will reappear.</p>
+                <div className="flex flex-col gap-1.5">
+                  {stranded.map((l) => (
+                    <div key={l.id} className="flex flex-wrap items-center gap-2 rounded-lg bg-white px-3 py-2 ring-1 ring-rose-200">
+                      <button onClick={() => onOpen(l.id)} className="text-sm font-semibold text-slate-800 hover:text-blue-700">{l.name || l.businessName || "(no name)"}</button>
+                      <span className="rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-bold text-rose-700">status: {l.status || "(blank)"}</span>
+                      <select defaultValue="" onChange={(e) => e.target.value && updateLead(l.id, { status: e.target.value })}
+                        className="ml-auto rounded-md border border-slate-200 px-2 py-1 text-xs">
+                        <option value="">Move to...</option>
+                        {STAGES.map((st) => <option key={st.key} value={st.key}>{st.label}</option>)}
+                      </select>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+
           {/* board switcher */}
           <div className="mb-3 flex flex-wrap gap-1.5">
             {Object.entries(BOARDS).map(([k, b]) => {
@@ -3178,7 +3211,7 @@ function BoardCard({ lead, onOpen, cadences, templates, config, openCompose, upd
         {lead.optedOut && <span className="inline-flex items-center gap-0.5 rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-bold text-rose-700"><Ban size={10} /> DND</span>}
       </div>
       <div className="mt-2 flex items-center gap-1" onClick={stop}>
-        <a href={telHref(lead.phone)} onClick={() => lead.phone && updateLead(lead.id, lead.status === "new" ? { status: "called" } : {})} title="Call" className={`rounded-md p-1.5 ${lead.phone ? "bg-slate-100 text-slate-600 hover:bg-slate-200" : "pointer-events-none bg-slate-50 text-slate-300"}`}><Phone size={13} /></a>
+        <a href={telHref(lead.phone)} onClick={() => { /* no stage change: "called" is not a real stage and hid the lead */ }} title="Call" className={`rounded-md p-1.5 ${lead.phone ? "bg-slate-100 text-slate-600 hover:bg-slate-200" : "pointer-events-none bg-slate-50 text-slate-300"}`}><Phone size={13} /></a>
         <button disabled={!lead.phone || lead.optedOut} onClick={() => openCompose({ lead, channel: "sms", to: lead.phone, subject: "", body: fillTokens(tplSms?.body || "{{link}}", lead, config), kind: "link" })} title={lead.optedOut ? "Do Not Contact" : "Text"} className={`rounded-md p-1.5 ${lead.phone && !lead.optedOut ? "bg-blue-600 text-white hover:bg-blue-700" : "bg-slate-50 text-slate-300"}`}><MessageSquare size={13} /></button>
         <button disabled={!lead.email || lead.optedOut} onClick={() => openCompose({ lead, channel: "email", to: lead.email, subject: fillTokens(tplEmail?.subject || "", lead, config), body: fillTokens(tplEmail?.body || "{{link}}", lead, config), kind: "link" })} title={lead.optedOut ? "Do Not Contact" : "Email"} className={`rounded-md p-1.5 ${lead.email && !lead.optedOut ? "bg-white text-blue-700 ring-1 ring-blue-300 hover:bg-blue-50" : "bg-slate-50 text-slate-300"}`}><Mail size={13} /></button>
       </div>
@@ -3246,7 +3279,7 @@ function LeadRow({ lead, onOpen, cadences, templates, config, logTouch, updateLe
           <div className="mt-1.5"><QualChips lead={lead} /></div>
         </div>
         <div className="flex shrink-0 items-center gap-1" onClick={stop}>
-          <a href={telHref(lead.phone)} onClick={() => lead.phone && updateLead(lead.id, lead.status === "new" ? { status: "called" } : {})} title="Call" className={`rounded-lg p-2 ${lead.phone ? "bg-slate-100 text-slate-700 hover:bg-slate-200" : "pointer-events-none bg-slate-50 text-slate-300"}`}><Phone size={15} /></a>
+          <a href={telHref(lead.phone)} onClick={() => { /* no stage change: "called" is not a real stage and hid the lead */ }} title="Call" className={`rounded-lg p-2 ${lead.phone ? "bg-slate-100 text-slate-700 hover:bg-slate-200" : "pointer-events-none bg-slate-50 text-slate-300"}`}><Phone size={15} /></a>
           <button disabled={!lead.phone} onClick={() => openCompose({ lead, channel: "sms", to: lead.phone, subject: "", body: fillTokens(tplSms?.body || "{{link}}", lead, config), kind: "link" })} title="Text link" className={`rounded-lg p-2 ${lead.phone ? "bg-blue-600 text-white hover:bg-blue-700" : "bg-slate-50 text-slate-300"}`}><MessageSquare size={15} /></button>
           <button disabled={!lead.email} onClick={() => openCompose({ lead, channel: "email", to: lead.email, subject: fillTokens(tplEmail?.subject || "", lead, config), body: fillTokens(tplEmail?.body || "{{link}}", lead, config), kind: "link" })} title="Email link" className={`rounded-lg p-2 ${lead.email ? "bg-white text-blue-700 ring-1 ring-blue-300 hover:bg-blue-50" : "bg-slate-50 text-slate-300"}`}><Mail size={15} /></button>
         </div>
@@ -4226,7 +4259,7 @@ function Profile({ lead, config, templates, cadences, onClose, updateLead, remov
 
           {/* contact actions */}
           <div className="flex flex-wrap gap-2">
-            <a href={telHref(lead.phone)} onClick={() => lead.phone && updateLead(lead.id, lead.status === "new" ? { status: "called" } : {})} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium ${lead.phone ? "bg-slate-800 text-white hover:bg-slate-900" : "pointer-events-none bg-slate-100 text-slate-300"}`}><Phone size={15} /> Call</a>
+            <a href={telHref(lead.phone)} onClick={() => { /* no stage change: "called" is not a real stage and hid the lead */ }} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium ${lead.phone ? "bg-slate-800 text-white hover:bg-slate-900" : "pointer-events-none bg-slate-100 text-slate-300"}`}><Phone size={15} /> Call</a>
             <button disabled={!lead.phone} onClick={() => openCompose({ lead, channel: "sms", to: lead.phone, subject: "", body: fillTokens(templates.find(t=>t.id==="first_sms")?.body || "{{link}}", lead, config), kind: "link" })} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium ${lead.phone ? "bg-blue-600 text-white hover:bg-blue-700" : "bg-slate-100 text-slate-300"}`}><MessageSquare size={15} /> Text link</button>
             <button disabled={!lead.email} onClick={() => openCompose({ lead, channel: "email", to: lead.email, subject: fillTokens(templates.find(t=>t.id==="first_email")?.subject||"", lead, config), body: fillTokens(templates.find(t=>t.id==="first_email")?.body||"{{link}}", lead, config), kind: "link" })} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium ${lead.email ? "bg-white text-blue-700 ring-1 ring-blue-300 hover:bg-blue-50" : "bg-slate-100 text-slate-300 ring-1 ring-slate-200"}`}><Mail size={15} /> Email link</button>
             <CopyButton text={config.reportLink || ""} label="Copy link" className="bg-slate-100 text-slate-700 hover:bg-slate-200" />

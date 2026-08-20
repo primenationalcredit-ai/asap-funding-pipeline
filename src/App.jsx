@@ -2415,6 +2415,25 @@ function PowerDial({ leads }) {
     finally { setBusy(false); }
   };
 
+  // PhoneBurner folders are set when we push. If a lead moves on afterwards
+  // (voicemail -> dead, or -> app_sent) their PhoneBurner contact stays in the
+  // OLD folder, so a rep dials a stale list. This re-files everyone.
+  const [syncBusy, setSyncBusy] = useState(false);
+  const syncFolders = async () => {
+    setSyncBusy(true); setMsg("");
+    try {
+      const { data } = await supabase.auth.getSession();
+      const res = await fetch("/.netlify/functions/pb-sync-folders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${data.session?.access_token}` },
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || j.error) { setMsg("Could not sync folders: " + (j.error || res.status)); return; }
+      setMsg(`PhoneBurner folders updated. ${j.moved} of ${j.total} contacts re-filed to match their current stage${j.failed ? `, ${j.failed} failed` : ""}.`);
+    } catch (e) { setMsg("Could not sync folders: " + (e.message || e)); }
+    finally { setSyncBusy(false); }
+  };
+
   const countFor = (k) => (leads || []).filter((l) => {
     if ((l.status || "new") !== k) return false;
     if (l.optedOut) return false;
@@ -2477,6 +2496,11 @@ function PowerDial({ leads }) {
             <span className="font-bold text-slate-900">{pool.length}</span> match your selection
             {pool.length > count && <span className="text-slate-400"> (loading the {count} oldest)</span>}
           </div>
+          <button onClick={syncFolders} disabled={syncBusy}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            title="Re-file every PhoneBurner contact into the folder matching its current stage in this CRM">
+            {syncBusy ? "Syncing..." : "Sync PhoneBurner folders"}
+          </button>
           <button onClick={start} disabled={busy || !pool.length}
             className="ml-auto rounded-lg bg-orange-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-orange-700 disabled:opacity-50">
             {busy ? "Starting..." : `Start power dial (${Math.min(pool.length, count)})`}

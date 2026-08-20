@@ -74,6 +74,18 @@ export const handler = async (event) => {
     if (notes) pieces.push(notes);
     const body = pieces.join(" | ") || "Power-dial call completed";
 
+    // Also record a CALL touch on the lead. Without this a dialer call is
+    // invisible to anything reading lead.touches — including the Power Dial
+    // "skip anyone called recently" filter, which would keep handing the rep
+    // people she just called.
+    try {
+      const { error: tErr } = await admin.rpc("append_touch", {
+        p_lead_id: leadId,
+        p_touch: { at: Date.now(), channel: "call", kind: "call", disposition: disposition || "", note: notes || "", by: agent, source: "phoneburner" },
+      });
+      if (tErr) console.log("[pb-calldone] append_touch failed:", tErr.message);
+    } catch (e) { console.log("[pb-calldone] touch error", e.message); }
+
     const { error: cErr } = await admin.from("communications").insert({
       lead_id: leadId, direction: "out", channel: "call", body, by_user: agent,
     });

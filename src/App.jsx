@@ -2364,13 +2364,33 @@ function PowerDial({ leads }) {
   const [count, setCount] = useState(50);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+  // Leads worked in the last N days are held back, so a repeat push does not
+  // hand the rep the same people she already called this morning.
+  const [restDays, setRestDays] = useState(1);
 
   const toggle = (k) => setPicked((prev) => { const n = new Set(prev); n.has(k) ? n.delete(k) : n.add(k); return n; });
+
+  // When was this lead last actually CALLED (a logged call or a dialer
+  // disposition), as opposed to any touch such as an automated text.
+  const lastCallAt = (l) => {
+    let t = 0;
+    for (const x of l.touches || []) {
+      if (!x || x.kind !== "call") continue;
+      const at = Number(x.at) || 0;
+      if (at > t) t = at;
+    }
+    return t;
+  };
 
   const dialable = (l) => {
     if (l.optedOut) return false;                    // never call opted-out people
     if (!l.phone || String(l.phone).replace(/\D/g, "").length < 10) return false;
-    return picked.has(l.status || "new");
+    if (!picked.has(l.status || "new")) return false;
+    if (restDays > 0) {
+      const since = lastCallAt(l);
+      if (since && Date.now() - since < restDays * 86400000) return false; // called recently
+    }
+    return true;
   };
   // Longest since last touch first, so the coldest leads get worked.
   const pool = (leads || []).filter(dialable)
@@ -2395,7 +2415,16 @@ function PowerDial({ leads }) {
     finally { setBusy(false); }
   };
 
-  const countFor = (k) => (leads || []).filter((l) => (l.status || "new") === k && !l.optedOut && l.phone && String(l.phone).replace(/\D/g, "").length >= 10).length;
+  const countFor = (k) => (leads || []).filter((l) => {
+    if ((l.status || "new") !== k) return false;
+    if (l.optedOut) return false;
+    if (!l.phone || String(l.phone).replace(/\D/g, "").length < 10) return false;
+    if (restDays > 0) {
+      const since = lastCallAt(l);
+      if (since && Date.now() - since < restDays * 86400000) return false;
+    }
+    return true;
+  }).length;
 
   return (
     <div className="space-y-4">
@@ -2428,6 +2457,17 @@ function PowerDial({ leads }) {
 
       <div className="rounded-xl border border-slate-200 bg-white p-4">
         <div className="flex flex-wrap items-end gap-4">
+          <div>
+            <label className="block text-xs font-semibold text-slate-600">Skip anyone called in the last</label>
+            <select value={restDays} onChange={(e) => setRestDays(Number(e.target.value))}
+              className="mt-1 rounded-lg border border-slate-300 px-3 py-2 text-sm">
+              <option value={0}>Do not skip</option>
+              <option value={1}>1 day</option>
+              <option value={2}>2 days</option>
+              <option value={3}>3 days</option>
+              <option value={7}>7 days</option>
+            </select>
+          </div>
           <div>
             <label className="block text-xs font-semibold text-slate-600">How many to load</label>
             <input type="number" min="1" max="200" value={count} onChange={(e) => setCount(parseInt(e.target.value, 10) || 1)}

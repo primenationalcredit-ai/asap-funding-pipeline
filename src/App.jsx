@@ -2246,8 +2246,8 @@ function Dashboard({ userEmail }) {
 
   if (!loaded) return <div className="flex min-h-96 items-center justify-center font-sans text-slate-400">Loading your pipeline...</div>;
 
-  const NAV = [["pipeline", "Pipeline", LayoutGrid], ["tracker", "Tracker", TrendingUp], ["inbox", "Inbox", MessageSquare], ["applications", "Applications", FileText], ["activities", "Activities", CalendarClock], ["calendar", "Calendar", CalendarDays], ["followups", "Follow-ups", Clock], ["powerdial", "Power Dial", Phone], ["commissions", "Commissions", DollarSign], ["team", "Team", User], ["messaging", "Templates", FileText], ["scripts", "Scripts", ListChecks], ["settings", "Settings", SettingsIcon]];
-  const tabTitle = { pipeline: "Pipeline", tracker: "Origination tracker", inbox: "Inbox", activities: "Activities", followups: "Follow-ups", powerdial: "Power Dial", commissions: "Commissions", team: "Team activity", messaging: "Message templates", scripts: "Call scripts", settings: "Settings" }[tab];
+  const NAV = [["pipeline", "Pipeline", LayoutGrid], ["tracker", "Tracker", TrendingUp], ["inbox", "Inbox", MessageSquare], ["applications", "Applications", FileText], ["activities", "Activities", CalendarClock], ["calendar", "Calendar", CalendarDays], ["followups", "Follow-ups", Clock], ["powerdial", "Power Dial", Phone], ["duplicates", "Duplicates", Copy], ["commissions", "Commissions", DollarSign], ["team", "Team", User], ["messaging", "Templates", FileText], ["scripts", "Scripts", ListChecks], ["settings", "Settings", SettingsIcon]];
+  const tabTitle = { pipeline: "Pipeline", tracker: "Origination tracker", inbox: "Inbox", activities: "Activities", followups: "Follow-ups", powerdial: "Power Dial", duplicates: "Duplicate clients", commissions: "Commissions", team: "Team activity", messaging: "Message templates", scripts: "Call scripts", settings: "Settings" }[tab];
 
   return (
     <div className="flex min-h-screen bg-slate-50 font-sans text-slate-800">
@@ -2332,6 +2332,7 @@ function Dashboard({ userEmail }) {
           {tab === "tracker" && <Tracker leads={leads} config={config} onOpen={setProfileId} logTouch={logTouch} userEmail={userEmail} />}
           {tab === "activities" && <Activities activities={activities} leads={leads} onOpen={setProfileId} completeActivity={completeActivity} deleteActivity={deleteActivity} />}
           {tab === "powerdial" && <PowerDial leads={leads} />}
+          {tab === "duplicates" && <Duplicates leads={leads} onOpen={setProfileId} refetchLeads={refetchLeads} />}
           {tab === "calendar" && <Calendar activities={activities} leads={leads} config={config} userEmail={userEmail} onOpen={setProfileId} addActivity={addActivity} updateActivity={updateActivity} deleteActivity={deleteActivity} />}
           {tab === "messaging" && <Messaging templates={templates} persistTemplates={persistTemplates} cadences={cadences} persistCadences={persistCadences} />}
           {tab === "commissions" && <Commissions leads={leads} onOpen={setProfileId} />}
@@ -2357,6 +2358,100 @@ function Dashboard({ userEmail }) {
 /* ================================================================== */
 /*  Pipeline                                                          */
 /* ================================================================== */
+function Duplicates({ leads, onOpen, refetchLeads }) {
+  const [busy, setBusy] = useState("");
+  const [msg, setMsg] = useState("");
+
+  // Group by digits-only phone and by lowercased email. Two people CAN share a
+  // phone or an inbox, so nothing merges without someone confirming it.
+  const groups = useMemo(() => {
+    const byPhone = {}, byEmail = {};
+    for (const l of leads || []) {
+      const ph = String(l.phone || "").replace(/\D/g, "").slice(-10);
+      if (ph.length === 10) (byPhone[ph] = byPhone[ph] || []).push(l);
+      const em = String(l.email || "").trim().toLowerCase();
+      if (em) (byEmail[em] = byEmail[em] || []).push(l);
+    }
+    const out = [];
+    const seen = new Set();
+    const add = (kind, value, rows) => {
+      if (rows.length < 2) return;
+      const key = rows.map((r) => r.id).sort().join("|");
+      if (seen.has(key)) return;      // same pair matched on both phone and email
+      seen.add(key);
+      out.push({ kind, value, rows: [...rows].sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)) });
+    };
+    Object.entries(byPhone).forEach(([v, r]) => add("phone", v, r));
+    Object.entries(byEmail).forEach(([v, r]) => add("email", v, r));
+    return out;
+  }, [leads]);
+
+  const merge = async (keep, drop, label) => {
+    if (!window.confirm(`Merge "${drop.name || drop.businessName}" INTO "${keep.name || keep.businessName}"?\n\nEverything from the duplicate moves across: calls, notes, documents, messages and tasks. The duplicate record is then deleted. This cannot be undone.`)) return;
+    setBusy(drop.id); setMsg("");
+    try {
+      const { data, error } = await supabase.rpc("merge_leads", { p_keep: keep.id, p_drop: drop.id });
+      if (error) { setMsg("Merge failed: " + error.message); return; }
+      setMsg(`Merged ${label}. ${data?.messages_moved ?? 0} message(s) and ${data?.tasks_moved ?? 0} task(s) moved across.`);
+      if (refetchLeads) await refetchLeads();
+    } catch (e) { setMsg("Merge failed: " + (e.message || e)); }
+    finally { setBusy(""); }
+  };
+
+  const fmt = (l) => `${l.name || l.businessName || "(no name)"}`;
+
+  return (
+    <div className="mt-4 space-y-4">
+      <div className="rounded-xl border border-slate-200 bg-white p-4">
+        <h3 className="text-sm font-bold text-slate-800">Possible duplicate clients</h3>
+        <p className="mt-1 text-xs text-slate-500">
+          Matched on phone number or email address. Merging moves every call, note, document, message and task onto the record you keep, then deletes the other one.
+          Nothing merges on its own, because two people can share a phone or an inbox.
+        </p>
+      </div>
+
+      {msg && <div className="rounded-lg bg-emerald-50 px-4 py-2.5 text-sm font-medium text-emerald-800 ring-1 ring-inset ring-emerald-200">{msg}</div>}
+
+      {groups.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-slate-200 py-12 text-center">
+          <Check size={26} className="mx-auto text-emerald-400" />
+          <div className="mt-2 text-sm font-semibold text-slate-600">No duplicates found</div>
+          <div className="mt-1 text-sm text-slate-400">Every client has a unique phone number and email.</div>
+        </div>
+      ) : groups.map((g) => (
+        <div key={g.kind + g.value} className="rounded-xl border border-amber-200 bg-amber-50/50 p-4">
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <span className="rounded bg-amber-200 px-2 py-0.5 text-[11px] font-bold uppercase text-amber-900">same {g.kind}</span>
+            <span className="font-mono text-sm font-semibold text-slate-700">{g.kind === "phone" ? fmtPhone(g.value) : g.value}</span>
+            <span className="text-xs text-slate-500">{g.rows.length} records</span>
+          </div>
+          <div className="flex flex-col gap-2">
+            {g.rows.map((l, i) => (
+              <div key={l.id} className="flex flex-wrap items-center gap-2 rounded-lg bg-white px-3 py-2 ring-1 ring-amber-100">
+                <button onClick={() => onOpen(l.id)} className="text-sm font-semibold text-slate-800 hover:text-blue-700">{fmt(l)}</button>
+                <StagePill status={l.status} />
+                <span className="text-xs text-slate-400">
+                  {(l.touches || []).filter((t) => t.kind === "call").length} calls
+                  {" \u00b7 "}{(l.documents || []).length} docs
+                  {" \u00b7 "}created {fmtDate(l.createdAt)}
+                </span>
+                {i === 0
+                  ? <span className="ml-auto rounded bg-emerald-100 px-2 py-1 text-[11px] font-bold text-emerald-700">Oldest, keep this one</span>
+                  : (
+                    <button disabled={busy === l.id} onClick={() => merge(g.rows[0], l, fmt(l))}
+                      className="ml-auto rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-700 disabled:opacity-50">
+                      {busy === l.id ? "Merging..." : "Merge into the one above"}
+                    </button>
+                  )}
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function PowerDial({ leads }) {
   // Default to the outreach stages Lydia actually works. She can tick any
   // combination; the count updates live so she knows what she is loading.

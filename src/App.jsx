@@ -5398,6 +5398,27 @@ function Conversation({ lead, comms, onSend, onAddNote, templates = [], config =
 
   const CHIPS = [["all", "All"], ["note", "Notes"], ["call", "Calls"], ["sms", "Texts"], ["email", "Emails"]];
 
+  // Reply to an inbound email in place: switch the composer to Email, prefill a
+  // "Re:" subject and quote what they wrote, then focus the body so you can just
+  // start typing. Previously the only option was composing a fresh email and
+  // retyping the subject.
+  const composerRef = useRef(null);
+  const replyToEmail = (it) => {
+    setMode("email");
+    const subj = String(it.subject || "").trim();
+    setSubject(/^re:/i.test(subj) ? subj : `Re: ${subj || "your message"}`);
+    const when = fmtDateTime(it.at);
+    const quoted = String(it.body || "")
+      .split(/\r?\n/)
+      .map((line) => `> ${line}`)
+      .join("\n");
+    setBody(`\n\nOn ${when}, ${lead.name || "they"} wrote:\n${quoted}\n`);
+    setTimeout(() => {
+      const el = composerRef.current;
+      if (el) { el.focus(); el.setSelectionRange(0, 0); el.scrollIntoView({ behavior: "smooth", block: "center" }); }
+    }, 60);
+  };
+
   const downloadAttachment = async (path) => {
     try {
       const { data, error } = await supabase.storage.from("reports").createSignedUrl(path, 3600);
@@ -5457,6 +5478,12 @@ function Conversation({ lead, comms, onSend, onAddNote, templates = [], config =
                 </div>
                 {it.subject && <div className={`text-xs font-semibold ${inbound ? "text-slate-600" : "text-blue-100"}`}>{it.subject}</div>}
                 <div className="whitespace-pre-wrap">{it.body}</div>
+                {inbound && it.kind === "email" && (
+                  <button onClick={() => replyToEmail(it)}
+                    className="mt-2 inline-flex items-center gap-1 rounded-md bg-white px-2 py-1 text-xs font-bold text-blue-700 ring-1 ring-inset ring-blue-200 hover:bg-blue-50">
+                    <Mail size={11} /> Reply
+                  </button>
+                )}
                 {it.attachments && it.attachments.length > 0 && (
                   <div className="mt-1.5 flex flex-wrap gap-1.5">
                     {it.attachments.map((a, ai) => (
@@ -5497,7 +5524,7 @@ function Conversation({ lead, comms, onSend, onAddNote, templates = [], config =
             {mode === "email" && (
               <input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Subject" className="mb-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400" />
             )}
-            <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={mode === "email" ? 4 : 2} placeholder={canSend ? `Type a ${mode === "sms" ? "text" : "email"}...` : mode === "sms" ? "No phone on file" : "No email on file"} disabled={!canSend}
+            <textarea ref={composerRef} value={body} onChange={(e) => setBody(e.target.value)} rows={mode === "email" ? 6 : 2} placeholder={canSend ? `Type a ${mode === "sms" ? "text" : "email"}...` : mode === "sms" ? "No phone on file" : "No email on file"} disabled={!canSend}
               className="w-full resize-none rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400 disabled:bg-slate-50" />
 
             {mode === "email" && (

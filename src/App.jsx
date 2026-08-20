@@ -2115,15 +2115,28 @@ function Dashboard({ userEmail }) {
     if (error) setErr(error.message); else refetchActivities();
   }, [refetchActivities]);
 
+  // Both of these update the row and then wait for a refetch, which made the
+  // alarm banner feel dead on click. Worse: if row-level security has no UPDATE
+  // policy, Postgres updates ZERO rows and returns NO error, so the button did
+  // nothing forever and said nothing. Now we update local state immediately,
+  // ask the database how many rows it actually changed, and shout if it is none.
   const snoozeActivity = useCallback(async (id, mins) => {
-    const { error } = await supabase.from("activities").update({ due_at: new Date(Date.now() + mins * 60000).toISOString() }).eq("id", id);
-    if (error) setErr(error.message); else refetchActivities();
+    const until = new Date(Date.now() + mins * 60000).toISOString();
+    setActivities((prev) => (prev || []).map((a) => (a.id === id ? { ...a, due_at: until } : a)));
+    const { data, error } = await supabase.from("activities").update({ due_at: until }).eq("id", id).select("id");
+    if (error) { setErr("Could not snooze that reminder: " + error.message); refetchActivities(); return; }
+    if (!data || !data.length) { setErr("Could not snooze that reminder — the database rejected the change. Tell Joe: activities table needs an update policy."); refetchActivities(); return; }
+    refetchActivities();
   }, [refetchActivities]);
 
   const completeActivity = useCallback(async (id, done = true) => {
-    const { error } = await supabase.from("activities")
-      .update({ done, done_at: done ? new Date().toISOString() : null }).eq("id", id);
-    if (error) setErr(error.message); else refetchActivities();
+    const doneAt = done ? new Date().toISOString() : null;
+    setActivities((prev) => (prev || []).map((a) => (a.id === id ? { ...a, done, done_at: doneAt } : a)));
+    const { data, error } = await supabase.from("activities")
+      .update({ done, done_at: doneAt }).eq("id", id).select("id");
+    if (error) { setErr("Could not update that reminder: " + error.message); refetchActivities(); return; }
+    if (!data || !data.length) { setErr("Could not update that reminder — the database rejected the change. Tell Joe: activities table needs an update policy."); refetchActivities(); return; }
+    refetchActivities();
   }, [refetchActivities]);
 
   const deleteActivity = useCallback(async (id) => {

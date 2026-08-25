@@ -58,6 +58,25 @@ function gsmSafe(s) {
     .replace(/[^\x20-\x7E\n\r]/g, "");
 }
 
+const SEG = Number(process.env.SMS_SPLIT_AT || 140);
+function splitForSms(text) {
+  const t = String(text || "").trim();
+  if (t.length <= SEG) return [t];
+  const parts = [];
+  let rest = t;
+  while (rest.length > SEG) {
+    const w = rest.slice(0, SEG);
+    let cut = Math.max(w.lastIndexOf(". "), w.lastIndexOf("? "), w.lastIndexOf("! "));
+    if (cut > 60) cut += 1;
+    else { cut = w.lastIndexOf(", "); if (cut > 60) cut += 1; else cut = w.lastIndexOf(" "); }
+    if (cut <= 0) cut = SEG;
+    parts.push(rest.slice(0, cut).trim());
+    rest = rest.slice(cut).trim();
+  }
+  if (rest) parts.push(rest);
+  return parts.filter(Boolean);
+}
+const sleepMs = (ms) => new Promise((r) => setTimeout(r, ms));
 export const handler = async (event) => {
   if (event.httpMethod !== "POST") return resp(405, { error: "Method not allowed" });
 
@@ -86,22 +105,30 @@ export const handler = async (event) => {
 
   try {
     const { server, token } = await rcToken();
-    const r = await fetch(`${server}/restapi/v1.0/account/~/extension/~/sms`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        from: { phoneNumber: process.env.RC_FROM },
-        to: [{ phoneNumber: to }],
-        text,
-      }),
-    });
-    const j = await r.json();
-    if (!r.ok) {
-      console.error("[sms] RC send failed:", r.status, JSON.stringify(j));
-      return resp(500, { error: j.message || j.errors?.[0]?.message || "SMS send failed" });
+    const parts = splitForSms(text);
+    if (parts.length > 1) console.log(`[sms] ${text.length} chars, sending as ${parts.length} messages`);
+    const ids = [];
+    for (let i = 0; i < parts.length; i++) {
+      if (i > 0) await sleepMs(1500);
+      const r = await fetch(`${server}/restapi/v1.0/account/~/extension/~/sms`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          from: { phoneNumber: process.env.RC_FROM },
+          to: [{ phoneNumber: to }],
+          text: parts[i],
+        }),
+      });
+      const j = await r.json();
+      if (!r.ok) {
+        console.error(`[sms] RC send failed on part ${i + 1}/${parts.length}:`, r.status, JSON.stringify(j));
+        if (ids.length) return resp(200, { ok: true, id: ids[0], parts: ids.length, partial: true });
+        return resp(500, { error: j.message || j.errors?.[0]?.message || "SMS send failed" });
+      }
+      ids.push(j.id);
     }
-    console.log("[sms] sent ok, id:", j.id, "to:", to, "from:", process.env.RC_FROM);
-    return resp(200, { ok: true, id: j.id });
+    console.log("[sms] sent ok, ids:", ids.join(","), "to:", to);
+    return resp(200, { ok: true, id: ids[0], parts: ids.length });
   } catch (e) {
     console.error("[sms] exception:", String(e.message || e));
     return resp(500, { error: String(e.message || e) });

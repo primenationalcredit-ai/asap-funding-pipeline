@@ -105,7 +105,10 @@ export const handler = async (event) => {
     // Push the next automated follow-up out 3 days, same as a manual call log,
     // so the cadence doesn't text someone Lydia just spoke with.
     try {
-      const patch = { snooze_until: new Date(Date.now() + 3 * 86400000).toISOString() };
+      const patch = {
+        snooze_until: new Date(Date.now() + 3 * 86400000).toISOString(),
+        last_called_at: new Date().toISOString(),
+      };
       // Only ever move leads that are still in the outreach part of the funnel —
       // never yank someone who is already submitted/funded back to an early stage.
       // Stages a dialer disposition is allowed to move a lead OUT of. Deliberately

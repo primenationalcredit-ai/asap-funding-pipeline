@@ -51,12 +51,21 @@ export const handler = async (event) => {
     // deliberately left alone — those should not be in a dial folder at all.
     const stages = Object.keys(STAGE_FOLDER_NAME);
     const { data: leads, error } = await admin.from("leads")
-      .select("id, name, email, phone, status, opted_out")
+      .select("id, name, email, phone, status, opted_out, last_called_at")
       .in("status", stages);
     if (error) throw error;
 
+    const COOLDOWN_DAYS = Number(process.env.PB_CALL_COOLDOWN_DAYS || 2);
+    const cutoff = Date.now() - COOLDOWN_DAYS * 86400000;
+    let recentlyCalled = 0;
+
     const contacts = (leads || [])
-      .filter((l) => !l.opted_out && String(l.phone || "").replace(/\D/g, "").length >= 10)
+      .filter((l) => {
+        if (l.opted_out) return false;
+        if (String(l.phone || "").replace(/\D/g, "").length < 10) return false;
+        if (l.last_called_at && new Date(l.last_called_at).getTime() > cutoff) { recentlyCalled++; return false; }
+        return true;
+      })
       .map((l) => {
         const parts = String(l.name || "").trim().split(/\s+/);
         const email = String(l.email || "").trim();
@@ -76,7 +85,7 @@ export const handler = async (event) => {
       })
       .filter((c) => c.category_id);
 
-    const result = { total: contacts.length, synced: 0, moved: 0, failed: 0, byFolder: {} };
+    const result = { total: contacts.length, recentlyCalledSkipped: recentlyCalled, cooldownDays: COOLDOWN_DAYS, synced: 0, moved: 0, failed: 0, byFolder: {} };
     for (const c of contacts) result.byFolder[c.category_id] = (result.byFolder[c.category_id] || 0) + 1;
 
     // Two calls per contact, so work in parallel batches against a deadline.

@@ -62,19 +62,19 @@ const SEG = Number(process.env.SMS_SPLIT_AT || 140);
 function splitForSms(text) {
   const t = String(text || "").trim();
   if (t.length <= SEG) return [t];
+  const tokens = t.split(/(\s+)/);
   const parts = [];
-  let rest = t;
-  while (rest.length > SEG) {
-    const w = rest.slice(0, SEG);
-    let cut = Math.max(w.lastIndexOf(". "), w.lastIndexOf("? "), w.lastIndexOf("! "));
-    if (cut > 60) cut += 1;
-    else { cut = w.lastIndexOf(", "); if (cut > 60) cut += 1; else cut = w.lastIndexOf(" "); }
-    if (cut <= 0) cut = SEG;
-    parts.push(rest.slice(0, cut).trim());
-    rest = rest.slice(cut).trim();
+  let cur = "";
+  const flush = () => { const v = cur.trim(); if (v) parts.push(v); cur = ""; };
+  for (const tok of tokens) {
+    if (!tok) continue;
+    const isSpace = /^\s+$/.test(tok);
+    if (!isSpace && tok.length > SEG) { flush(); parts.push(tok); continue; }
+    if ((cur + tok).trim().length > SEG) { flush(); if (isSpace) continue; }
+    cur += tok;
   }
-  if (rest) parts.push(rest);
-  return parts.filter(Boolean);
+  flush();
+  return parts;
 }
 const sleepMs = (ms) => new Promise((r) => setTimeout(r, ms));
 export const handler = async (event) => {

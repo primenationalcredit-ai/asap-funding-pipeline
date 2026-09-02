@@ -14,6 +14,16 @@
   schedule = "* * * * *"
 
 
+[[redirects]]
+  from = "/r/:code"
+  to = "/refer.html?ref=:code"
+  status = 200
+
+[[redirects]]
+  from = "/refer"
+  to = "/refer.html"
+  status = 200
+
 # Friendly path for the GHL webhook
 [[redirects]]
   from = "/api/ghl-webhook"

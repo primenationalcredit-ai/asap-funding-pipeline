@@ -1,4 +1,4 @@
-﻿// grad-announce v1 - tells recently finished, non-affiliate credit clients about
+// grad-announce v1 - tells recently finished, non-affiliate credit clients about
 // personal & business funding. Email (SendGrid) + filter-safe SMS (RingCentral).
 // Modes: ?dry=1 preview (no sends, no logs) | ?mode=backfill&days=90&limit=100
 // Daily schedule covers new finishers. Never sends twice (grad_announce_log).
@@ -37,14 +37,14 @@ function e164(phone) {
   return d ? "+" + d : "";
 }
 function last10(phone) { const d = String(phone || "").replace(/\D/g, ""); return d.slice(-10); }
-async function sendSms(rc, to, text) {
+async function sendSms(rc, to, text) { if (process.env.AUTOMATION_PAUSED === "true") throw new Error("automation paused");
   const r = await fetch(`${rc.server}/restapi/v1.0/account/~/extension/~/sms`, {
     method: "POST", headers: { Authorization: `Bearer ${rc.token}`, "Content-Type": "application/json" },
     body: JSON.stringify({ from: { phoneNumber: process.env.RC_FROM }, to: [{ phoneNumber: e164(to) }], text }),
   });
   if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.message || `SMS failed ${r.status}`); }
 }
-async function sendEmail(to, subject, text) {
+async function sendEmail(to, subject, text) { if (process.env.AUTOMATION_PAUSED === "true") throw new Error("automation paused");
   const r = await fetch("https://api.sendgrid.com/v3/mail/send", {
     method: "POST", headers: { Authorization: `Bearer ${process.env.SENDGRID_API_KEY}`, "Content-Type": "application/json" },
     body: JSON.stringify({

@@ -37,14 +37,14 @@ async function rcToken() {
   const j = await r.json();
   return { token: j.access_token, server };
 }
-async function sendSms(rc, to, text) {
+async function sendSms(rc, to, text) { if (process.env.AUTOMATION_PAUSED === "true") throw new Error("automation paused");
   const r = await fetch(`${rc.server}/restapi/v1.0/account/~/extension/~/sms`, {
     method: "POST", headers: { Authorization: `Bearer ${rc.token}`, "Content-Type": "application/json" },
     body: JSON.stringify({ from: { phoneNumber: process.env.RC_FROM }, to: [{ phoneNumber: e164(to) }], text }),
   });
   if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.message || `SMS ${r.status}`); }
 }
-async function sendEmail(to, subject, text) {
+async function sendEmail(to, subject, text) { if (process.env.AUTOMATION_PAUSED === "true") throw new Error("automation paused");
   const body = { personalizations: [{ to: [{ email: to }] }], from: { email: process.env.EMAIL_FROM, name: process.env.EMAIL_FROM_NAME || undefined }, subject: subject || "", content: [{ type: "text/plain", value: text }] };
   if (process.env.EMAIL_REPLY_TO) body.reply_to = { email: process.env.EMAIL_REPLY_TO };
   body.tracking_settings = { click_tracking: { enable: false, enable_text: false }, open_tracking: { enable: false } };

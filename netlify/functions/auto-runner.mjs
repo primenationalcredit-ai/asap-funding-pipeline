@@ -110,7 +110,7 @@ function gsmSafe(s) {
     .replace(/[^\x20-\x7E\n\r]/g, "");
 }
 
-async function sendSms(rc, to, text) {
+async function sendSms(rc, to, text) { if (process.env.AUTOMATION_PAUSED === "true") throw new Error("automation paused");
   text = gsmSafe(text);
   const r = await fetch(`${rc.server}/restapi/v1.0/account/~/extension/~/sms`, {
     method: "POST", headers: { Authorization: `Bearer ${rc.token}`, "Content-Type": "application/json" },
@@ -118,7 +118,7 @@ async function sendSms(rc, to, text) {
   });
   if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.message || `SMS failed ${r.status}`); }
 }
-async function sendEmail(to, subject, text) {
+async function sendEmail(to, subject, text) { if (process.env.AUTOMATION_PAUSED === "true") throw new Error("automation paused");
   const r = await fetch("https://api.sendgrid.com/v3/mail/send", {
     method: "POST", headers: { Authorization: `Bearer ${process.env.SENDGRID_API_KEY}`, "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -141,7 +141,7 @@ async function run() {
   const templates = cfg.templates || [];
   const cadences = cfg.cadences || {};
 
-  if (!config.autoSendEnabled) return { skipped: "autoSendEnabled is off" };
+  if (process.env.AUTOMATION_PAUSED === "true") return { skipped: "AUTOMATION_PAUSED is on" }; if (!config.autoSendEnabled) return { skipped: "autoSendEnabled is off" };
   if (!inBusinessHours()) return { skipped: "outside business hours" };
 
   // Always target the nurture stages where tailored sequences live.

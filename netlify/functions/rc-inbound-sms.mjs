@@ -1,4 +1,4 @@
-﻿import { createClient } from "@supabase/supabase-js";
+import { createClient } from "@supabase/supabase-js";
 
 /*
  * RingCentral inbound SMS receiver.
@@ -100,7 +100,7 @@ export const handler = async (event) => {
                 const tp = new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion: process.env.RC_JWT });
                 const tr = await fetch(`${server}/restapi/oauth/token`, { method: "POST", headers: { Authorization: `Basic ${basic}`, "Content-Type": "application/x-www-form-urlencoded" }, body: tp });
                 const tj = await tr.json();
-                if (tj.access_token) {
+                if (tj.access_token && process.env.AUTOMATION_PAUSED !== "true") {
                   await fetch(`${server}/restapi/v1.0/account/~/extension/~/sms`, {
                     method: "POST", headers: { Authorization: `Bearer ${tj.access_token}`, "Content-Type": "application/json" },
                     body: JSON.stringify({ from: { phoneNumber: process.env.RC_FROM }, to: [{ phoneNumber: fromNumber }], text: "Got it! One of our team members will reach out shortly to go over your options. Reply STOP to opt out." }),
